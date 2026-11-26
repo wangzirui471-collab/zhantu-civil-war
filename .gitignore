@@ -1,0 +1,9 @@
+# 运行时与临时文件
+debug.log
+*.log
+node_modules/
+.DS_Store
+Thumbs.db
+
+# 本地导出的存档
+战图-*.json

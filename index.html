@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#20251f">
+  <title>战图 · 国共内战</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="command-room.css">
+  <script defer src="data.js"></script>
+  <script defer src="portraits.js"></script>
+  <script defer src="engine.js"></script>
+  <script defer src="timeline.js"></script>
+  <script defer src="geography.js"></script>
+  <script defer src="map.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">战</span><div><h1>战图</h1><small>国共内战 · 作战指挥</small></div></div>
+      <div class="top-status"><span id="player-dot" class="dot ccp"></span><span id="player-name">中国共产党</span><span class="divider"></span><span id="scope-label">东北战区</span></div>
+      <div class="clock-block">
+        <div><time id="date"></time><span class="clock-label" id="clock-label">已暂停</span></div>
+        <div class="clock-controls">
+          <button id="pause" class="control" type="button" aria-label="继续或暂停" title="继续或暂停（空格）">▶</button>
+          <button id="step" class="control" type="button" aria-label="前进一天" title="前进一天">▸▏</button>
+          <div class="speed" aria-label="时间速度">
+            <button type="button" data-speed="1" aria-pressed="true">1×</button>
+            <button type="button" data-speed="2" aria-pressed="false">2×</button>
+            <button type="button" data-speed="3" aria-pressed="false">3×</button>
+          </div>
+        </div>
+      </div>
+      <div class="top-actions"><button type="button" id="save-menu" class="quiet">存档</button><button type="button" id="new-game" class="gold">新开局</button></div>
+    </header>
+    <nav class="workbar" aria-label="主界面功能">
+      <div class="workbar-tools">
+        <button type="button" id="mobile-scenarios">剧本</button>
+        <button type="button" id="economy">经济后勤</button>
+        <button type="button" id="plans">作战计划</button>
+        <button type="button" id="supply">铁路补给</button>
+        <button type="button" id="gear">兵种军械</button>
+        <button type="button" id="history-mode">历史事件</button>
+        <button type="button" id="forecast">局势预测</button>
+        <button type="button" id="groups">地方派系</button>
+        <button type="button" id="archive">战史档案</button>
+        <button type="button" id="help">操作说明</button>
+        <button type="button" id="tutorial-open">锦州引导</button>
+      </div>
+      <div class="workbar-region">
+        <label for="sector-select">指挥范围</label><select id="sector-select" aria-label="选择指挥范围"></select>
+        <button type="button" id="mobile-inspector" aria-controls="inspector-body" aria-expanded="false">部队</button>
+      </div>
+    </nav>
+
+    <main class="workspace">
+      <aside class="rail" aria-label="战役和统帅面板">
+        <section class="scenario-rail">
+          <div class="section-title"><h2>战役剧本</h2><button class="link-button" type="button" id="all-scenarios">全部</button></div>
+          <div id="scenario-list" class="scenario-list"></div>
+        </section>
+        <section class="ledger-section">
+          <div class="section-title"><h2>全国控制</h2><div><button class="link-button" type="button" id="territory-report">变化</button><button class="link-button" type="button" id="change-side">换边</button></div></div>
+          <div id="standings" class="standings"></div>
+          <dl id="resources" class="resources"></dl>
+        </section>
+      </aside>
+
+      <section class="map-workspace" aria-label="战役地图">
+        <canvas id="map" tabindex="0" aria-label="可缩放中国战区地图"></canvas>
+        <div class="map-heading"><span class="map-tag" id="map-tag">东北战区</span><strong id="map-title">辽沈战役</strong></div>
+        <div class="map-top-controls" aria-label="地图视角">
+          <button type="button" id="national-view">全国</button><button type="button" id="theater-view">战区</button>
+          <button type="button" id="find-city">查找城镇</button>
+        </div>
+        <div class="map-layers" aria-label="地图图层">
+          <div class="map-layer-modes"><button type="button" data-layer="situation" aria-pressed="false">态势图</button><button type="button" data-layer="terrain" aria-pressed="true">地形图</button><button type="button" data-layer="contour" aria-pressed="false">等高线</button></div>
+          <div class="map-layer-toggles"><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役路线</button><button type="button" data-overlay="supply" aria-pressed="false" title="绿点补给充足、黄点偏紧、红点缺口；红色虚线为运输瓶颈">补给</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button></div>
+        </div>
+        <div class="map-legend"><span><b class="dot ccp"></b>共产党</span><span><b class="dot roc"></b>国民党</span><span><i></i>铁路</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span></div>
+        <div class="map-zoom"><button type="button" id="zoom-in" aria-label="放大">+</button><button type="button" id="zoom-out" aria-label="缩小">−</button><button type="button" id="map-reset" aria-label="回到地图中心" title="回到地图中心">⌂</button></div>
+        <div class="map-help" id="map-help"></div>
+        <section id="tutorial-card" class="tutorial-card" aria-label="锦州第一局" hidden></section>
+      </section>
+
+      <aside class="inspector" aria-label="部队和城市详情">
+        <div class="inspector-tabs" role="group" aria-label="详情切换"><button id="tab-city" type="button" aria-pressed="true">战区情报</button><button id="tab-army" type="button" aria-pressed="false">部队名册</button></div>
+        <div id="inspector-body" class="inspector-body"></div>
+      </aside>
+    </main>
+
+    <section class="command-deck" aria-label="作战命令">
+      <div class="deck-selection"><span id="deck-unit">作战命令</span><small id="deck-hint">在地图上点击部队牌</small></div>
+      <div id="command-bar" class="command-actions"></div>
+    </section>
+    <footer class="bottom">
+      <span class="log-label">战况简报</span><button type="button" id="latest-event" aria-live="polite">请选择部队或城镇。</button>
+      <div class="brief-toolbar">
+        <button type="button" id="brief-settings" class="link-button">自动暂停</button>
+        <button type="button" id="show-log" class="link-button">查看记录</button>
+      </div>
+    </footer>
+  </div>
+
+  <dialog id="dialog"><div class="dialog-heading"><h2 id="dialog-title"></h2><button type="button" id="dialog-close" class="control" aria-label="关闭">×</button></div><div id="dialog-body" class="dialog-body"></div></dialog>
+  <div id="toast" role="status" class="toast" hidden></div>
+  <input id="import-file" type="file" accept=".json,application/json" hidden>
+</body>
+</html>
