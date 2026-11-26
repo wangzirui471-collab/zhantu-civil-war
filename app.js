@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   'use strict';
 
   const Data = globalThis.CivilWarData;
@@ -393,7 +393,7 @@
     return '<div class="city-title"><h3>' + escape(city.name) + '</h3>' + sideTag(state.owners[city.id])
       + (state.capitals?.[state.owners[city.id]] === city.id ? '<span class="capital-tag">首都</span>' : '') + '</div>'
       + '<p class="city-meta">' + escape(city.province || regions[city.region] || city.region) + ' · ' + escape(terrainName[city.terrain] || '城市')
-      + ' · 城市价值 ' + format(city.value) + '</p>'
+      + ' · 城市价值 ' + format(city.value) + (city.river ? ' · 渡口' : '') + '</p>'
       + battlePanel(city.id)
       + '<div class="sector-summary"><div><span>己方驻军</span><strong>' + format(own)
       + '</strong></div><div><span>对方估算</span><strong>' + format(Math.round(other / 100) * 100) + '</strong></div></div>'
@@ -441,7 +441,15 @@
     const allowed = permitted(unit);
     const root = topUnit(unit);
     const own = unit.side === state.player;
-    const strength = own ? format(unit.strength) : '约 ' + format(Math.round(unit.strength / 100) * 100);
+    const intelLevel = state.intel?.[state.player]?.level ?? 35;
+    const estimate = () => {
+      const rounded = Math.round(unit.strength / 100) * 100;
+      const spread = Math.round(rounded * (100 - intelLevel) / 200 / 100) * 100;
+      return spread >= 100
+        ? '约 ' + format(Math.max(0, rounded - spread)) + '–' + format(rounded + spread)
+        : '约 ' + format(rounded);
+    };
+    const strength = own ? format(unit.strength) : estimate();
     const orderLabel = unit.order ? (commands[unit.order.type] || '行动') + ' · ' + cityName(unit.order.target)
       + (unit.orderDays > 0 ? ' · 约 ' + unit.orderDays + ' 天' : '') : '待命';
     const photo = leader && Portraits[leader.name];
@@ -465,6 +473,7 @@
       + (valueOf(unit, 'wounded', 0) > 0 ? ' · 伤员 ' + format(unit.wounded) + ' 回补中' : '') + '</span>'
       + (design ? '<span>编制 ' + escape(design.name) + ' · 宽 ' + (stats?.width ?? 0).toFixed(1)
         + ' · 装 ' + (stats?.armor ?? 0) + ' · 穿 ' + (stats?.piercing ?? 0) + '</span>' : '')
+      + (own ? '' : '<span>情报水平 ' + format(intelLevel) + '</span>')
       + (group ? '<span>' + escape(group.name) + '</span>' : '') + '</div></div>'
       + (allowed ? '<button type="button" class="link-button" data-delegate="' + escape(root?.id) + '">'
         + (root?.delegated ? '收回司令员指挥权' : '委托司令员指挥') + '</button>'
@@ -2248,5 +2257,6 @@
   });
   setActive(initial, restored?.timeline || Timeline.create(initial, Engine), false);
 })();
+
 
 

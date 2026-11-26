@@ -192,6 +192,11 @@
     ...(province ? {province} : {}),
   }));
 
+  // 长江、黄河沿线的主要渡口：进攻这些城镇会受渡河惩罚，「渡江准备」国策可抵消。
+  const riverCities = ['lanzhou','baotou','zhengzhou','kaifeng','jinan','chongqing','yichang',
+    'jingzhou','wuhan','jiujiang','anqing','nanjing','zhenjiang','changsha','nanchang'];
+  for (const city of cities) if (riverCities.includes(city.id)) city.river = true;
+
   // 折线连接为游戏通道。铁路沿线节点采用当时地名或并列今名。
   const corridors = [
     'manzhouli hailar qiqihar harbin dehui changchun siping changtu kaiyuan tieling shenyang liaoyang anshan haicheng dashiqiao yingkou',

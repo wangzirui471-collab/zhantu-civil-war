@@ -1336,7 +1336,7 @@
       { id: 'army-reform', name: '三查三整', days: 35, effect: { org: 6 }, desc: '整训部队，组织度恢复更快。' },
       { id: 'arsenal', name: '军工建设', days: 35, requires: ['production-drive'], effect: { arms: 0.2, stock: { artillery: 80 } }, desc: '扩建兵工，军械与火炮产量提高。' },
       { id: 'railway-war', name: '破袭战', days: 40, requires: ['army-reform'], effect: { interdiction: 0.15 }, desc: '袭扰铁路，削弱敌军补给。' },
-      { id: 'river-crossing', name: '渡江准备', days: 40, requires: ['land-reform'], effect: { transports: 6, naval: 1 }, desc: '征集船只，提升渡海登陆能力。' },
+      { id: 'river-crossing', name: '渡江准备', days: 40, requires: ['land-reform'], effect: { transports: 6, naval: 1, river: 1 }, desc: '征集船只，提升渡海与渡河能力。' },
     ],
     roc: [
       { id: 'us-aid', name: '争取美援', days: 30, effect: { stock: { infantry: 160, artillery: 60 }, treasury: 0.1 }, desc: '获得装备与财政援助。' },
@@ -2244,9 +2244,11 @@
       const piercing = average(engaged, unit => unitDesignStats(state, unit).piercing);
       const enemyArmor = average(defenders, unit => unitDesignStats(state, unit).armor);
       const enemyPiercing = average(defenders, unit => unitDesignStats(state, unit).piercing);
-      const armorBonus = (armor > enemyPiercing + 0.5 ? 1.08 : 1) * (enemyArmor > piercing + 0.5 ? 0.92 : 1);
+      const armored = (armor > enemyPiercing + 0.5 ? 1.08 : 1) * (enemyArmor > piercing + 0.5 ? 0.92 : 1);
+      const river = city?.river && seaRatio === 0
+        ? 1 - 0.12 * Math.max(0, 1 - (state.riverBonus?.[side] ?? 0)) : 1;
       const attackPower = power(engaged, false, state) * (1 - obstacle) * (1 + air) * variation
-        * weather.attack * tacticAttack * cas * multidir * armorBonus * (1 + prep) * (1 - 0.18 * seaRatio);
+        * weather.attack * tacticAttack * cas * multidir * armored * river * (1 + prep) * (1 - 0.18 * seaRatio);
       const attackStrength = engaged.reduce((sum, unit) => sum + unit.strength, 0);
       const siegeStrength = engaged.reduce((sum, unit) => sum + (unit.order?.type === 'siege'
         ? unit.strength * profileFor(unit).siege * (1 + unitSupport(unit).artillery / 400) : 0), 0);
@@ -2635,6 +2637,7 @@
     }
     state.orgBonus ??= { ccp: 0, roc: 0 };
     state.interdiction ??= { ccp: 0, roc: 0 };
+    state.riverBonus ??= { ccp: 0, roc: 0 };
     state.air ??= { ccp: 16, roc: 54 };
     for (const unit of state.units) {
       if (!unit.design) unit.design = state.designs[unit.side]?.[0]?.id ?? null;
@@ -2839,6 +2842,7 @@
     if (effect.transports) state.navy[side].transports += effect.transports;
     if (effect.naval) state.navy[side].invasion = (state.navy[side].invasion ?? 0) + effect.naval;
     if (effect.interdiction) state.interdiction[side] = (state.interdiction[side] ?? 0) + effect.interdiction;
+    if (effect.river) state.riverBonus[side] = (state.riverBonus[side] ?? 0) + effect.river;
     if (effect.warSupport) {
       state.warSupport[side] = clampValue(num(state.warSupport[side], 60) + effect.warSupport, 2, 100);
     }
@@ -3439,6 +3443,7 @@
   globalThis.CivilWarEngine = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
+
 
 
 
