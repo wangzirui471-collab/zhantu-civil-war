@@ -10,7 +10,7 @@
     mobile: { name: '机动装备', days: -2, attack: 1.03, defense: 0.96, siege: 0.82, screen: 1.3, upkeep: 1.13, cost: 0.045 },
   };
   const hostileOrders = new Set(['advance', 'siege', 'intercept']);
-  const targetOrders = ['advance', 'move', 'defend', 'siege', 'intercept'];
+  const targetOrders = ['advance', 'move', 'defend', 'siege', 'intercept', 'bombard'];
   const supportKinds = { infantry: '步兵', armor: '装甲', artillery: '炮兵', engineer: '工兵', medical: '医护', transport: '运输' };
   const supportKeys = Object.keys(supportKinds);
   const supportBase = {
@@ -31,6 +31,7 @@
   const dayMillis = 86_400_000;
   const baseDate = '1945-08-15';
   const indexes = new WeakMap();
+  const terrainCache = new WeakMap();
 
   function index(data) {
     if (indexes.has(data)) return indexes.get(data);
@@ -49,7 +50,8 @@
     const anchors = [...(data.anchors ?? [])].sort((a, b) => a.date.localeCompare(b.date));
     const strength = (data.units ?? []).reduce((sum, unit) => sum + (Number(unit.strength) || 0), 0);
     const result = {
-      cities, neighbors, events, anchors, routeTypes: data.routeTypes ?? {},
+      cities, neighbors, events, anchors, routeTypes: data.routeTypes ?? {}, data,
+      bombardRange: Math.max(18, Math.min(30, Math.sqrt(data.cities.length) * 1.1)),
       resourceScale: Math.max(1, strength / 100_000),
     };
     indexes.set(data, result);
@@ -261,6 +263,13 @@
       historicalEvents: {},
       plans: [], forts: {}, works: [], logistics: null, battles: {},
       capitals: {}, warSupport: { ccp: 82, roc: 58 },
+      foreign: {
+        usa: { support: 0, embargo: 0, pressure: 0 },
+        ussr: { support: 0, pressure: 0, equipment: 0 },
+        japan: { stock: 0, equipment: 0 },
+      },
+      seaZones: {}, convoy: { ccp: 1, roc: 1 },
+      aiFronts: { ccp: [], roc: [] },
       supplyScarcity: {
         ccp: 1, roc: 0.82,
         ...(data.supply?.scarcity ?? {}), ...(chosenScenario?.supply ?? {}), ...(options.supply ?? {}),
@@ -576,15 +585,77 @@
     return Array.from(map.cities.values()).find(city => state.owners[city.id] === side) ?? null;
   }
 
+  function terrainAt(data, lon, lat) {
+    if (!data?.geography?.grids?.length) return null;
+    if (!terrainCache.has(data)) {
+      const grids = data.geography.grids.map(grid => {
+        const binary = typeof atob === 'function' ? atob(grid.samples) : Buffer.from(grid.samples, 'base64').toString('binary');
+        const values = new Int16Array(grid.width * grid.height);
+        for (let index = 0; index < values.length; index += 1) {
+          values[index] = binary.charCodeAt(index * 2) | binary.charCodeAt(index * 2 + 1) << 8;
+        }
+        return { ...grid, values };
+      });
+      terrainCache.set(data, grids);
+    }
+    const grids = terrainCache.get(data);
+    const grid = [...grids].reverse().find(item => lon >= item.west && lon <= item.west + (item.width - 1) * item.step
+      && lat <= item.north && lat >= item.north - (item.height - 1) * item.step);
+    if (!grid) return null;
+    const col = clampValue(Math.round((lon - grid.west) / grid.step), 0, grid.width - 1);
+    const row = clampValue(Math.round((grid.north - lat) / grid.step), 0, grid.height - 1);
+    const elevation = grid.values[row * grid.width + col];
+    if (elevation < -1) return { elevation: 0, terrain: 'marsh' };
+    const samples = [
+      grid.values[row * grid.width + Math.max(0, col - 1)],
+      grid.values[row * grid.width + Math.min(grid.width - 1, col + 1)],
+      grid.values[Math.max(0, row - 1) * grid.width + col],
+      grid.values[Math.min(grid.height - 1, row + 1) * grid.width + col],
+    ].filter(value => value >= 0);
+    const relief = samples.length ? Math.max(...samples) - Math.min(...samples) : 0;
+    const category = elevation > 2800 ? 'mountain' : elevation > 1400 ? 'highland'
+      : relief > 650 ? 'rough' : elevation < 100 ? 'plain' : 'hill';
+    return { elevation, relief, terrain: category };
+  }
+
+  function routeTerrain(data, from, to) {
+    const a = data.cities.find(city => city.id === from);
+    const b = data.cities.find(city => city.id === to);
+    if (!a || !b) return { rough: false, crossing: false, ground: 'plain' };
+    const samples = [];
+    const count = Math.max(2, Math.ceil(Math.hypot(a.lon - b.lon, a.lat - b.lat) * 3));
+    for (let step = 0; step <= count; step += 1) {
+      const ratio = step / count;
+      const value = terrainAt(data, a.lon + (b.lon - a.lon) * ratio, a.lat + (b.lat - a.lat) * ratio);
+      if (value) samples.push(value);
+    }
+    if (!samples.length) {
+      const river = Boolean(b.river) || (['yangtze', 'yellow-river'].includes(a.riverSystem)
+        && a.riverSystem === b.riverSystem);
+      const rough = /mountain|plateau|岭|山|高原/.test(a.terrain ?? '')
+        || /mountain|plateau|岭|山|高原/.test(b.terrain ?? '');
+      return { rough, crossing: river, ground: rough ? 'mountain' : 'plain' };
+    }
+    const mountain = samples.filter(item => item.terrain === 'mountain' || item.terrain === 'highland').length;
+    const rough = samples.filter(item => item.terrain === 'rough').length;
+    const avgRelief = samples.reduce((sum, item) => sum + item.relief, 0) / samples.length;
+    const ground = mountain / samples.length > 0.2 ? 'mountain' : rough / samples.length > 0.3 || avgRelief > 500 ? 'rough' : 'plain';
+    const midpoint = samples[Math.floor(samples.length / 2)];
+    const crossing = Boolean(b.river || (midpoint && midpoint.relief > 900 && midpoint.elevation < 900));
+    return { rough: ground !== 'plain', crossing, ground, elevation: Math.round(samples.reduce((sum, item) => sum + item.elevation, 0) / samples.length) };
+  }
+
   function deploymentDays(map, type, unit, target, from = unit.city, state) {
     const city = map.cities.get(target);
+    const sampled = state ? routeTerrain(map.data, from, target) : null;
     const terrain = city?.terrain ?? '';
-    const rough = /mountain|plateau|岭|山|高原/.test(terrain);
+    const rough = sampled ? sampled.rough : /mountain|plateau|岭|山|高原/.test(terrain);
     const routeType = map.routeTypes[[from, target].sort().join('|')];
     const maritime = routeType ? routeType === 'maritime' : isTaiwan(city) !== isTaiwan(map.cities.get(from));
-    const distance = { advance: 5, siege: 12, intercept: 2 }[type] ?? 3;
+    const distance = { advance: 5, siege: 12, intercept: 2, bombard: 2 }[type] ?? 3;
+    const crossing = map.data ? routeTerrain(map.data, from, target).crossing : Boolean(city?.river);
     let days = distance + profileFor(unit).days + (rough ? 2 : 0)
-      + (maritime ? 3 : 0) + (unit.food < 40 ? 2 : 0);
+      + (maritime ? 3 : 0) + (crossing && type !== 'bombard' ? 2 : 0) + (unit.food < 40 ? 2 : 0);
     if (state) {
       const design = unitDesignStats(state, unit);
       const leader = leaderBonus(state, unit);
@@ -632,7 +703,7 @@
     delete unit.garrison;
     if (automated) delete unit.orderUnit;
     else unit.orderUnit = orderUnit;
-    const firstStop = (type === 'move' || type === 'defend')
+    const firstStop = (type === 'move' || type === 'defend' || type === 'bombard')
       ? (route ?? friendlyRoute(map, state, unit.city, target, unit.side))?.[1]
       : target;
     unit.orderDays = type === 'hold' || !firstStop ? 0 : deploymentDays(map, type, unit, firstStop, unit.city, state);
@@ -651,6 +722,14 @@
   function plannedRoute(context, type, member, destination) {
     const { map, state, routes } = context;
     if (type === 'hold') return [member.city];
+    if (type === 'bombard') {
+      if ((state.airWar?.[member.side]?.planes ?? 0) <= 0) return null;
+      const target = map.cities.get(destination);
+      const bases = [...map.cities.values()].filter(city => state.owners[city.id] === member.side
+        && (Number(city.value) || 0) >= 5);
+      const inRange = bases.some(base => target && Math.hypot(base.lon - target.lon, (base.lat - target.lat) * 1.25) <= map.bombardRange);
+      return inRange ? [member.city, destination] : null;
+    }
     if (hostileOrders.has(type)) {
       if (map.neighbors.get(member.city)?.includes(destination)) return [member.city, destination];
       if (seaLink(map, member.city, destination)) return [member.city, destination];
@@ -676,10 +755,21 @@
     const { state, map, unit, members } = context;
     if (state.winner) return { ok: false, error: '此战局已结束。' };
     if (!members.length) return { ok: false, error: '只能向当前可指挥的在役部队下令。' };
-    if (!targetOrders.includes(type) && type !== 'hold') {
+    if (!targetOrders.includes(type) && type !== 'hold' && type !== 'bombard') {
       return { ok: false, error: '无法识别此命令。' };
     }
     const destination = type === 'hold' ? unit.city : target ?? unit.city;
+    if (type === 'bombard') {
+      const targetCity = map.cities.get(destination);
+      if (!targetCity || state.owners[destination] === unit.side) return { ok: false, error: '请选择敌方城镇。' };
+      if ((state.airWar?.[unit.side]?.mission ?? '') === 'airdrop') return { ok: false, error: '空军正在执行空投补给，不能同时战略轰炸。' };
+      const bases = [...map.cities.values()].filter(city => state.owners[city.id] === unit.side
+        && (Number(city.value) || 0) >= 5);
+      const inRange = bases.some(base => Math.hypot(base.lon - targetCity.lon, (base.lat - targetCity.lat) * 1.25) <= 18);
+      if (!inRange) return { ok: false, error: '目标超出空军作战半径。' };
+      if ((state.airWar?.[unit.side]?.planes ?? 0) < 10) return { ok: false, error: '可用机队不足。' };
+      return { ok: true, days: 1, route: [unit.city, destination], recipients: members.map(member => ({ member, route: [member.city, destination] })), destination };
+    }
     if (type !== 'hold' && !map.cities.has(destination)) return { ok: false, error: '请选择有效城市。' };
     if ((type === 'move' || type === 'defend') && state.owners[destination] !== unit.side) {
       return { ok: false, error: '调动与布防需要友方城市。' };
@@ -691,7 +781,8 @@
     let days = -1;
     let route;
     for (const member of members) {
-      const routeForMember = plannedRoute(context, type, member, destination);
+      const routeForMember = type === 'bombard' ? [member.city, destination]
+        : plannedRoute(context, type, member, destination);
       if (!routeForMember) continue;
       recipients.push({ member, route: routeForMember });
       const time = estimateDays(context, type, member, routeForMember);
@@ -744,8 +835,15 @@
     const { recipients, destination } = result;
     for (const { member, route } of recipients) {
       assignOrder(map, state, member, type, type === 'hold' ? member.city : destination, false, unit.id, route);
+      if (type === 'advance' && seaLink(map, member.city, destination)) member.seaAssault = true;
+      else delete member.seaAssault;
     }
     refreshOrders(state, tree);
+    if (type === 'bombard') {
+      for (const plan of state.plans ?? []) {
+        if (plan.side === unit.side && plan.status === 'active' && plan.units.includes(unit.id)) plan.prep = 10;
+      }
+    }
     if (type === 'hold' || type === 'defend' && recipients.every(({ member }) => member.city === destination)) {
       addLog(state, unit.name + (type === 'hold' ? '已转入驻防。' : '已完成布防。'), 'operation',
         { city: destination, side: unit.side, unitId, action: type, phase: 'completed' });
@@ -807,6 +905,7 @@
     ensurePolitics(state);
     ensureSystems(state);
     state.coreOwners ??= { ...state.owners };
+    state.terrainData = data;
     for (const unit of state.units) {
       if (!map_has(data, unit.city)) unit.city = data.cities[0]?.id ?? unit.city;
     }
@@ -870,7 +969,19 @@
       for (const neighbor of map.neighbors.get(city) ?? []) {
         if (state.owners[neighbor] !== side || done.has(neighbor)) continue;
         const type = linkType(map, city, neighbor);
-        const weight = type === 'rail' ? 1 : type === 'maritime' ? 6 : 3;
+        const sea = state.seaZones?.[[city, neighbor].sort().join('|')];
+        const zone = map.cities.get(city)?.region;
+        const ownMission = state.navy?.[side]?.zones?.[zone]?.mission;
+        const enemySide = side === 'ccp' ? 'roc' : 'ccp';
+        const enemyMission = state.navy?.[enemySide]?.zones?.[zone]?.mission;
+        const escort = (sea?.[side]?.mission === 'escort' || ownMission === 'escort') ? 0.7 : 1;
+        const raided = (sea?.[enemySide]?.mission === 'raid' || enemyMission === 'raid') ? 1.8 : 1;
+        const convoy = clampValue(1.2 - (1 - (state.convoy?.[side] ?? 1)) * 1.4, 0.25, 1.25);
+        const ownPatrol = num(state.navy?.[side]?.patrol, 0) > 0;
+        const enemyPatrol = num(state.navy?.[enemySide]?.patrol, 0) > 0;
+        const patrolControl = ownMission === 'patrol' || ownPatrol ? 0.8
+          : enemyMission === 'patrol' || enemyPatrol ? 1.25 : 1;
+        const weight = (type === 'rail' ? 1 : type === 'maritime' ? 6 * escort * raided * convoy * patrolControl : 3);
         const next = (cost.get(city) ?? Infinity) + weight;
         if (next < (cost.get(neighbor) ?? Infinity)) {
           cost.set(neighbor, next);
@@ -1288,6 +1399,15 @@
     return value;
   }
 
+  function battlePeriod(date, city) {
+    const timestamp = Date.parse(String(date) + 'T00:00:00Z');
+    const day = Number.isFinite(timestamp) ? Math.floor(timestamp / dayMillis) : 0;
+    const longitude = Number.isFinite(Number(city?.lon)) ? Number(city.lon) : 105;
+    // 用经度划分地方时区，再按四日战斗节奏轮换昼夜，保证存档回放结果一致。
+    const localCycle = ((day + Math.floor(longitude / 30)) % 4 + 4) % 4;
+    return localCycle < 2 ? '夜战' : '昼战';
+  }
+
   function distancesTo(map, target) {
     const distances = new Map([[target, 0]]);
     const queue = [target];
@@ -1307,6 +1427,8 @@
   }
 
   const planStances = { spearhead: '突击目标', hold: '守备战线', push: '沿战线进攻', fallback: '后撤至战线' };
+  const specialOrders = ['bombard'];
+  const commandKinds = [...targetOrders, 'hold', ...specialOrders];
 
   const designBattalions = { infantry: '步兵营', artillery: '炮兵营', armor: '装甲营', motorized: '摩托化营', antiAir: '防空营', antiTank: '反坦克营' };
   const designSupports = { engineer: '工兵连', recon: '侦察连', medical: '医疗连', logistics: '后勤连', signal: '通信连' };
@@ -1717,7 +1839,9 @@
       const otherGroup = state.group && army.group !== state.group;
       const outsideControl = army.side !== state.player || otherTheater || otherGroup;
       if (!outsideControl && !army.delegated) continue;
-      const objective = army.delegated && army.delegateTarget;
+      const aiPlan = (state.plans ?? []).find(plan => plan.aiGenerated && plan.side === army.side
+        && plan.status === 'active' && plan.units?.includes(army.id));
+      const objective = army.delegated && army.delegateTarget || aiPlan?.target;
       const distances = objective ? distancesTo(map, objective) : null;
       const armyGroups = groupByCity(leaves(army, tree).filter(unit => {
         if (unit.garrison) {
@@ -2010,9 +2134,11 @@
     }
     return {
       city, side: attackingSide, defendingSide, result: won ? 'capture' : 'repelled', days: num(numbers.days, 1),
+      period: numbers.period ?? battlePeriod(state.date, city),
       attackerStrength: attackerStart, defenderStrength: defenderStart,
       attackerCasualties, defenderCasualties, wounded, prisoners, routed, captured,
       moraleAttack, moraleDefend, experience: won ? attackingSide : defendingSide,
+      attackDirections: num(numbers.attackDirections, 1),
     };
   }
 
@@ -2025,13 +2151,15 @@
     state.battles ??= {};
     const record = {
       city: city.id, side, defendingSide, since: state.date, days: 0,
+      period: battlePeriod(state.date, city),
       attackerStrength: 0, defenderStrength: 0,
+      attackerUnitIds: [], defenderUnitIds: [],
       attackerCasualties: 0, defenderCasualties: 0, wounded: 0, prisoners: 0, routed: 0,
       lastRatio: 1,
     };
     state.battles[city.id] = record;
-    addLog(state, sideNames[side] + '开始对' + city.name + '作战。', 'battle-start',
-      { city: city.id, side, defendingSide });
+    addLog(state, sideNames[side] + '开始对' + city.name + '发起' + record.period + '。', 'battle-start',
+      { city: city.id, side, defendingSide, period: record.period });
     return record;
   }
 
@@ -2050,6 +2178,8 @@
   function advanceOrders(map, state, tree) {
     const { combat } = tree;
     const attacks = new Map();
+    const attacksByDirection = new Map();
+    const bombards = new Map();
     const screens = new Map();
     const completed = new Map();
     const interceptions = new Map();
@@ -2105,6 +2235,21 @@
       if (unit.orderDays > 0) continue;
 
       const targetName = map.cities.get(target)?.name ?? target;
+      if (type === 'bombard') {
+        if (state.airWar?.[unit.side]?.mission === 'airdrop') { clearOrder(unit); continue; }
+        const bases = [...map.cities.values()].filter(city => state.owners[city.id] === unit.side
+          && (Number(city.value) || 0) >= 5);
+        const targetCity = map.cities.get(target);
+        const inRange = bases.some(base => targetCity
+          && Math.hypot(base.lon - targetCity.lon, (base.lat - targetCity.lat) * 1.25) <= map.bombardRange);
+        if (!inRange || state.owners[target] === unit.side || (state.airWar?.[unit.side]?.planes ?? 0) < 10) {
+          clearOrder(unit);
+          continue;
+        }
+        if (!bombards.has(target)) bombards.set(target, []);
+        bombards.get(target).push(unit);
+        continue;
+      }
       if ((type === 'advance' || type === 'siege') && state.owners[target] !== unit.side) {
         const oversea = seaLink(map, unit.city, target);
         const adjacent = !oversea && map.neighbors.get(unit.city)?.includes(target);
@@ -2124,6 +2269,11 @@
         }
         if (!attacks.has(target)) attacks.set(target, []);
         attacks.get(target).push(unit);
+        if (!attacksByDirection.has(target)) attacksByDirection.set(target, new Map());
+        const direction = unit.city;
+        const byDirection = attacksByDirection.get(target);
+        if (!byDirection.has(direction)) byDirection.set(direction, []);
+        byDirection.get(direction).push(unit);
         continue;
       }
 
@@ -2172,9 +2322,24 @@
       }
       if (!battle) battle = startBattle(state, city, side, defendingSide);
       battle.days += 1;
-      if (battle.days === 1) {
-        battle.attackerStrength = Math.round(attackersAll.reduce((sum, unit) => sum + unit.strength, 0));
-        battle.defenderStrength = Math.round(defenders.reduce((sum, unit) => sum + unit.strength, 0));
+      battle.period = battlePeriod(state.date, city);
+      for (const [units, idsKey, strengthKey] of [
+        [attackersAll, 'attackerUnitIds', 'attackerStrength'], [defenders, 'defenderUnitIds', 'defenderStrength'],
+      ]) {
+        if (!Array.isArray(battle[idsKey])) {
+          battle[idsKey] = units.map(unit => unit.id);
+          if (!battle[strengthKey]) {
+            battle[strengthKey] = Math.round(units.reduce((sum, unit) => sum + unit.strength, 0));
+          }
+          continue;
+        }
+        const counted = new Set(battle[idsKey]);
+        for (const unit of units) {
+          if (counted.has(unit.id)) continue;
+          counted.add(unit.id);
+          battle[idsKey].push(unit.id);
+          battle[strengthKey] += Math.round(unit.strength);
+        }
       }
 
       const finishAttack = (won) => {
@@ -2187,12 +2352,13 @@
         const record = battleOutcome(state, target, side, defendingSide, attackersAll, defenders, won, {
           attackerStart: battle.attackerStrength, defenderStart: battle.defenderStrength,
           attackerCasualties: battle.attackerCasualties, defenderCasualties: battle.defenderCasualties,
-          routed, days: battle.days,
+          routed, days: battle.days, period: battle.period, attackDirections: battle.attackDirections,
         });
         awardLeaderXp(state, attackersAll, 6 + Math.round((battle.attackerCasualties + battle.defenderCasualties) / 1500));
         awardLeaderXp(state, defenders, 4 + Math.round((battle.attackerCasualties + battle.defenderCasualties) / 2000));
-        addLog(state, city.name + (won ? '战斗结束，' : '围攻受挫，'), 'battle-end',
+        addLog(state, city.name + battle.period + (won ? '战斗结束，' : '围攻受挫，'), 'battle-end',
           { city: target, side, defendingSide, result: won ? 'capture' : 'repelled', days: battle.days,
+            period: battle.period,
             weather: battle.weather, tactic: battle.tactic,
             nearbyUnits: nearbyForces(combat, target, map.neighbors.get(target) ?? []), aftermath: record,
             fort, obstacle });
@@ -2225,7 +2391,13 @@
         .sort((a, b) => b.strength - a.strength);
       const engageCap = campaign ? Math.min(width, 1 + battle.days) : width;
       const engaged = ready.slice(0, engageCap);
-      const terrain = /mountain|plateau|岭|山|高原/.test(city.terrain ?? '') ? 1.22 : 1;
+      const sampledGround = Number.isFinite(city.lon) && Number.isFinite(city.lat)
+        ? terrainAt(map.data, city.lon, city.lat)?.terrain : null;
+      const terrainName = String(city.terrain ?? '');
+      const terrain = /mountain|plateau|岭|山|高原/.test(terrainName) || sampledGround === 'mountain' ? 1.22
+        : sampledGround === 'highland' ? 1.16
+          : /hill|rough|丘陵|高地/.test(terrainName) || sampledGround === 'rough' ? 1.12
+            : sampledGround === 'hill' ? 1.06 : 1;
       const recon = clampValue(1 - num(state.recon?.[side], 0) / 220, 0.55, 1);
       const terrainFactor = 1 + (terrain - 1) * recon;
       const air = clampValue((num(state.air?.[side], 0) - num(state.air?.[defendingSide], 0) * 0.45) / 520, -0.06, 0.16);
@@ -2235,7 +2407,9 @@
       const tacticAttack = tactic ? tactic.attack : 1;
       const tacticDefense = tactic ? tactic.defense : 1;
       const cas = state.airWar?.[side]?.mission === 'cas' ? 1.08 : 1;
-      const multidir = new Set(engaged.map(unit => unit.city)).size >= 2 ? 1.04 : 1;
+      const attackDirections = new Set(engaged.map(unit => unit.city)).size;
+      const multidir = attackDirections >= 2 ? 1.1 : 1;
+      battle.attackDirections = attackDirections;
       const prepPlan = engaged.map(unit => (state.plans ?? []).find(plan => plan.id === unit.orderPlan)).find(Boolean);
       const prep = prepPlan ? Math.min(0.1, (prepPlan.prep ?? 0) * 0.01) : 0;
       const seaRatio = engaged.filter(unit => unit.seaAssault).length / Math.max(1, engaged.length);
@@ -2247,14 +2421,18 @@
       const armored = (armor > enemyPiercing + 0.5 ? 1.08 : 1) * (enemyArmor > piercing + 0.5 ? 0.92 : 1);
       const river = city?.river && seaRatio === 0
         ? 1 - 0.12 * Math.max(0, 1 - (state.riverBonus?.[side] ?? 0)) : 1;
+      const invasionPrep = clampValue(state.navy?.[side]?.invasion ?? 0, 0, 1);
+      const landingFactor = 1 - 0.18 * seaRatio + 0.26 * seaRatio * invasionPrep;
+      const night = battle.period === '夜战';
       const attackPower = power(engaged, false, state) * (1 - obstacle) * (1 + air) * variation
-        * weather.attack * tacticAttack * cas * multidir * armored * river * (1 + prep) * (1 - 0.18 * seaRatio);
+        * weather.attack * tacticAttack * cas * multidir * armored * river * (1 + prep) * landingFactor
+        * (night ? 0.92 : 1);
       const attackStrength = engaged.reduce((sum, unit) => sum + unit.strength, 0);
       const siegeStrength = engaged.reduce((sum, unit) => sum + (unit.order?.type === 'siege'
         ? unit.strength * profileFor(unit).siege * (1 + unitSupport(unit).artillery / 400) : 0), 0);
       const siegeEffect = attackStrength > 0 ? 1 - 0.3 * siegeStrength / attackStrength : 1;
       const defensePower = power(defenders, true, state) * terrainFactor * (isTaiwan(city) ? 1.55 : 1)
-        * (1 + fort) * siegeEffect * tacticDefense;
+        * (1 + fort) * siegeEffect * tacticDefense * (night ? 1.03 : 1);
       const ratio = attackPower / Math.max(defensePower, 1);
       battle.lastRatio = Math.round(ratio * 100) / 100;
       battle.weather = weather.name;
@@ -2315,6 +2493,37 @@
         if (directed) recordIntervention(state, target, state.owners[target]);
         conclude(false);
       }
+    }
+
+    for (const [target, sorties] of bombards) {
+      const city = map.cities.get(target);
+      if (!city || state.owners[target] === sorties[0].side) continue;
+      const side = sorties[0].side;
+      const enemy = side === 'ccp' ? 'roc' : 'ccp';
+      const force = state.airWar[side];
+      const opposition = state.airWar[enemy];
+      const zone = city.region ?? 'north';
+      if (force.mission === 'airdrop') {
+        state.logistics[side].ammo += 35 * sorties.length;
+        state.logistics[side].medical += 15 * sorties.length;
+        addLog(state, '空投机群向' + city.name + '方向投送弹药与医疗物资。', 'air-drop',
+          { side, city: target, action: 'airdrop' });
+        continue;
+      }
+      const ownFleet = state.seaZones?.[zone]?.[side]?.mission === 'patrol' ? 1.15 : 1;
+      const enemyPatrol = state.seaZones?.[zone]?.[enemy]?.mission === 'patrol' ? 1.2 : 1;
+      const pressure = Math.max(0.08, (force.planes / (force.planes + opposition.planes + 1)) * ownFleet / enemyPatrol);
+      const damage = (0.008 + pressure * 0.018) * Math.max(1, sorties.length);
+      state.economy[enemy].treasury = Math.max(0, state.economy[enemy].treasury - (Number(city.value) || 1) * damage * 10);
+      state.stock[enemy].infantry = Math.max(0, state.stock[enemy].infantry - damage * 8);
+      if (state.production?.[enemy]?.lines) {
+        state.production[enemy].lines.infantry = Math.max(0, state.production[enemy].lines.infantry - damage * 2);
+      }
+      force.losses = (force.losses ?? 0) + Math.max(0.02, force.planes * (1 - pressure) * 0.002);
+      force.planes = Math.max(0, force.planes - Math.max(0.03, force.planes * (1 - pressure) * 0.002));
+      state.warSupport[enemy] = Math.max(2, state.warSupport[enemy] - damage * 0.25);
+      addLog(state, sideNames[side] + '空军轰炸' + city.name + '，压制敌方工业与装备生产。', 'air-strike',
+        { side, city: target, action: 'strategic-bombing', pressure: Math.round(pressure * 100) });
     }
 
     clearStaleBattles(map, state, combat);
@@ -2616,9 +2825,17 @@
       state.focus[side] = { done: [], current: null, progress: 0, ...(state.focus[side] ?? {}) };
     }
     state.buffs ??= [];
+    state.externalCooldowns ??= {};
+    for (const side of sides) state.externalCooldowns[side] ??= {};
+    state.foreignActionCooldowns ??= {};
+    for (const side of sides) state.foreignActionCooldowns[side] ??= {};
     state.navy ??= {};
     for (const side of sides) {
-      state.navy[side] = { transports: 6, warships: 4, ...(state.navy[side] ?? {}) };
+      state.navy[side] = {
+        transports: 6, warships: 4, patrol: 0, convoy: 0, invasion: 0,
+        zones: {}, ...(state.navy[side] ?? {}),
+      };
+      state.navy[side].zones ??= {};
     }
     state.leadersXp ??= {};
     state.intel ??= {};
@@ -2631,9 +2848,43 @@
       state.laws[side] = { conscription: 'volunteer', economy: 'civilian', ...(state.laws[side] ?? {}) };
     }
     state.stability ??= { ccp: 70, roc: 55 };
+    state.foreign ??= {};
+    state.foreign.usa = { support: 0, embargo: 0, pressure: 0, ...(state.foreign.usa ?? {}) };
+    state.foreign.ussr = { support: 0, pressure: 0, equipment: 0, ...(state.foreign.ussr ?? {}) };
+    state.foreign.japan = { stock: 0, equipment: 0, ...(state.foreign.japan ?? {}) };
+    state.seaZones ??= {};
+    for (const [zone, records] of Object.entries(state.seaZones)) {
+      if (!records || typeof records !== 'object') { delete state.seaZones[zone]; continue; }
+      for (const side of sides) {
+        const record = records[side];
+        if (!record || typeof record !== 'object' || !['patrol', 'escort', 'raid', 'invasion'].includes(record.mission)) continue;
+        if (!state.navy[side].zones[zone]) {
+          state.navy[side].zones[zone] = { mission: record.mission, assigned: num(record.assigned, 0) };
+        }
+      }
+    }
+    for (const side of sides) {
+      for (const [zone, record] of Object.entries(state.navy[side].zones)) {
+        if (!record || !['patrol', 'escort', 'raid', 'invasion'].includes(record.mission)) continue;
+        state.seaZones[zone] ??= {};
+        state.seaZones[zone][side] ??= {
+          mission: record.mission,
+          strength: num(record.strength, state.navy[side].warships + state.navy[side].transports * 0.5),
+          assigned: num(record.assigned, 0),
+        };
+      }
+    }
+    state.convoy ??= { ccp: 1, roc: 1 };
+    state.aiFronts ??= { ccp: [], roc: [] };
     state.diplomacy ??= {};
     for (const side of sides) {
       state.diplomacy[side] = { cooldowns: {}, ...(state.diplomacy[side] ?? {}) };
+    }
+    state.treaties ??= {};
+    state.trade ??= {};
+    for (const side of sides) {
+      state.treaties[side] = { volunteers: false, lendLease: true, ...(state.treaties[side] ?? {}) };
+      state.trade[side] = { partner: null, steel: 0, oil: 0, rubber: 0, ...(state.trade[side] ?? {}) };
     }
     state.orgBonus ??= { ccp: 0, roc: 0 };
     state.interdiction ??= { ccp: 0, roc: 0 };
@@ -2785,7 +3036,159 @@
     if (!force) return 0;
     const tech = state.research?.[side]?.levels?.air ?? 0;
     const mission = airMissions[force.mission] ?? airMissions.superiority;
-    return Math.max(0, force.planes) * mission.support * (1 + tech * 0.06);
+    const foreign = state.foreign?.usa?.support && side === 'roc' ? 1.12
+      : state.foreign?.ussr?.support && side === 'ccp' ? 1.08 : 1;
+    return Math.max(0, force.planes) * mission.support * (1 + tech * 0.06) * foreign;
+  }
+
+  function foreignStep(data, state) {
+    state.foreign ??= {};
+    const usa = state.foreign.usa ??= { support: 0, embargo: 0, pressure: 0 };
+    const ussr = state.foreign.ussr ??= { support: 0, pressure: 0, equipment: 0 };
+    const japan = state.foreign.japan ??= { stock: 0, equipment: 0 };
+    const date = state.date;
+    const usAid = ['1946-01-01', '1947-01-01', '1948-06-01'].some(mark => date >= mark)
+      && date < '1949-01-01' && state.owners.nanjing === 'roc';
+    const sovietPressure = date >= '1945-08-15' && date < '1946-04-01'
+      && ['harbin', 'changchun', 'dalian'].some(city => state.owners[city] === 'ccp');
+    const japanStock = date >= '1945-08-15' && date < '1947-01-01';
+    if (usAid) {
+      usa.support = Math.min(1, usa.support + 0.025);
+      const aid = 0.7 + state.stability.roc / 150;
+      state.stock.roc.infantry += aid;
+      state.stock.roc.artillery += aid * 0.32;
+      state.airWar.roc.planes = Math.min(state.airWar.roc.planes + aid * 0.08, 500);
+    } else {
+      usa.support = Math.max(0, usa.support - 0.01);
+    }
+    if (sovietPressure) {
+      ussr.support = Math.min(1, ussr.support + 0.018);
+      ussr.pressure = Math.min(0.45, ussr.pressure + 0.008);
+      state.stock.ccp.infantry += 0.55;
+      state.stock.ccp.artillery += 0.18;
+      ussr.equipment += 0.35;
+    } else {
+      ussr.support = Math.max(0, ussr.support - 0.012);
+      ussr.pressure = Math.max(0, ussr.pressure - 0.004);
+    }
+    if (japanStock) {
+      japan.stock = Math.min(100, japan.stock + 0.25);
+      japan.equipment += 0.12;
+      state.stock.ccp.infantry += 0.3;
+      if (date < '1946-04-01') state.stock.ccp.artillery += 0.1;
+    }
+    if (usa.embargo > 0) {
+      usa.embargo = Math.max(0, usa.embargo - 0.01);
+      state.supplyScarcity.roc = Math.min(state.supplyScarcity.roc, 0.75);
+    }
+    // 列强状态随历史阶段变化：援助影响工业装备，外交压力影响稳定度与战争支持。
+    state.foreign.usa = usa;
+    state.foreign.ussr = ussr;
+    state.foreign.japan = japan;
+    for (const side of sides) {
+      const actor = side === 'roc' ? usa : ussr;
+      if (actor.support > 0) {
+        state.stability[side] = clampValue(state.stability[side] + actor.support * 0.005, 5, 100);
+      }
+      if (actor.pressure > 0) {
+        state.stability[side] = clampValue(state.stability[side] - actor.pressure * 0.006, 5, 100);
+      }
+    }
+  }
+
+  function foreignAction(state, actor, action) {
+    ensureSystems(state);
+    if (!['usa', 'ussr'].includes(actor)) return { ok: false, error: '只有美国或苏联能执行此项外交行动。' };
+    if (!['request-aid', 'lend-lease', 'volunteers', 'pressure', 'embargo'].includes(action)) {
+      return { ok: false, error: '无法识别的列强互动。' };
+    }
+    const side = state.player;
+    const other = side === 'ccp' ? 'roc' : 'ccp';
+    const political = state.political[side];
+    const cooldownKey = actor + ':' + action;
+    const cooldown = state.foreignActionCooldowns?.[side]?.[cooldownKey] ?? 0;
+    if (cooldown > 0) return { ok: false, error: '该列强互动还需 ' + cooldown + ' 天才能再次使用。' };
+    if (action === 'request-aid' || action === 'lend-lease' || action === 'volunteers') {
+      const cost = action === 'volunteers' ? 55 : action === 'lend-lease' ? 60 : 45;
+      if (political.points < cost) return { ok: false, error: '外交行动需要政治点 ' + cost + '。' };
+      if (action === 'lend-lease' && !state.treaties[side]?.lendLease) {
+        return { ok: false, error: '需要先签订租借条约。' };
+      }
+      let volunteer;
+      if (action === 'volunteers') {
+        if (!state.treaties[side]?.volunteers) return { ok: false, error: '需要先签订志愿军条约。' };
+        const source = actor === 'usa' ? 'roc' : 'ccp';
+        if (source === side) return { ok: false, error: '志愿军必须来自另一方阵营。' };
+        volunteer = state.units.find(unit => !unit.parent && unit.side === source && unit.strength > 0 && !unit.inactive);
+        if (!volunteer) return { ok: false, error: '没有可派遣的志愿军。' };
+      }
+      political.points -= cost;
+      state.foreignActionCooldowns[side][cooldownKey] = action === 'volunteers' ? 60 : 30;
+      if (action === 'volunteers') {
+        volunteer.expeditionary = side;
+        volunteer.side = side;
+        volunteer.strength = Math.round(volunteer.strength * 0.65);
+        volunteer.org = Math.min(unitOrg(volunteer), 70);
+        addLog(state, (actor === 'usa' ? '美国' : '苏联') + '派遣志愿军加入' + sideNames[side] + '。', 'foreign',
+          { actor, action, side, unitId: volunteer.id });
+        return { ok: true, unitId: volunteer.id };
+      }
+      if (action === 'lend-lease') {
+        state.stock[side].infantry += 180;
+        state.stock[side].artillery += 75;
+        state.airWar[side].planes += 8;
+        addLog(state, (actor === 'usa' ? '美国' : '苏联') + '租借装备抵达' + sideNames[side] + '。', 'foreign',
+          { actor, action, side });
+        return { ok: true };
+      }
+      if (actor === 'usa') {
+        state.foreign.usa.support = Math.min(1, state.foreign.usa.support + 0.25);
+        state.stock.roc.infantry += 160;
+        state.stock.roc.artillery += 60;
+        state.airWar.roc.planes += 12;
+        addLog(state, '美国扩大对国民政府的装备援助。', 'foreign', { actor, action, side: 'roc' });
+      } else if (actor === 'ussr') {
+        state.foreign.ussr.support = Math.min(1, state.foreign.ussr.support + 0.2);
+        state.stock.ccp.infantry += 120;
+        state.stock.ccp.artillery += 45;
+        addLog(state, '苏联向共产党提供东北地区装备援助。', 'foreign', { actor, action, side: 'ccp' });
+      } else return { ok: false, error: '该列强不能提供此类军事援助。' };
+      return { ok: true };
+    }
+    if (action === 'pressure') {
+      const cost = 35;
+      if (political.points < cost) return { ok: false, error: '外交施压需要政治点 ' + cost + '。' };
+      political.points -= cost;
+      state.foreignActionCooldowns[side][cooldownKey] = 25;
+      if (actor === 'usa') {
+        state.foreign.usa.pressure = Math.min(1, state.foreign.usa.pressure + 0.3);
+        state.warSupport.roc = Math.max(2, state.warSupport.roc - 3);
+        state.stability.roc = Math.max(5, state.stability.roc - 3);
+      } else if (actor === 'ussr') {
+        state.foreign.ussr.pressure = Math.min(1, state.foreign.ussr.pressure + 0.3);
+        state.warSupport.roc = Math.max(2, state.warSupport.roc - 2);
+      } else if (actor === 'japan') {
+        state.foreign.japan.pressure = Math.min(1, (state.foreign.japan.pressure ?? 0) + 0.3);
+        state.warSupport.roc = Math.max(2, state.warSupport.roc - 1);
+      }
+      addLog(state, '通过' + (actor === 'usa' ? '美国' : actor === 'ussr' ? '苏联' : '日本') + '渠道施加外交压力。',
+        'foreign', { actor, action, side, other });
+      return { ok: true };
+    }
+    if (action === 'embargo') {
+      const cost = 40;
+      if (political.points < cost) return { ok: false, error: '请求禁运需要政治点 ' + cost + '。' };
+      if (actor !== 'usa' && actor !== 'ussr') return { ok: false, error: '该国不能执行此项禁运。' };
+      political.points -= cost;
+      state.foreignActionCooldowns[side][cooldownKey] = 35;
+      if (actor === 'usa') state.foreign.usa.embargo = Math.min(1, state.foreign.usa.embargo + 0.5);
+      else state.foreign.ussr.pressure = Math.min(1, state.foreign.ussr.pressure + 0.25);
+      state.supplyScarcity[other] = Math.min(state.supplyScarcity[other], 0.65);
+      addLog(state, (actor === 'usa' ? '美国' : '苏联') + '对' + sideNames[other] + '实施禁运。', 'foreign',
+        { actor, action, side: other });
+      return { ok: true };
+    }
+    return { ok: false, error: '无法识别的列强互动。' };
   }
 
   function airSupport(state, side) {
@@ -2819,12 +3222,52 @@
 
   function setAirMission(state, mission) {
     ensureSystems(state);
-    if (!airMissions[mission]) return { ok: false, error: '无法识别的空军任务。' };
-    state.airWar[state.player].mission = mission;
+    const [kind, zone] = String(mission).split(':');
+    if (!airMissions[kind]) return { ok: false, error: '无法识别的空军任务。' };
+    const target = state.airWar[state.player];
+    target.mission = kind;
+    target.zone = zone || null;
     state.air[state.player] = airSupport(state, state.player);
-    addLog(state, sideNames[state.player] + '空军转入「' + airMissions[mission].name + '」。', 'air',
-      { side: state.player, action: 'air-mission', mission });
+    addLog(state, sideNames[state.player] + '空军转入「' + airMissions[kind].name + '」'
+      + (zone ? '，任务区 ' + zone : '') + '。', 'air',
+      { side: state.player, action: 'air-mission', mission: kind, zone: zone || null });
     return { ok: true };
+  }
+
+  function setNavalMission(state, zone, mission) {
+    ensureSystems(state);
+    const missions = ['patrol', 'escort', 'raid', 'invasion'];
+    if (!zone || (mission && !missions.includes(mission))) return { ok: false, error: '请选择有效海域与舰队任务。' };
+    const side = state.player;
+    const navy = state.navy[side];
+    if (!mission) {
+      delete navy.zones[zone];
+      if (state.seaZones[zone]) {
+        delete state.seaZones[zone][side];
+        if (!Object.keys(state.seaZones[zone]).length) delete state.seaZones[zone];
+      }
+      addLog(state, sideNames[side] + '海军撤销在' + zone + '的任务部署。', 'navy',
+        { side, zone, mission: null, action: 'naval-mission-clear' });
+      return { ok: true, zone, cleared: true };
+    }
+    const fleetSize = (navy.warships ?? 0) + (navy.transports ?? 0) * 0.5;
+    const cost = mission === 'invasion' ? 12 : mission === 'patrol' ? 8 : 6;
+    const committed = Object.entries(navy.zones).reduce((sum, [name, assignment]) =>
+      name === zone ? sum : sum + num(assignment?.assigned, 0), 0);
+    if (fleetSize - committed < cost) return { ok: false, error: '可用舰队吨位不足，无法执行该海域任务。' };
+    navy.zones[zone] = { mission, assigned: cost };
+    state.seaZones[zone] ??= {};
+    state.seaZones[zone][side] = { mission, strength: cost, assigned: cost };
+    addLog(state, sideNames[side] + '海军在' + zone + '转入'
+      + ({ patrol: '巡逻', escort: '护航', raid: '破交', invasion: '登陆准备' }[mission]) + '任务。', 'navy',
+      { side, zone, mission, action: 'naval-mission' });
+    return { ok: true, mission, zone };
+  }
+
+  function enemySeaControl(state, zone, side) {
+    const own = state.seaZones?.[zone]?.[side]?.strength ?? 0;
+    const enemy = state.seaZones?.[zone]?.[side === 'ccp' ? 'roc' : 'ccp']?.strength ?? 0;
+    return own / (own + enemy + 1);
   }
 
   function applyFocus(data, state, side, definition) {
@@ -2951,6 +3394,10 @@
       for (const key of Object.keys(command.cooldowns ?? {})) {
         command.cooldowns[key] -= 1;
         if (command.cooldowns[key] <= 0) delete command.cooldowns[key];
+      }
+      for (const key of Object.keys(state.foreignActionCooldowns?.[side] ?? {})) {
+        state.foreignActionCooldowns[side][key] -= 1;
+        if (state.foreignActionCooldowns[side][key] <= 0) delete state.foreignActionCooldowns[side][key];
       }
     }
     state.buffs = (state.buffs ?? []).filter(buff => buff.until >= state.date);
@@ -3129,10 +3576,11 @@
     }
   }
 
-  function diplomacyAction(state, kind) {
+  function diplomacyAction(state, kind, actor = state.player === 'ccp' ? 'ussr' : 'usa') {
     ensureSystems(state);
     const definition = diplomacyOps[kind];
     if (!definition) return { ok: false, error: '无法识别的外交行动。' };
+    if (!['usa', 'ussr'].includes(actor)) return { ok: false, error: '请选择美国或苏联。' };
     const side = state.player;
     const other = side === 'ccp' ? 'roc' : 'ccp';
     const diplomacy = state.diplomacy[side];
@@ -3146,15 +3594,28 @@
     diplomacy.cooldowns ??= {};
     diplomacy.cooldowns[kind] = definition.cooldown;
     if (kind === 'aid') {
-      state.stock[side].infantry += 260;
-      state.stock[side].artillery += 90;
-      state.economy[side].treasury += Math.round(state.economy[side].treasury * 0.12);
-      addLog(state, sideNames[side] + '获得外援，装备与财政增加。', 'diplomacy', { side, action: 'diplomacy', kind });
+      if (actor === 'usa') {
+        state.foreign.usa.support = Math.min(1, state.foreign.usa.support + 0.2);
+        state.stock.roc.infantry += 220;
+        state.stock.roc.artillery += 80;
+        state.airWar.roc.planes += 12;
+        state.economy.roc.treasury += 180;
+      } else if (actor === 'ussr') {
+        state.foreign.ussr.support = Math.min(1, state.foreign.ussr.support + 0.2);
+        state.stock.ccp.infantry += 180;
+        state.stock.ccp.artillery += 55;
+        state.airWar.ccp.planes += 8;
+      }
+      addLog(state, (actor === 'usa' ? '美国' : actor === 'ussr' ? '苏联' : '日本')
+        + '渠道提供装备援助。', 'diplomacy', { side, actor, action: 'diplomacy', kind });
       return { ok: true };
     }
     if (kind === 'embargo') {
+      if (actor === 'usa') state.foreign.usa.embargo = Math.min(1, state.foreign.usa.embargo + 0.35);
+      if (actor === 'ussr') state.foreign.ussr.pressure = Math.min(1, state.foreign.ussr.pressure + 0.25);
       state.interdiction[side] = (state.interdiction[side] ?? 0) + 0.12;
-      addLog(state, sideNames[side] + '对敌方实施禁运，其补给受到影响。', 'diplomacy', { side, action: 'diplomacy', kind });
+      addLog(state, '通过' + (actor === 'usa' ? '美国' : '苏联') + '渠道对敌方实施禁运，补给受到影响。',
+        'diplomacy', { side, actor, action: 'diplomacy', kind });
       return { ok: true };
     }
     state.winner = null;
@@ -3201,6 +3662,8 @@
   }
 
   function systemsStep(data, state) {
+    foreignStep(data, state);
+    navalStep(state);
     researchStep(data, state);
     productionStep(data, state);
     airStep(data, state);
@@ -3214,7 +3677,34 @@
     }
   }
 
-  function systemsAI(state) {
+  function navalStep(state) {
+    ensureSystems(state);
+    for (const side of sides) {
+      const enemy = side === 'ccp' ? 'roc' : 'ccp';
+      let patrol = 0;
+      let invasion = false;
+      for (const zone of Object.values(state.seaZones)) {
+        const assignment = zone?.[side];
+        if (!assignment) continue;
+        const strength = Math.max(0, num(assignment.strength, 0));
+        const scale = clampValue(strength / 8, 0.25, 2);
+        if (assignment.mission === 'patrol') patrol += strength;
+        if (assignment.mission === 'raid') state.convoy[enemy] = Math.max(0.25, state.convoy[enemy] - 0.01 * scale);
+        if (assignment.mission === 'escort') state.convoy[side] = Math.min(1.4, state.convoy[side] + 0.005 * scale);
+        if (assignment.mission === 'invasion') {
+          state.navy[side].invasion = Math.min(1, (state.navy[side].invasion ?? 0) + 0.01 * scale);
+          invasion = true;
+        }
+      }
+      state.navy[side].patrol = patrol;
+      if (!invasion) state.navy[side].invasion = Math.max(0, (state.navy[side].invasion ?? 0) - 0.01);
+    }
+  }
+
+  function systemsAI(data, state) {
+    const map = index(data);
+    const day = Math.floor(Date.parse(state.date) / dayMillis);
+    const combat = unitTree(state).combat;
     for (const side of sides) {
       if (side === state.player) continue;
       const research = state.research[side];
@@ -3239,9 +3729,109 @@
         }
       }
       const force = state.airWar[side];
-      const ratio = state.air[side] < 35 ? 1 : 0;
-      if (ratio && force.mission !== 'cas') force.mission = 'cas';
-      else if (!ratio && state.air[side] > 65 && force.mission !== 'superiority') force.mission = 'superiority';
+      const enemy = side === 'ccp' ? 'roc' : 'ccp';
+      const isolatedNeeds = combat.some(unit => unit.side === side && unit.strength > 0 && !unit.inactive
+        && pocketFactor(map, state, unit.city, side) < 1
+        && (unitAmmo(unit) < 45 || unitFuel(unit) < 35 || num(unit.food, 100) < 35));
+      if (force.planes > 15 && isolatedNeeds) force.mission = 'airdrop';
+      else if (state.air[side] < 35 && force.mission !== 'cas') force.mission = 'cas';
+      else if (state.air[side] > 65 && force.mission !== 'superiority') force.mission = 'superiority';
+      else if (state.air[side] >= 35 && state.air[side] <= 65 && force.mission !== 'interdiction') force.mission = 'interdiction';
+      const line = state.aiFronts[side] ?? [];
+      if (line.some(city => !map.cities.has(city) || state.owners[city] !== side)) state.aiFronts[side] = [];
+      if (!state.aiFronts[side].length) {
+        const capital = state.capitals?.[side];
+        const border = [...map.cities.values()].filter(city => state.owners[city.id] === side
+          && (map.neighbors.get(city.id) ?? []).some(id => state.owners[id] === enemy));
+        if (border.length) {
+          const regionGroups = new Map();
+          for (const city of border) {
+            const key = city.region || 'front';
+            if (!regionGroups.has(key)) regionGroups.set(key, []);
+            regionGroups.get(key).push(city);
+          }
+          state.aiFronts[side] = [...regionGroups.values()]
+            .sort((a, b) => b.reduce((n, city) => n + (Number(city.value) || 1), 0)
+              - a.reduce((n, city) => n + (Number(city.value) || 1), 0))
+            .slice(0, 2).flatMap(group => group.sort((a, b) => (Number(b.value) || 1) - (Number(a.value) || 1))
+              .slice(0, 3).map(city => city.id));
+          if (capital && state.owners[capital] === side && !state.aiFronts[side].includes(capital)) {
+            state.aiFronts[side].push(capital);
+          }
+        }
+      }
+      const activePlan = (state.plans ?? []).find(plan => plan.side === side && plan.aiGenerated && plan.status === 'active');
+      // 机队优势且战线过强时优先空袭补给/枢纽；运输船充足时尝试选择海岸登陆目标。
+      const coastalTargets = [...map.cities.values()].filter(city => state.owners[city.id] === enemy
+        && [...map.neighbors.get(city.id) ?? []].some(id => map.routeTypes[[id, city.id].sort().join('|')] === 'maritime'));
+      const invasionReady = (state.navy[side]?.transports ?? 0) >= 12
+        && Object.values(state.seaZones ?? {}).some(zone => zone?.[side]?.mission === 'invasion');
+      const invasionTarget = invasionReady ? coastalTargets
+        .sort((a, b) => (Number(b.value) || 1) - (Number(a.value) || 1))[0] : null;
+      if (!activePlan && state.aiFronts[side]?.length) {
+        const units = state.units.filter(unit => !unit.parent && unit.side === side && unit.strength > 0
+          && !unit.inactive && !unit.delegated).map(unit => unit.id);
+        if (units.length) {
+          const target = invasionTarget ?? [...map.cities.values()].filter(city => state.owners[city.id] === enemy)
+            .sort((a, b) => (Number(b.value) || 1) - (Number(a.value) || 1))[0];
+          const plan = { id: 'ai-' + side + '-' + state.date, name: '自动战线计划', side, units,
+            target: target?.id ?? state.aiFronts[side][0], mode: 'advance', stance: 'push',
+            line: state.aiFronts[side].slice(), autoLine: false, status: 'active', delegated: false,
+            invasion: Boolean(invasionTarget),
+            aiGenerated: true, created: state.date, updated: state.date, executed: state.date };
+          state.plans.push(plan);
+          addLog(state, sideNames[side] + '司令部建立自动战线，部署 ' + units.length + ' 支部队。', 'ai-plan',
+            { side, action: 'ai-front', line: plan.line });
+        }
+      }
+      if (force.planes > 35 && (day + hash(side + 'bomb')) % 5 === 0) {
+        const airTargets = [...map.cities.values()].filter(city => state.owners[city.id] === enemy
+          && Math.hypot((city.lon - (map.cities.get(state.capitals?.[side])?.lon ?? city.lon)),
+            (city.lat - (map.cities.get(state.capitals?.[side])?.lat ?? city.lat)) * 1.25) <= 24
+          && ((Number(city.value) || 0) >= 4 || railDegree(map, city.id) >= 2));
+        const target = airTargets.sort((a, b) => {
+          const frontA = (map.neighbors.get(a.id) ?? []).some(id => state.owners[id] === side) ? 1 : 0;
+          const frontB = (map.neighbors.get(b.id) ?? []).some(id => state.owners[id] === side) ? 1 : 0;
+          return frontB - frontA || (Number(b.value) || 0) - (Number(a.value) || 0);
+        })[0];
+        if (target && force.mission !== 'airdrop') {
+          const damage = 0.01 + Math.min(0.025, (force.planes / 2500));
+          state.economy[enemy].treasury = Math.max(0, state.economy[enemy].treasury - target.value * damage * 14);
+          state.stock[enemy].infantry = Math.max(0, state.stock[enemy].infantry - target.value * damage * 0.25);
+          if (state.airWar[enemy].mission === 'interdiction') state.supplyScarcity[enemy] = Math.max(0.3, state.supplyScarcity[enemy] - 0.002);
+          addLog(state, sideNames[side] + '空军对' + target.name + '实施战略轰炸，敌方工业受损。', 'air-strike',
+            { side, city: target.id, action: 'strategic-bombing' });
+        }
+      }
+      const ownedSeas = Object.values(state.seaZones ?? {}).filter(zone => zone?.[side]?.strength > 0);
+      const seaCoverage = ownedSeas.reduce((sum, zone) => sum + zone[side].strength, 0);
+      const enemySea = ownedSeas.reduce((sum, zone) => sum + (zone?.[enemy]?.strength ?? 0), 0);
+      const navalReady = seaCoverage / (seaCoverage + enemySea + 1) > 0.55
+        && (state.navy[side]?.transports ?? 0) >= 12;
+      if (invasionReady && navalReady && invasionTarget) {
+        const reserve = state.units.filter(unit => !unit.parent && unit.side === side && unit.strength > 0
+          && !unit.inactive && !unit.delegated).sort((a, b) => a.org - b.org);
+        const landingForce = reserve[0];
+        if (landingForce) {
+          const tree = unitTree(state);
+          const root = tree.byId.get(landingForce.id);
+          let assigned = 0;
+          for (const member of leaves(root, tree)) {
+            if (member.strength <= 0 || member.order?.type === 'advance' && member.order.target === invasionTarget.id) continue;
+            const route = plannedRoute({ map, state, routes: new Map() }, 'advance', member, invasionTarget.id);
+            if (!route) continue;
+            if (seaLink(map, member.city, invasionTarget.id)
+              && state.navy[side].transports < Math.ceil(member.strength / 1500)) continue;
+            assignOrder(map, state, member, 'advance', invasionTarget.id, true, root.id, route);
+            member.seaAssault = true;
+            assigned += 1;
+          }
+          if (assigned) {
+            addLog(state, sideNames[side] + '海军为' + landingForce.name + '组织两栖登陆，目标' + invasionTarget.name + '。',
+              'navy', { side, city: invasionTarget.id, unitId: landingForce.id, units: assigned, action: 'ai-invasion' });
+          }
+        }
+      }
     }
   }
 
@@ -3313,7 +3903,7 @@
       state.supplyReport = supplyStep(data, map, state, tree.combat);
       politicalStep(data, state);
       systemsStep(data, state);
-      systemsAI(state);
+      systemsAI(data, state);
       completeWorks(data, state);
       aiOrders(map, state, tree);
       aiGarrison(map, state, tree);
@@ -3425,14 +4015,15 @@
     setHistoryMode, setHistoricalEvent,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, setSupport, supplyReading, prepare, decide,
-    createDesign, updateDesign, assignDesign, researchTech, setAirMission, startFocus, setProduction,
-    commandAbility, intelOperation, setLaw, diplomacyAction,
+    createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,
+    startFocus, setProduction, commandAbility, intelOperation, setLaw, diplomacyAction, foreignAction,
     previewOrder, previewOrders, forecast, snapshot, stats, activeUnits,
     metadata: { supportKinds, supportKeys, fortKinds, planModes, planStances, decisionKinds, supplyGoods,
       fortLevel, engineerSupport, unitSupport, supportFactor, power,
       techLines, airMissions, focusTrees, commandAbilities, designBattalions, designSupports,
       designDefaults, intelOps, diplomacyOps, lawNames, lawFactors,
       designStats: (state, side, design) => designStats(state, side, design),
+      battlePeriod,
       unitDesign: (state, unit) => unitDesign(state, unit),
       unitDesignStats: (state, unit) => unitDesignStats(state, unit),
       airSupport: (state, side) => airSupport(state, side),
