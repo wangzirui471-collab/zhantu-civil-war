@@ -344,6 +344,7 @@
     const ratio = typeof battle.lastRatio === 'number' ? battle.lastRatio.toFixed(2) : '—';
     return '<div class="card battle-card"><h3>围攻第 ' + format(battle.days) + ' 天</h3>'
       + '<p>' + escape(short[battle.side] || battle.side) + '进攻 · 优势比 ' + ratio
+      + ' · 进攻方向 ' + format(battle.attackDirections || 1)
       + ' · 累计伤亡 ' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人'
       + (battle.weather ? ' · 天气 ' + escape(battle.weather) : '')
       + (battle.tactic ? ' · 战术 ' + escape(battle.tactic) : '') + '</p>'
@@ -1096,6 +1097,7 @@
     return '<h3>战斗后果</h3><table class="dialog-table"><thead><tr><th>项目</th><th>进攻方 '
       + escape(name(record.side)) + '</th><th>守方 ' + escape(name(record.defendingSide)) + '</th></tr></thead><tbody>'
       + '<tr><td>投入兵力</td><td>' + format(record.attackerStrength) + '</td><td>' + format(record.defenderStrength) + '</td></tr>'
+      + '<tr><td>进攻方向</td><td colspan="2">' + format(record.attackDirections || 1) + ' 个</td></tr>'
       + '<tr><td>阵亡与减员</td><td>' + format(record.attackerCasualties) + '</td><td>' + format(record.defenderCasualties) + '</td></tr>'
       + '<tr><td>伤员（回补）</td><td colspan="2">' + format(record.wounded) + '</td></tr>'
       + '<tr><td>俘虏</td><td>' + format(record.prisoners) + '</td><td>—</td></tr>'

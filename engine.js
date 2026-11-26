@@ -2138,6 +2138,7 @@
       attackerStrength: attackerStart, defenderStrength: defenderStart,
       attackerCasualties, defenderCasualties, wounded, prisoners, routed, captured,
       moraleAttack, moraleDefend, experience: won ? attackingSide : defendingSide,
+      attackDirections: num(numbers.attackDirections, 1),
     };
   }
 
@@ -2351,7 +2352,7 @@
         const record = battleOutcome(state, target, side, defendingSide, attackersAll, defenders, won, {
           attackerStart: battle.attackerStrength, defenderStart: battle.defenderStrength,
           attackerCasualties: battle.attackerCasualties, defenderCasualties: battle.defenderCasualties,
-          routed, days: battle.days, period: battle.period,
+          routed, days: battle.days, period: battle.period, attackDirections: battle.attackDirections,
         });
         awardLeaderXp(state, attackersAll, 6 + Math.round((battle.attackerCasualties + battle.defenderCasualties) / 1500));
         awardLeaderXp(state, defenders, 4 + Math.round((battle.attackerCasualties + battle.defenderCasualties) / 2000));
@@ -2406,7 +2407,9 @@
       const tacticAttack = tactic ? tactic.attack : 1;
       const tacticDefense = tactic ? tactic.defense : 1;
       const cas = state.airWar?.[side]?.mission === 'cas' ? 1.08 : 1;
-      const multidir = new Set(engaged.map(unit => unit.city)).size >= 2 ? 1.04 : 1;
+      const attackDirections = new Set(engaged.map(unit => unit.city)).size;
+      const multidir = attackDirections >= 2 ? 1.1 : 1;
+      battle.attackDirections = attackDirections;
       const prepPlan = engaged.map(unit => (state.plans ?? []).find(plan => plan.id === unit.orderPlan)).find(Boolean);
       const prep = prepPlan ? Math.min(0.1, (prepPlan.prep ?? 0) * 0.01) : 0;
       const seaRatio = engaged.filter(unit => unit.seaAssault).length / Math.max(1, engaged.length);

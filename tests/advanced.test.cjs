@@ -475,6 +475,46 @@ test('多日战役会把战斗开始后抵达的增援计入投入兵力', () =>
   assert.ok(record.attackerStrength > initialStrength, '增援应计入整场战役投入兵力');
 });
 
+test('同等总兵力从两个方向攻击会获得多方向协同加成', () => {
+  const ratio = (multiDirection) => {
+    const units = multiDirection
+      ? [
+        { id: 'north-force', name: '北路部队', side: 'ccp', city: 'north', strength: 6_000 },
+        { id: 'south-force', name: '南路部队', side: 'ccp', city: 'south', strength: 6_000 },
+      ]
+      : [{ id: 'north-force', name: '北路部队', side: 'ccp', city: 'north', strength: 12_000 }];
+    const data = {
+      cities: [
+        { id: 'north', name: '北路出发点', region: 'north', terrain: 'plain', value: 4 },
+        { id: 'south', name: '南路出发点', region: 'north', terrain: 'plain', value: 4 },
+        { id: 'target', name: '会攻目标', region: 'north', terrain: 'plain', value: 10 },
+      ],
+      links: [['north', 'target'], ['south', 'target']],
+      routeTypes: { 'north|target': 'land', 'south|target': 'land' },
+      units: [...units, { id: 'defense', name: '守军', side: 'roc', city: 'target', strength: 80_000 }],
+      anchors: [{ date: '1947-01-01', ccp: ['north', 'south'], roc: ['target'] }],
+      scenarios: [{ id: 's', date: '1947-01-01', focus: 'north', area: 'north' }],
+      events: [],
+    };
+    const state = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+    for (const attacker of units) {
+      assert.equal(engine.order(data, state, attacker.id, 'advance', 'target').ok, true);
+    }
+    for (const unit of state.units.filter(member => member.side === 'ccp' && member.order?.target === 'target')) {
+      unit.orderDays = 0;
+    }
+    engine.step(data, state, 1);
+    assert.ok(state.battles.target);
+    return { ratio: state.battles.target.lastRatio, directions: state.battles.target.attackDirections };
+  };
+  const single = ratio(false);
+  const multiple = ratio(true);
+  assert.equal(single.directions, 1);
+  assert.equal(multiple.directions, 2);
+  assert.ok(multiple.ratio > single.ratio,
+    '多方向加成应反映在显示战斗比率上：' + single.ratio + ' / ' + multiple.ratio);
+});
+
 test('AI 会在边境空虚时派驻驻军', () => {
   const wide = {
     cities: [

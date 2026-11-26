@@ -69,7 +69,7 @@ node scripts/serve.cjs 8099
 ## 开发与验证
 
 ```bash
-node --test                        # 85 项引擎、国策、科研、生产、编制、空军、海军、指挥、
+node --test                        # 86 项引擎、国策、科研、生产、编制、空军、海军、指挥、
                                    #   情报与占领、组织度与战役、补给、工事、政治、存档与时间线测试
 node scripts/browser-smoke.cjs     # 无头 Chrome 浏览器冒烟测试（需本机安装 Chrome）
 ```
