@@ -1,4 +1,4 @@
-﻿const assert = require('node:assert/strict');
+const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -320,6 +320,45 @@ async function main() {
     await click('[data-deck-undo]');
     assert.ok(!(await state()).political.ccp.cooldowns.reorganize, '撤销应回滚决议');
 
+    // 国防与建设：国策、科研、生产、编制、空军、指挥、情报
+    await click('#defense');
+    assert((await value('#dialog-body')).includes('国策'));
+    await click('[data-focus=land-reform]');
+    assert.equal((await state()).focus.ccp.current, 'land-reform');
+    await click('[data-defense-tab=tech]');
+    await click('[data-tech=infantry]');
+    assert.equal((await state()).research.ccp.levels.infantry, 1, await value('#toast'));
+    await click('[data-defense-tab=production]');
+    await set('#production-form [name=infantry]', '50');
+    await set('#production-form [name=artillery]', '25');
+    await set('#production-form [name=armor]', '10');
+    await set('#production-form [name=air]', '15');
+    await set('#production-form [name=naval]', '0');
+    await click('#production-form button[type=submit]');
+    assert.equal((await state()).production.ccp.lines.infantry, 50, await value('#toast'));
+    await click('[data-defense-tab=design]');
+    const designsBefore = (await state()).designs.ccp.length;
+    await set('#design-form [name=infantry]', '7');
+    await set('#design-form [name=artillery]', '4');
+    await click('#design-form button[type=submit]');
+    assert.equal((await state()).designs.ccp.length, designsBefore + 1, await value('#toast'));
+    await click('[data-defense-tab=air]');
+    await click('[data-air-mission=cas]');
+    assert.equal((await state()).airWar.ccp.mission, 'cas');
+    await click('[data-defense-tab=command]');
+    await evaluate(`(() => {
+      const select = document.querySelector('select[name=command-unit]');
+      if (select && select.options.length) select.selectedIndex = 0;
+    })()`);
+    await click('[data-command=forcedMarch]');
+    assert.ok((await state()).buffs.some((buff) => buff.kind === 'forcedMarch'), await value('#toast'));
+    await click('[data-defense-tab=intel]');
+    await click('[data-intel=recon]');
+    assert.ok((await state()).intel.ccp.level > 35);
+    await click('[data-defense-tab=navy]');
+    assert((await value('#dialog-body')).includes('运输船'));
+    await click('#dialog-close');
+
     // 工事：修筑战壕并推进到完工
     await click('#find-city');
     await set('#dialog form [name=target]', 'yixian');
@@ -424,7 +463,7 @@ async function main() {
       const result = await request('Page.captureScreenshot', { format: 'png' });
       await fs.writeFile(process.env.CIVIL_WAR_SCREENSHOT, Buffer.from(result.data, 'base64'));
     }
-    console.log('浏览器通过：地图命令、多选作战计划（决心与战线）、政治决议与撤销、铁路补给面板、工事修筑、部队编制、多日战役与战报后果、单屏界面、锦州引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
+    console.log('浏览器通过：地图命令、多选作战计划、政治决议与撤销、国策科研生产编制空军指挥情报、铁路补给、工事、多日战役与战报、单屏界面、锦州引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
   } finally {
     socket?.close();
     child.kill();

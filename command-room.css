@@ -150,6 +150,26 @@ body { overflow: hidden; }
 .decision-card button { flex: 0 0 auto; align-self: center; }
 .line-picker { max-height: 168px; overflow-y: auto; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; scrollbar-width: thin; }
 .unit-row small { white-space: nowrap; }
+.defense-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 9px; }
+.defense-tabs button { min-height: 28px; padding-inline: 9px; font-size: 11px; }
+.defense-tabs button[aria-pressed=true] { border-color: #ead3a1; background: #403e2d; color: #ffe9b8; }
+.defense-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.defense-card header { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.defense-card h3 { font-size: 13px; }
+.defense-card .field { margin-top: 5px; }
+.stat-line { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.stat-chip { display: inline-flex; gap: 4px; align-items: baseline; padding: 2px 6px; border-radius: 3px; background: #2a352e; color: #e9e4cf; font-size: 11px; }
+.stat-chip b { color: var(--muted); font-size: 10px; font-weight: 500; }
+.level-dots { display: flex; gap: 3px; margin: 5px 0; }
+.level-dots i { width: 14px; height: 6px; border-radius: 2px; background: #39463c; }
+.level-dots i.on { background: #d8b45c; }
+.progress { height: 5px; margin: 6px 0; border-radius: 3px; background: #2c3a30; overflow: hidden; }
+.progress i { display: block; height: 100%; background: #9cbf6a; }
+.battalion-grid, .production-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 5px; margin: 6px 0; }
+.battalion-grid label, .production-grid label { display: grid; gap: 2px; color: var(--dim); font-size: 10px; }
+.battalion-grid input, .production-grid input { min-height: 26px; }
+.support-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 8px; margin: 4px 0; }
+.support-grid .event-row { min-height: 26px; }
 .map-legend .supply-key { border-top-color: #e8946a; border-top-style: dashed; }
 .plan-card header { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .plan-card h3 { font-size: 13px; }

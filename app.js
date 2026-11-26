@@ -33,6 +33,20 @@
   const planStanceNames = meta.planStances || {};
   const decisionInfo = meta.decisionKinds || {};
   const goodsNames = meta.supplyGoods || {};
+  const techInfo = meta.techLines || {};
+  const airMissionInfo = meta.airMissions || {};
+  const focusTree = meta.focusTrees || {};
+  const commandInfo = meta.commandAbilities || {};
+  const battalionInfo = meta.designBattalions || {};
+  const supportInfo2 = meta.designSupports || {};
+  const intelOpInfo = meta.intelOps || {};
+  const diplomacyInfo = meta.diplomacyOps || {};
+  const lawText = meta.lawNames || {};
+  const designStatsOf = meta.designStats || (() => null);
+  const unitDesignOf = meta.unitDesign || (() => null);
+  const leaderLevelOf = meta.leaderLevel || (() => 1);
+  const leaderTraitsOf = meta.leaderTraits || (() => []);
+  const roman = ['I', 'II', 'III', 'IV', 'V', 'VI'];
   const planStatusNames = { draft: '待执行', active: '执行中', paused: '已暂停', done: '已达成' };
   const transportNames = { rail: '铁路', road: '公路', sea: '海运', local: '本地' };
   const scenariosById = new Map(Data.scenarios.map((scenario) => [scenario.id, scenario]));
@@ -268,7 +282,8 @@
     $('date').textContent = fmtDate(state.date);
     $('date').dateTime = state.date;
     $('clock-label').textContent = state.winner
-      ? (state.endReason === 'capitulation' ? '已停战' : state.endReason === 'timeout' ? '已休战' : '已统一')
+      ? (state.endReason === 'capitulation' || state.endReason === 'ceasefire' ? '已停战'
+        : state.endReason === 'timeout' ? '已休战' : '已统一')
       : running ? '运行中' : '已暂停';
     $('pause').textContent = running ? 'Ⅱ' : '▶';
     $('pause').disabled = Boolean(state.winner);
@@ -302,7 +317,10 @@
       + Data.cities.filter((city) => city.region === area() && state.owners[city.id] === state.player).length + ' 城 / '
       + Data.cities.filter((city) => city.region === area()).length + ' 城</p>'
       + '<p class="territory-status">战争支持 · 共产党 ' + format(valueOf(state.warSupport, 'ccp', 82))
-      + ' · 国民党 ' + format(valueOf(state.warSupport, 'roc', 58)) + '</p>';
+      + ' · 国民党 ' + format(valueOf(state.warSupport, 'roc', 58)) + '</p>'
+      + '<p class="territory-status">稳定 ' + format(valueOf(state.stability, state.player, 60))
+      + ' · 科研 ' + format(state.research?.[state.player]?.points ?? 0)
+      + ' · 指挥 ' + format(state.command?.[state.player]?.points ?? 0) + '</p>';
     $('resources').innerHTML = resourceTiles(state.economy[state.player]);
   }
 
@@ -325,7 +343,9 @@
     const ratio = typeof battle.lastRatio === 'number' ? battle.lastRatio.toFixed(2) : '—';
     return '<div class="card battle-card"><h3>围攻第 ' + format(battle.days) + ' 天</h3>'
       + '<p>' + escape(short[battle.side] || battle.side) + '进攻 · 优势比 ' + ratio
-      + ' · 累计伤亡 ' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人</p>'
+      + ' · 累计伤亡 ' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人'
+      + (battle.weather ? ' · 天气 ' + escape(battle.weather) : '')
+      + (battle.tactic ? ' · 战术 ' + escape(battle.tactic) : '') + '</p>'
       + '<p class="subtext">组织度耗尽的一方将退出战斗；守军只有在没有退路时才会被歼灭。</p></div>';
   }
 
@@ -341,6 +361,9 @@
     return '<div class="card"><h3>工事与补给</h3><p>' + (levels || '尚未修筑工事。') + '</p>'
       + (coverage !== undefined ? '<p class="subtext">补给覆盖 ' + Math.round(coverage * 100) + '%'
         + (coverage < 0.5 ? ' · 缺口较大' : coverage < 0.75 ? ' · 略有缺口' : ' · 通畅') + '</p>' : '')
+      + (state.occupation?.[city.id]
+        ? '<p class="subtext">抵抗 ' + Math.round(state.occupation[city.id].resistance ?? 0)
+          + ' · 顺从 ' + Math.round(state.occupation[city.id].compliance ?? 0) + '</p>' : '')
       + (works.length ? '<p class="subtext">施工中：' + works.map((work) =>
         escape(fortInfo[work.kind]?.name || work.kind) + '（' + escape(work.due) + ' 完工）').join('、') + '</p>' : '')
       + (own ? '<button type="button" class="link-button" data-forts="' + escape(city.id) + '">修筑工事</button>' : '')
@@ -422,9 +445,14 @@
     const orderLabel = unit.order ? (commands[unit.order.type] || '行动') + ' · ' + cityName(unit.order.target)
       + (unit.orderDays > 0 ? ' · 约 ' + unit.orderDays + ' 天' : '') : '待命';
     const photo = leader && Portraits[leader.name];
+    const design = unitDesignOf(state, unit);
+    const stats = design ? designStatsOf(state, unit.side, design) : null;
+    const traits = leader ? leaderTraitsOf(state, leader.id) : [];
     const portrait = leader ? '<button class="commander-chip" type="button" data-leader="' + escape(leader.id) + '">'
       + (photo ? '<img src="' + escape(photo.file) + '" alt="' + escape(leader.name) + '">' : '')
-      + '<span>指挥官<strong>' + escape(leader.name) + '</strong></span></button>' : '';
+      + '<span>指挥官<strong>' + escape(leader.name) + '</strong>'
+      + (traits.length ? '<small>' + escape(traits.map((trait) => trait.name).join('/')) + ' · 等级 '
+        + format(leaderLevelOf(state, leader.id)) + '</small>' : '') + '</span></button>' : '';
     return '<button class="link-button" type="button" data-back-roster>‹ 返回部队名册</button>'
       + '<div class="card"><div class="city-title"><h3 style="font-size:17px">' + escape(unit.name) + '</h3>'
       + sideTag(unit.side) + '</div><p>' + escape(cityName(unit.city)) + ' · ' + escape(orderLabel) + '</p>'
@@ -435,6 +463,8 @@
       + '<span>士气 ' + format(valueOf(unit, 'morale', 70)) + ' · 老兵 ' + format(valueOf(unit, 'veteran', 0))
       + ' 级 · 组织 ' + format(valueOf(unit, 'org', 100))
       + (valueOf(unit, 'wounded', 0) > 0 ? ' · 伤员 ' + format(unit.wounded) + ' 回补中' : '') + '</span>'
+      + (design ? '<span>编制 ' + escape(design.name) + ' · 宽 ' + (stats?.width ?? 0).toFixed(1)
+        + ' · 装 ' + (stats?.armor ?? 0) + ' · 穿 ' + (stats?.piercing ?? 0) + '</span>' : '')
       + (group ? '<span>' + escape(group.name) + '</span>' : '') + '</div></div>'
       + (allowed ? '<button type="button" class="link-button" data-delegate="' + escape(root?.id) + '">'
         + (root?.delegated ? '收回司令员指挥权' : '委托司令员指挥') + '</button>'
@@ -442,11 +472,16 @@
           ? '<button type="button" class="link-button" data-appoint="' + escape(unit.id) + '">任命将领</button>' : '')
         + '<button type="button" class="link-button" data-gear-unit>换装</button>'
         + (typeof Engine.setSupport === 'function'
-          ? '<button type="button" class="link-button" data-formation="' + escape(root?.id ?? unit.id) + '">调整编制</button>' : '')
+          ? '<button type="button" class="link-button" data-formation="' + escape(root?.id ?? unit.id) + '">调整支援</button>' : '')
+        + (typeof Engine.assignDesign === 'function'
+          ? '<button type="button" class="link-button" data-defense-design="' + escape(root?.id ?? unit.id)
+            + '">编制设计</button>' : '')
+        + (typeof Engine.commandAbility === 'function'
+          ? '<button type="button" class="link-button" data-defense-command="1">指挥技能</button>' : '')
         : '') + '</div>'
       + (root ? renderTree(root) : '')
       + '<div class="card support-card"><h3>支援编制</h3><p class="support-line">' + escape(supportLine(unit)) + '</p>'
-      + '<p class="subtext">装甲、炮兵、工兵、医护与运输按部队统一编配，影响进攻、围城、减员与补给。</p></div>'
+      + '<p class="subtext">营级编制决定战斗宽度、装甲、穿甲与补给；支援连影响工事、减员与机动。</p></div>'
       + '<p class="subtext">师团人数为游戏推演。</p>';
   }
 
@@ -949,6 +984,10 @@
       + '驻防和补给充足的部队每天恢复组织度。</p></div>'
       + '<div class="card"><h3>政治与决议</h3><p>顶部「政治决议」用政治点执行策反、整军、空运补给与动员。'
       + '战争支持度会随城镇得失升降，支持度崩溃又丢掉首都时，这一方可能停战。</p></div>'
+      + '<div class="card"><h3>国防与建设</h3><p>顶部「国防建设」有国策、科研、生产、编制、空军、海军、指挥与情报八个页签：'
+      + '国策按天推进；科研解锁装备型号与装甲营；生产把工厂分到四条装备线与运输船；'
+      + '编制设计营级模板并指派给部队；空军切换制空/近距支援/遮断/空投；'
+      + '海军决定渡海运力；指挥点可下强行军、死守与炮火准备；情报页处理抵抗、法令与外交。</p></div>'
       + '<div class="card"><h3>铁路补给</h3><p>顶部「铁路补给」查看后方库存、运输瓶颈与各城镇补给覆盖，'
       + '并在地图上标出缺口。弹药、油料、医疗物资分别计算，补给越差，部队战斗力与整补越慢。</p></div>'
       + '<div class="card"><h3>工事与编制</h3><p>城镇面板的「修筑工事」由驻军工兵施工，可修战壕、掩体、障碍、'
@@ -1348,6 +1387,256 @@
     return '';
   }
 
+  let defenseDraft = null;
+
+  function statChips(record) {
+    return Object.entries(record).map(([name, value]) => '<span class="stat-chip"><b>' + escape(name) + '</b>'
+      + escape(typeof value === 'number' ? Math.round(value * 100) / 100 : value) + '</span>').join('');
+  }
+
+  function designComposition(design) {
+    return Object.entries(battalionInfo).filter(([key]) => (design?.[key] ?? 0) > 0)
+      .map(([key, label]) => label.replace('营', '') + '×' + design[key]).join(' · ')
+      + (Object.entries(supportInfo2).filter(([key]) => design?.support?.[key]).length
+        ? ' · ' + Object.entries(supportInfo2).filter(([key]) => design?.support?.[key])
+          .map(([, label]) => label.replace('连', '')).join('/') : '');
+  }
+
+  function focusBody() {
+    const side = state.player;
+    const focus = state.focus?.[side] ?? { done: [], current: null, progress: 0 };
+    const tree = focusTree[side] ?? [];
+    return '<p class="subtext">国策按天推进，完成时立刻生效；灰色表示前置未完成。</p><div class="defense-cards">'
+      + tree.map((item) => {
+        const done = focus.done?.includes(item.id);
+        const current = focus.current === item.id;
+        const locked = (item.requires ?? []).some((id) => !focus.done?.includes(id));
+        return '<article class="card defense-card"><header><h3>' + escape(item.name) + '</h3><span class="plan-status is-'
+          + (done ? 'done' : current ? 'active' : 'draft') + '">'
+          + (done ? '已完成' : current ? '进行中 ' + (focus.progress ?? 0) + '/' + item.days : locked ? '需前置' : '未开始')
+          + '</span></header><p class="subtext">' + escape(item.desc) + '</p>'
+          + '<div class="progress"><i style="width:' + (done ? 100 : current ? Math.min(100, Math.round((focus.progress ?? 0) / item.days * 100)) : 0) + '%"></i></div>'
+          + '<div class="unit-actions"><button type="button" data-focus="' + item.id + '"'
+          + (done || current || locked ? ' disabled' : '') + '>开始推进</button></div></article>';
+      }).join('') + '</div>';
+  }
+
+  function techBody() {
+    const side = state.player;
+    const research = state.research?.[side] ?? { points: 0, levels: {} };
+    const rows = Object.entries(techInfo).map(([key, line]) => {
+      const level = research.levels?.[key] ?? 0;
+      const maxed = level >= line.max;
+      const cost = maxed ? 0 : line.costs[level];
+      const can = !maxed && research.points >= cost;
+      return '<article class="card defense-card"><header><h3>' + escape(line.name) + ' ' + (roman[level] ?? '')
+        + '</h3><span class="plan-status is-draft">' + (maxed ? '已满级' : '需要 ' + cost + ' 点') + '</span></header>'
+        + '<p class="subtext">' + escape(line.effect) + ' · 等级 ' + level + '/' + line.max + '</p>'
+        + '<div class="level-dots">' + Array.from({ length: line.max }, (_, index) =>
+          '<i' + (index < level ? ' class="on"' : '') + '></i>').join('') + '</div>'
+        + '<div class="unit-actions"><button type="button" data-tech="' + key + '"' + (can ? '' : ' disabled')
+        + '>研究 ' + (roman[Math.min(level + 1, line.max)] ?? '') + '</button></div></article>';
+    }).join('');
+    return '<p class="subtext">科研点 ' + format(research.points) + '，随控制城镇、稳定度与法令增长。</p>'
+      + '<div class="defense-cards">' + rows + '</div>';
+  }
+
+  function productionBody() {
+    const side = state.player;
+    const production = state.production?.[side] ?? { lines: {} };
+    const stock = state.stock?.[side] ?? {};
+    const labels = { infantry: '步兵装备', artillery: '火炮', armor: '装甲装备', air: '航空装备', naval: '运输船' };
+    return '<p class="subtext">工厂数按控制城镇价值折算。产线比例总和不超过 100，比例越高产出越多。</p>'
+      + '<form id="production-form" class="card"><div class="production-grid">'
+      + Object.entries(labels).map(([key, label]) => '<label>' + label + '<input type="number" min="0" max="100" name="'
+        + key + '" value="' + (production.lines?.[key] ?? 0) + '"></label>').join('')
+      + '</div><div class="unit-actions"><button class="gold" type="submit">保存分配</button></div></form>'
+      + '<table class="dialog-table"><thead><tr><th>储备</th><th>数量</th></tr></thead><tbody>'
+      + Object.entries(labels).filter(([key]) => key !== 'naval').map(([key, label]) =>
+        '<tr><td>' + label + '</td><td>' + format(stock[key] ?? 0) + '</td></tr>').join('')
+      + '<tr><td>运输船</td><td>' + format(state.navy?.[side]?.transports ?? 0) + '</td></tr>'
+      + '</tbody></table>';
+  }
+
+  function designForm() {
+    const draft = defenseDraft ?? {
+      name: '新编制', infantry: 8, artillery: 2, armor: 0, motorized: 0, antiAir: 0, antiTank: 0, support: {},
+    };
+    return '<form id="design-form" class="card"><h3>' + (draft.id ? '编辑「' + escape(draft.name) + '」' : '新建编制') + '</h3>'
+      + '<label class="field">名称<input name="name" maxlength="20" value="' + escape(draft.name) + '"></label>'
+      + '<div class="battalion-grid">' + Object.entries(battalionInfo).map(([key, label]) =>
+        '<label>' + label + '<input type="number" min="0" max="12" name="' + key + '" value="' + (draft[key] ?? 0) + '"></label>').join('')
+      + '</div><div class="support-grid">' + Object.entries(supportInfo2).map(([key, label]) =>
+        '<label class="event-row"><span>' + label + '</span><input type="checkbox" name="support-' + key + '"'
+        + (draft.support?.[key] ? ' checked' : '') + '></label>').join('')
+      + '</div><div class="dialog-actions"><button class="gold" type="submit">'
+      + (draft.id ? '保存修改' : '创建编制') + '</button>'
+      + (defenseDraft ? '<button type="button" data-design-cancel>取消编辑</button>' : '')
+      + '</div></form>';
+  }
+
+  function designBody(unitId) {
+    const side = state.player;
+    const designs = state.designs?.[side] ?? [];
+    const armies = Engine.activeUnits(state).filter((unit) => !unit.parent && unit.side === side);
+    const current = unitId ? state.units.find((unit) => unit.id === unitId) : null;
+    const cards = designs.map((design) => {
+      const stats = designStatsOf(state, side, design);
+      const assigned = armies.filter((army) => army.design === design.id).length;
+      return '<article class="card defense-card"><header><h3>' + escape(design.name) + '</h3>'
+        + '<span class="plan-status is-draft">' + assigned + ' 支在用</span></header>'
+        + '<p class="subtext">' + escape(designComposition(design)) + '</p>'
+        + '<p class="stat-line">' + statChips({
+          '攻': stats.attack, '防': stats.defense, '宽': stats.width,
+          '装': stats.armor, '穿': stats.piercing, '补': stats.supply,
+        }) + '</p><div class="unit-actions"><button type="button" data-design-edit="'
+        + escape(design.id) + '">载入编辑</button></div></article>';
+    }).join('');
+    return '<p class="subtext">营级编成派生战斗宽度、装甲、穿甲、速度与补给消耗；换编制要消耗军械。</p>'
+      + '<div class="defense-cards">' + cards + '</div>' + designForm()
+      + (armies.length ? '<div class="card"><h3>指派编制</h3><div class="form-grid">'
+        + '<label>部队<select id="design-unit">' + armies.map((army) =>
+          option(army.id, army.name + ' · ' + cityName(army.city), current?.id ?? armies[0].id)).join('') + '</select></label>'
+        + '<label>编制<select id="design-pick">' + designs.map((design) =>
+          option(design.id, design.name, designs[0]?.id)).join('') + '</select></label></div>'
+        + '<div class="unit-actions"><button type="button" data-design-assign>指派</button></div></div>' : '');
+  }
+
+  function airBody() {
+    const side = state.player;
+    const force = state.airWar?.[side] ?? {};
+    const bases = Data.cities.filter((city) => state.owners[city.id] === side
+      && (Number(city.value) || 0) >= 5).length;
+    return '<p class="subtext">机场来自价值 5 以上的城镇，共 ' + bases + ' 处。机队每日补充，也会因敌方制空而损失。</p>'
+      + '<div class="stat-line">' + statChips({
+        '机队': Math.round(force.planes ?? 0), '机场容量': 24 + bases * 18,
+        '空中支援': state.air?.[side] ?? 0, '累计损失': Math.round(force.losses ?? 0),
+      }) + '</div><div class="defense-cards">' + Object.entries(airMissionInfo).map(([id, mission]) =>
+        '<article class="card defense-card"><header><h3>' + escape(mission.name) + '</h3><span class="plan-status is-'
+        + (force.mission === id ? 'active' : 'draft') + '">' + (force.mission === id ? '执行中' : '待命')
+        + '</span></header><p class="subtext">' + escape(mission.hint) + ' 支援系数 ' + mission.support
+        + '，日损耗 ' + (mission.attrition * 100).toFixed(1) + '%。</p>'
+        + '<div class="unit-actions"><button type="button" data-air-mission="' + id + '"'
+        + (force.mission === id ? ' disabled' : '') + '>选择</button></div></article>').join('') + '</div>';
+  }
+
+  function navyBody() {
+    const side = state.player;
+    const navy = state.navy?.[side] ?? {};
+    return '<p class="subtext">渡海进攻需要运输船：每 1500 人占 1 艘。运输船由「生产」里的运输船产线产出，国策也能增加。</p>'
+      + '<div class="stat-line">' + statChips({
+        '运输船': Math.floor(navy.transports ?? 0), '军舰': Math.floor(navy.warships ?? 0),
+        '单次投送上限': format(Math.floor((navy.transports ?? 0) * 1500)) + ' 人',
+      }) + '</div><p class="subtext">用法：在海岸城镇集结部队，选中后右键隔海敌城。登陆会承受滩头惩罚并消耗运输船；运输船不足时命令会被拒绝。</p>';
+  }
+
+  function commandBody() {
+    const side = state.player;
+    const command = state.command?.[side] ?? { points: 0, cooldowns: {} };
+    const armies = Engine.activeUnits(state).filter((unit) => unit.side === side);
+    const enemyCities = Data.cities.filter((city) => state.owners[city.id] !== side);
+    return '<p class="subtext">指挥点每日增长；技能有冷却，对指定部队或城镇生效。</p>'
+      + '<div class="stat-line">' + statChips({ '指挥点': Math.round(command.points ?? 0) }) + '</div>'
+      + '<div class="defense-cards">' + Object.entries(commandInfo).map(([id, ability]) => {
+        const cooldown = command.cooldowns?.[id] ?? 0;
+        const target = id === 'barrage'
+          ? '<label class="field">目标城镇<select name="command-city">'
+            + enemyCities.slice(0, 80).map((city) => option(city.id, city.name, '')).join('') + '</select></label>'
+          : '<label class="field">目标部队<select name="command-unit">'
+            + armies.map((unit) => option(unit.id, unit.name + ' · ' + cityName(unit.city), '')).join('') + '</select></label>';
+        return '<article class="card defense-card"><header><h3>' + escape(ability.name) + '</h3>'
+          + '<span class="plan-status is-draft">' + (cooldown ? cooldown + ' 天后' : ability.cost + ' 点')
+          + '</span></header><p class="subtext">' + escape(ability.hint) + '</p>' + target
+          + '<div class="unit-actions"><button type="button" data-command="' + id + '"'
+          + (cooldown || command.points < ability.cost ? ' disabled' : '') + '>执行</button></div></article>';
+      }).join('') + '</div>';
+  }
+
+  function intelBody() {
+    const side = state.player;
+    const intel = state.intel?.[side] ?? { level: 35, points: 0 };
+    const laws = state.laws?.[side] ?? {};
+    const stability = Math.round(valueOf(state.stability, side, 60));
+    const occupied = Data.cities.filter((city) => state.owners[city.id] !== side
+      && state.coreOwners?.[city.id] === side).length;
+    const resistance = Object.values(state.occupation ?? {}).filter((record) => (record.resistance ?? 0) > 50).length;
+    return '<div class="stat-line">' + statChips({
+      '情报水平': Math.round(intel.level), '情报点': Math.round(intel.points),
+      '稳定度': stability, '我方沦陷城镇': occupied, '抵抗较高': resistance,
+    }) + '</div><div class="defense-cards">' + Object.entries(intelOpInfo).map(([id, op]) =>
+      '<article class="card defense-card"><header><h3>' + escape(op.name) + '</h3><span class="plan-status is-draft">'
+      + op.cost + ' 点</span></header><p class="subtext">' + escape(op.hint) + '</p>'
+      + '<div class="unit-actions"><button type="button" data-intel="' + id + '"'
+      + (intel.points < op.cost || intel.cooldowns?.[id] ? ' disabled' : '') + '>执行</button></div></article>').join('')
+      + '</div><div class="card"><h3>法令与稳定度</h3><div class="form-grid">'
+      + Object.entries({ conscription: '征兵法令', economy: '经济法令' }).map(([kind, label]) =>
+        '<label>' + label + '<select name="law-' + kind + '">'
+        + Object.keys(meta.lawFactors?.[kind] ?? {}).map((value) => option(value, lawText[value] ?? value, laws[kind])).join('')
+        + '</select></label>').join('')
+      + '</div><div class="unit-actions"><button type="button" data-law="conscription">更换征兵法令</button>'
+      + '<button type="button" data-law="economy">更换经济法令</button></div></div>'
+      + '<div class="card"><h3>外交</h3><div class="unit-actions">'
+      + Object.entries(diplomacyInfo).map(([id, op]) => '<button type="button" data-diplomacy="' + id + '"'
+        + (state.diplomacy?.[side]?.cooldowns?.[id] ? ' disabled' : '') + '>' + escape(op.name)
+        + '（' + op.cost + ' 点）</button>').join('')
+      + '</div><p class="subtext">停战需要双方战争支持都低于 45；停战后战局结束。</p></div>';
+  }
+
+  function defenseBody(tab, unitId) {
+    if (tab === 'tech') return techBody();
+    if (tab === 'production') return productionBody();
+    if (tab === 'design') return designBody(unitId);
+    if (tab === 'air') return airBody();
+    if (tab === 'navy') return navyBody();
+    if (tab === 'command') return commandBody();
+    if (tab === 'intel') return intelBody();
+    return focusBody();
+  }
+
+  function defensePanel(tab = 'focus', options = {}) {
+    const current = tab || 'focus';
+    const tabs = [['focus', '国策'], ['tech', '科研'], ['production', '生产'], ['design', '编制'],
+      ['air', '空军'], ['navy', '海军'], ['command', '指挥'], ['intel', '情报']];
+    const body = showDialog('国防与建设', '<div class="defense-tabs">' + tabs.map(([id, label]) =>
+      '<button type="button" data-defense-tab="' + id + '" aria-pressed="' + (current === id) + '">' + label + '</button>').join('')
+      + '</div><div id="defense-body">' + defenseBody(current, options.unitId) + '</div>');
+    const productionForm = body.querySelector('#production-form');
+    if (productionForm) {
+      productionForm.onsubmit = (event) => {
+        event.preventDefault();
+        const settings = new FormData(productionForm);
+        const lines = Object.fromEntries(['infantry', 'artillery', 'armor', 'air', 'naval']
+          .map((key) => [key, Number(settings.get(key)) || 0]));
+        if (action('setProduction', [lines])) {
+          saveAuto(true);
+          render();
+          notify('生产分配已保存。');
+          defensePanel('production');
+        }
+      };
+    }
+    const designFormEl = body.querySelector('#design-form');
+    if (designFormEl) {
+      designFormEl.onsubmit = (event) => {
+        event.preventDefault();
+        const settings = new FormData(designFormEl);
+        const config = { name: String(settings.get('name') || '新编制').trim(), support: {} };
+        for (const key of Object.keys(battalionInfo)) config[key] = Number(settings.get(key)) || 0;
+        for (const key of Object.keys(supportInfo2)) config.support[key] = Boolean(settings.get('support-' + key));
+        const ok = defenseDraft?.id
+          ? action('updateDesign', [defenseDraft.id, config])
+          : action('createDesign', [config]);
+        if (!ok) return;
+        defenseDraft = null;
+        saveAuto(true);
+        render();
+        notify('编制已保存。');
+        defensePanel('design');
+      };
+    }
+    return body;
+  }
+
   function politicsPanel() {
     const side = state.player;
     const politics = state.political?.[side] ?? { points: 0, cooldowns: {} };
@@ -1663,6 +1952,8 @@
     else if (d.gearUnit !== undefined) gear();
     else if (d.forts) fortsPanel(d.forts);
     else if (d.formation) formationPanel(d.formation);
+    else if (d.defenseDesign) defensePanel('design', { unitId: d.defenseDesign });
+    else if (d.defenseCommand !== undefined) defensePanel('command');
     else if (d.stageReport !== undefined) stageReport();
     else if (d.clearGroup !== undefined) { rosterGroup = ''; renderInspector(); }
   };
@@ -1760,6 +2051,71 @@
       }
     }
     else if (d.politicsClose !== undefined) dialog.close();
+    else if (d.defenseTab) defensePanel(d.defenseTab);
+    else if (d.focus) {
+      if (action('startFocus', [d.focus])) { saveAuto(true); render(); defensePanel('focus'); }
+    }
+    else if (d.tech) {
+      if (action('researchTech', [d.tech])) { saveAuto(true); render(); defensePanel('tech'); }
+    }
+    else if (d.airMission) {
+      if (action('setAirMission', [d.airMission])) { saveAuto(true); render(); defensePanel('air'); }
+    }
+    else if (d.designEdit) {
+      const design = (state.designs?.[state.player] ?? []).find((item) => item.id === d.designEdit);
+      if (design) {
+        defenseDraft = { ...design, support: { ...(design.support ?? {}) } };
+        defensePanel('design');
+      }
+    }
+    else if (d.designCancel !== undefined) { defenseDraft = null; defensePanel('design'); }
+    else if (d.designAssign !== undefined) {
+      const unitId = $('design-unit')?.value;
+      const designId = $('design-pick')?.value;
+      if (unitId && designId && action('assignDesign', [unitId, designId])) {
+        saveAuto(true);
+        render();
+        notify('编制已指派。');
+        defensePanel('design', { unitId });
+      }
+    }
+    else if (d.command) {
+      const card = event.target.closest('.defense-card');
+      const unitId = card?.querySelector('select[name=command-unit]')?.value;
+      const city = card?.querySelector('select[name=command-city]')?.value;
+      if (action('commandAbility', [d.command, { unitId, city }])) {
+        saveAuto(true);
+        render();
+        notify('指挥技能已下达。');
+        defensePanel('command');
+      }
+    }
+    else if (d.intel) {
+      if (action('intelOperation', [d.intel])) {
+        saveAuto(true);
+        render();
+        notify('情报行动已完成。');
+        defensePanel('intel');
+      }
+    }
+    else if (d.law) {
+      const value = document.querySelector('select[name=law-' + d.law + ']')?.value;
+      if (value && action('setLaw', [d.law, value])) {
+        saveAuto(true);
+        render();
+        notify('法令已更新。');
+        defensePanel('intel');
+      }
+    }
+    else if (d.diplomacy) {
+      if (action('diplomacyAction', [d.diplomacy])) {
+        saveAuto(true);
+        render();
+        notify(d.diplomacy === 'ceasefire' ? '双方接受调停，战争结束。'
+          : (diplomacyInfo[d.diplomacy]?.name ?? '外交行动') + '已完成。');
+        defensePanel('intel');
+      }
+    }
     else if (d.groupRoster || d.groupControl) {
       const group = groupsById.get(d.groupRoster || d.groupControl);
       if (!group) return;
@@ -1796,6 +2152,7 @@
   $('plans').onclick = plansPanel;
   $('supply').onclick = logisticsPanel;
   $('politics').onclick = politicsPanel;
+  $('defense').onclick = () => defensePanel('focus');
   $('gear').onclick = gear;
   $('history-mode').onclick = historicalEvents;
   $('help').onclick = guide;
@@ -1891,3 +2248,5 @@
   });
   setActive(initial, restored?.timeline || Timeline.create(initial, Engine), false);
 })();
+
+

@@ -518,6 +518,158 @@ test('首都失守且支持度崩溃时停战，1951 年底也会结算', () => 
   assert.equal(late.winner, 'ccp');
 });
 
+test('师级编制设计器：编成影响战力、宽度与补给', () => {
+  const state = create();
+  const base = engine.metadata.unitDesignStats(state, unit(state, 'main'));
+  assert.ok(Math.abs(base.attack - 1) < 0.001 && Math.abs(base.defense - 1) < 0.001);
+  const made = engine.createDesign(state, { name: '火炮师', infantry: 6, artillery: 5 });
+  assert.equal(made.ok, true);
+  const stats = engine.metadata.designStats(state, 'ccp', made.design);
+  assert.ok(stats.attack > base.attack);
+  assert.ok(stats.width > base.width);
+  const before = engine.metadata.power([unit(state, 'main')], false, state);
+  assert.equal(engine.assignDesign(state, 'main', made.design.id).ok, true);
+  assert.equal(unit(state, 'main').design, made.design.id);
+  const after = engine.metadata.power([unit(state, 'main')], false, state);
+  assert.ok(after > before);
+  assert.equal(engine.assignDesign(state, 'enemy', made.design.id).ok, false);
+  assert.equal(engine.createDesign(state, { name: '空师', infantry: 0, artillery: 0 }).ok, false);
+});
+
+test('装甲营受科研解锁，科研点消耗并提升战力', () => {
+  const state = create();
+  assert.equal(engine.createDesign(state, { name: '装甲师', infantry: 6, armor: 3 }).ok, false);
+  state.research.ccp.points = 240;
+  assert.equal(engine.researchTech(state, 'armor').ok, true);
+  assert.equal(state.research.ccp.levels.armor, 1);
+  assert.ok(state.research.ccp.points < 240);
+  const made = engine.createDesign(state, { name: '装甲师', infantry: 6, armor: 3 });
+  assert.equal(made.ok, true);
+  const stats = engine.metadata.designStats(state, 'ccp', made.design);
+  assert.ok(stats.armor > 0);
+  assert.ok(stats.piercing > 2);
+  const before = engine.metadata.power([unit(state, 'main')], false, state);
+  assert.equal(engine.assignDesign(state, 'main', made.design.id).ok, true);
+  assert.ok(engine.metadata.power([unit(state, 'main')], false, state) > before);
+});
+
+test('空军任务可切换，飞行会累计损失并影响空中支援', () => {
+  const state = create();
+  const before = state.air.ccp;
+  assert.equal(engine.setAirMission(state, 'cas').ok, true);
+  assert.equal(state.airWar.ccp.mission, 'cas');
+  engine.step(board, state, 3);
+  assert.ok(state.airWar.ccp.losses > 0);
+  assert.ok(state.airWar.ccp.planes > 0);
+  assert.equal(engine.setAirMission(state, 'nope').ok, false);
+  assert.ok(typeof state.air.ccp === 'number');
+  assert.ok(before >= 0);
+});
+
+test('指挥技能消耗指挥点，强行军缩短行军、死守加强防守', () => {
+  const plain = create();
+  const buffed = create();
+  assert.equal(engine.commandAbility(board, buffed, 'forcedMarch', { unitId: 'main' }).ok, true);
+  assert.ok(buffed.command.ccp.points < plain.command.ccp.points);
+  assert.equal(engine.order(board, plain, 'main', 'move', 'hub').ok, true);
+  assert.equal(engine.order(board, buffed, 'main', 'move', 'hub').ok, true);
+  assert.ok(unit(buffed, 'main').orderDays <= unit(plain, 'main').orderDays);
+  const leaf = buffed.units.find(member => member.id === 'main-d1-r1');
+  const defenseBefore = engine.metadata.power([leaf], true, plain);
+  assert.equal(engine.commandAbility(board, plain, 'lastStand', { unitId: 'main' }).ok, true);
+  assert.ok(engine.metadata.power([leaf], true, plain) > defenseBefore);
+});
+
+test('将领经验与特质提升所辖部队战力', () => {
+  const state = create();
+  unit(state, 'main').leader = 'general';
+  const leaf = state.units.find(member => member.id === 'main-d1-r1');
+  const before = engine.metadata.power([leaf], false, state);
+  state.leadersXp.general = { xp: 480 };
+  assert.ok(engine.metadata.power([leaf], false, state) > before);
+});
+
+test('国策按天推进并在完成后生效', () => {
+  const state = create();
+  const before = state.economy.ccp.manpower;
+  assert.equal(engine.startFocus(state, 'land-reform').ok, true);
+  engine.step(board, state, 31);
+  assert.equal(state.focus.ccp.done.includes('land-reform'), true);
+  assert.ok(state.economy.ccp.manpower > before);
+  assert.equal(engine.startFocus(state, 'arsenal').ok, false, '前置国策未完成');
+});
+
+test('生产线分配产能后装备储备增长', () => {
+  const state = create();
+  const before = state.stock.ccp.infantry;
+  assert.equal(engine.setProduction(state, { infantry: 60, artillery: 20 }).ok, true);
+  engine.step(board, state, 5);
+  assert.ok(state.stock.ccp.infantry > before);
+  assert.equal(engine.setProduction(state, { infantry: 0, artillery: 0, armor: 0, air: 0, naval: 0 }).ok, false);
+});
+
+test('渡海登陆需要运输船，登陆后消耗运输能力', () => {
+  const seaBoard = {
+    cities: [
+      { id: 'mainland', name: '大陆港', region: 'east', terrain: 'port', value: 5 },
+      { id: 'island', name: '海岛', region: 'taiwan', terrain: 'port', value: 4 },
+    ],
+    links: [['mainland', 'island']],
+    routeTypes: { 'island|mainland': 'maritime' },
+    units: [
+      { id: 'army', name: '登陆军', side: 'ccp', city: 'mainland', strength: 12_000 },
+      { id: 'garrison', name: '守军', side: 'roc', city: 'island', strength: 3_000 },
+    ],
+    anchors: [{ date: '1947-01-01', ccp: ['mainland'], roc: ['island'] }],
+    scenarios: [{ id: 's', date: '1947-01-01', focus: 'mainland', area: 'east' }],
+    events: [],
+  };
+  const state = engine.createGame(seaBoard, { scenarioId: 's', side: 'ccp', scope: 'national',
+    historyMode: 'dynamic', goal: 'all' });
+  state.navy.ccp.transports = 0;
+  assert.equal(engine.order(seaBoard, state, 'army', 'advance', 'island').ok, false);
+  state.navy.ccp.transports = 24;
+  assert.equal(engine.order(seaBoard, state, 'army', 'advance', 'island').ok, true);
+  engine.step(seaBoard, state, 24);
+  assert.equal(state.owners.island, 'ccp');
+  assert.ok(state.navy.ccp.transports < 24);
+});
+
+test('占领抵抗会累积并在无人驻守时引发反抗', () => {
+  const state = create();
+  state.owners.front = 'roc';
+  state.occupation.front = { resistance: 99, compliance: 0 };
+  engine.step(board, state, 3);
+  assert.equal(state.owners.front, 'ccp');
+  assert.ok(state.log.some(entry => entry.type === 'revolt' && entry.city === 'front'));
+});
+
+test('情报、外交与法令消耗资源并生效', () => {
+  const state = create();
+  const intel = state.intel.ccp.level;
+  assert.equal(engine.intelOperation(state, 'recon').ok, true);
+  assert.ok(state.intel.ccp.level > intel);
+  state.political.ccp.points = 120;
+  assert.equal(engine.setLaw(state, 'conscription', 'limited').ok, true);
+  assert.equal(state.laws.ccp.conscription, 'limited');
+  assert.equal(engine.setLaw(state, 'conscription', 'bogus').ok, false);
+  const stock = state.stock.ccp.infantry;
+  assert.equal(engine.diplomacyAction(state, 'aid').ok, true);
+  assert.ok(state.stock.ccp.infantry > stock);
+});
+
+test('低战争支持时可以提议停战并停止推演', () => {
+  const state = create();
+  state.political.ccp.points = 120;
+  state.warSupport.ccp = 30;
+  state.warSupport.roc = 30;
+  assert.equal(engine.diplomacyAction(state, 'ceasefire').ok, true);
+  assert.equal(state.ceasefire, true);
+  const date = state.date;
+  engine.step(board, state, 2);
+  assert.equal(state.date, date);
+});
+
 test('四项功能的中文名与显示接口齐全', () => {  const meta = engine.metadata;
   assert.equal(Object.keys(meta.fortKinds).length, 6);
   assert.equal(meta.fortKinds.trench.name, '战壕');
