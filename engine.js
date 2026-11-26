@@ -1611,10 +1611,8 @@
         let target;
         let best = -Infinity;
         // 边境越空虚，出击门槛越高：先稳住战线，再考虑扩张。
-        const cautionFront = 1 + (pressure[army.side] ?? 0) * 0.6;
-        // 主要边境城镇大多空虚时停止扩张，先让部队回去驻防。
-        const overstretched = (pressure[army.side] ?? 0) > 0.65;
-        if (averageOrg >= 55 && !overstretched) {
+        const cautionFront = 1 + (pressure[army.side] ?? 0) * 0.8;
+        if (averageOrg >= 55) {
           for (const neighbor of targets) {
             const node = map.cities.get(neighbor);
             const garrison = garrisons.get(neighbor) ?? [];

@@ -252,6 +252,276 @@
   }
   const links = Object.keys(routeTypes).map(pair => pair.split('|'));
 
+  // 补充县级城镇：铁路干线之外也铺满节点。每座新城接入最近的两座城镇（陆路），
+  // 其中交通枢纽另加一条铁路支线，避免“不在铁路边就没有城市”。
+  const railIds = new Set(railCorridors.flatMap(path => path.split(' ')));
+  const extraCities = [
+    // 东北
+    ['shuangcheng','双城',126.31,45.38,'northeast','plain',2],
+    ['acheng','阿城',126.98,45.54,'northeast','plain',2],
+    ['yilan-hl','依兰',129.58,46.32,'northeast','plain',1],
+    ['fangzheng','方正',128.83,45.85,'northeast','plain',1],
+    ['ningan','宁安',129.47,44.34,'northeast','plain',2],
+    ['suifenhe','绥芬河',131.16,44.41,'northeast','mountain',2],
+    ['tumen','图们',129.84,42.97,'northeast','plain',2],
+    ['jiaohe','蛟河',127.34,43.72,'northeast','mountain',1],
+    ['huadian','桦甸',126.75,42.97,'northeast','mountain',1],
+    ['panshi','磐石',126.06,42.95,'northeast','mountain',1],
+    ['liuhe','柳河',125.74,42.28,'northeast','mountain',1],
+    ['qingyuan','清原',124.92,42.10,'northeast','mountain',1],
+    ['xinbin','新宾',125.04,41.73,'northeast','mountain',1],
+    ['huanren','桓仁',125.36,41.27,'northeast','mountain',1],
+    ['kuandian','宽甸',124.78,40.73,'northeast','mountain',1],
+    ['fengcheng','凤城',124.07,40.45,'northeast','mountain',2],
+    ['xiuyan','岫岩',123.28,40.29,'northeast','mountain',1],
+    ['gaizhou','盖州',122.35,40.40,'northeast','plain',2],
+    ['taean','台安',122.43,41.39,'northeast','plain',1],
+    ['liaozhong','辽中',122.73,41.51,'northeast','plain',1],
+    ['kangping','康平',123.35,42.74,'northeast','plain',1],
+    ['xifeng','西丰',124.72,42.74,'northeast','plain',1],
+    ['lishu','梨树',124.33,43.31,'northeast','plain',2],
+    ['shuangliao','双辽',123.50,43.52,'northeast','plain',1],
+    ['qianguo','前郭',124.82,45.12,'northeast','plain',1],
+    ['yushu','榆树',126.53,44.84,'northeast','plain',2],
+    ['wuchang','五常',127.15,44.93,'northeast','plain',2],
+    ['shulan','舒兰',126.95,44.41,'northeast','plain',1],
+    ['jiutai','九台',125.84,44.15,'northeast','plain',1],
+    ['nongan','农安',125.18,44.43,'northeast','plain',1],
+    ['changling','长岭',123.97,44.28,'northeast','plain',1],
+    ['tongyu','通榆',123.09,44.81,'northeast','plain',1],
+    ['keshiketeng','经棚（克什克腾）',117.55,43.26,'northeast','plain',1],
+    // 华北
+    ['tongzhou','通州',116.66,39.91,'north','plain',2],
+    ['liangxiang','良乡',116.14,39.73,'north','plain',1],
+    ['zhuoxian','涿县',115.97,39.49,'north','plain',2],
+    ['guan','固安',116.30,39.44,'north','plain',1],
+    ['yongqing','永清',116.50,39.32,'north','plain',1],
+    ['baxian','霸县',116.40,39.12,'north','plain',1],
+    ['renqiu','任丘',116.10,38.71,'north','plain',1],
+    ['hejian','河间',116.10,38.44,'north','plain',1],
+    ['xianxian','献县',116.13,38.19,'north','plain',1],
+    ['cangxian','沧县',116.87,38.31,'north','plain',2],
+    ['qingxian','青县',116.83,38.58,'north','plain',1],
+    ['jinghai','静海',116.93,38.95,'north','plain',1],
+    ['wuqing','武清',117.06,39.38,'north','plain',2],
+    ['baodi','宝坻',117.31,39.72,'north','plain',1],
+    ['jixian','蓟县',117.41,40.05,'north','mountain',1],
+    ['zunhua','遵化',117.96,40.19,'north','mountain',1],
+    ['qianan','迁安',118.70,40.01,'north','plain',1],
+    ['luanxian','滦县',118.70,39.75,'north','plain',1],
+    ['laoting','乐亭',118.90,39.43,'north','plain',1],
+    ['funing','抚宁',119.24,39.88,'north','plain',1],
+    ['jining','集宁',113.10,41.03,'north','plain',2],
+    ['fengzhen','丰镇',113.16,40.44,'north','plain',1],
+    ['liangcheng','凉城',112.50,40.53,'north','plain',1],
+    ['wuchuan','武川',111.46,41.10,'north','plain',1],
+    ['xinghe','兴和',113.83,40.87,'north','plain',1],
+    ['sarqi','萨拉齐',110.65,40.55,'north','plain',1],
+    // 山东
+    ['pingyuan','平原',116.43,37.16,'east','plain',1],
+    ['yucheng','禹城',116.64,36.93,'east','plain',1],
+    ['taian','泰安',117.09,36.19,'east','mountain',2],
+    ['feicheng','肥城',116.77,36.25,'east','plain',1],
+    ['yanzhou','兖州',116.83,35.55,'east','plain',2],
+    ['qufu','曲阜',116.99,35.58,'east','plain',1],
+    ['zoucheng','邹县',116.97,35.40,'east','plain',1],
+    ['tengxian','滕县',117.15,35.09,'east','plain',2],
+    ['yixian-sd','峄县',117.57,34.78,'east','plain',1],
+    ['tancheng','郯城',118.35,34.61,'east','plain',1],
+    ['mengyin','蒙阴',117.94,35.71,'east','mountain',1],
+    ['yishui','沂水',118.63,35.79,'east','mountain',1],
+    ['juxian','莒县',118.84,35.58,'east','plain',1],
+    ['zhucheng','诸城',119.41,35.99,'east','plain',1],
+    ['gaomi','高密',119.76,36.38,'east','plain',2],
+    ['jiaoxian','胶县',120.03,36.27,'east','plain',2],
+    ['jimo','即墨',120.45,36.39,'east','plain',1],
+    ['penglai','蓬莱',120.76,37.81,'east','port',1],
+    ['yexian','掖县',119.94,37.18,'east','plain',1],
+    ['pingdu','平度',119.96,36.79,'east','plain',1],
+    ['yidu','益都',118.48,36.70,'east','plain',2],
+    ['guangrao','广饶',118.40,37.05,'east','plain',1],
+    ['huimin','惠民',117.51,37.49,'east','plain',1],
+    // 华中
+    ['chaoxian','巢县',117.87,31.60,'east','plain',1],
+    ['wuwei-ah','无为',117.91,31.30,'east','plain',1],
+    ['lujiang','庐江',117.29,31.25,'east','plain',1],
+    ['tongcheng','桐城',116.95,31.05,'east','plain',1],
+    ['anqing','安庆',117.05,30.53,'east','port',2],
+    ['qianshan','潜山',116.58,30.63,'east','mountain',1],
+    ['liuan','六安',116.51,31.75,'east','plain',2],
+    ['huoshan','霍山',116.33,31.39,'east','mountain',1],
+    ['shouxian','寿县',116.78,32.58,'east','plain',1],
+    ['fengtai','凤台',116.72,32.71,'east','plain',1],
+    ['fuyang','阜阳',115.81,32.89,'east','plain',2],
+    ['bozhou','亳州',115.78,33.87,'east','plain',2],
+    ['guoyang','涡阳',116.22,33.51,'east','plain',1],
+    ['mengcheng','蒙城',116.56,33.26,'east','plain',1],
+    // 中原与中南
+    ['huangpi','黄陂',114.37,30.88,'central','plain',1],
+    ['xiaogan','孝感',113.92,30.92,'central','plain',2],
+    ['yingcheng','应城',113.58,30.93,'central','plain',1],
+    ['anlu','安陆',113.69,31.26,'central','plain',1],
+    ['suixian','随县',113.38,31.69,'central','plain',1],
+    ['zaoyang','枣阳',112.77,32.13,'central','plain',1],
+    ['yicheng','宜城',112.26,31.72,'central','plain',1],
+    ['gucheng','谷城',111.65,32.26,'central','plain',1],
+    ['laohekou','老河口',111.67,32.39,'central','plain',1],
+    ['jingmen','荆门',112.20,31.04,'central','plain',1],
+    ['dangyang','当阳',111.79,30.82,'central','plain',1],
+    ['jingzhou','荆州',112.24,30.33,'central','port',2],
+    ['gongan','公安',112.23,30.06,'central','plain',1],
+    ['jianli','监利',112.90,29.82,'central','plain',1],
+    ['jiayu','嘉鱼',113.94,29.97,'central','plain',1],
+    ['puqi','蒲圻（赤壁）',113.90,29.72,'central','plain',1],
+    ['xianning','咸宁',114.33,29.85,'central','plain',1],
+    ['yangxin','阳新',115.21,29.84,'central','mountain',1],
+    ['macheng','麻城',115.03,31.18,'central','mountain',1],
+    ['huanggang','黄冈',114.90,30.45,'central','plain',1],
+    // 华南
+    ['xiangtan','湘潭',112.94,27.85,'south','plain',2],
+    ['xiangxiang','湘乡',112.53,27.73,'south','plain',1],
+    ['ningxiang','宁乡',112.55,28.25,'south','plain',1],
+    ['liuyang','浏阳',113.64,28.14,'south','plain',1],
+    ['liling','醴陵',113.50,27.65,'south','plain',1],
+    ['youxian','攸县',113.35,27.00,'south','plain',1],
+    ['hengshan','衡山',112.87,27.23,'south','plain',1],
+    ['leiyang','耒阳',112.86,26.42,'south','plain',1],
+    ['qiyang','祁阳',111.84,26.58,'south','plain',1],
+    ['lingling','零陵（永州）',111.61,26.42,'south','plain',2],
+    ['daoxian','道县',111.60,25.53,'south','mountain',1],
+    ['chenxian','郴县',113.01,25.77,'south','plain',2],
+    ['yizhang','宜章',112.95,25.40,'south','mountain',1],
+    ['xinhua','新化',111.30,27.73,'south','mountain',1],
+    ['longhui','隆回',111.03,27.11,'south','mountain',1],
+    ['wugang','武冈',110.63,26.73,'south','mountain',1],
+    ['zhijiang','芷江',109.68,27.44,'south','mountain',1],
+    ['yuanling','沅陵',110.39,28.46,'south','mountain',1],
+    // 西南
+    ['bishan','璧山',106.23,29.59,'southwest','plain',1],
+    ['tongliang','铜梁',106.05,29.85,'southwest','plain',1],
+    ['hechuan','合川',106.27,29.97,'southwest','plain',2],
+    ['jiangjin','江津',106.25,29.29,'southwest','plain',1],
+    ['yongchuan','永川',105.93,29.36,'southwest','plain',1],
+    ['qijiang','綦江',106.65,29.03,'southwest','mountain',1],
+    ['fuling','涪陵',107.39,29.70,'southwest','port',2],
+    ['fengdu','丰都',107.73,29.86,'southwest','port',1],
+    ['zhongxian','忠县',108.04,30.30,'southwest','port',1],
+    ['kaixian','开县',108.39,31.16,'southwest','plain',1],
+    ['yunyang','云阳',108.70,30.93,'southwest','port',1],
+    ['fengjie','奉节',109.46,31.02,'southwest','port',1],
+    ['daxian','达县',107.50,31.21,'southwest','plain',2],
+    ['bazhong','巴中',106.75,31.87,'southwest','mountain',1],
+    ['jiange','剑阁',105.52,32.29,'southwest','mountain',1],
+    ['langzhong','阆中',106.00,31.58,'southwest','plain',1],
+    ['nanchong','南充',106.11,30.84,'southwest','plain',2],
+    ['suining','遂宁',105.59,30.53,'southwest','plain',1],
+    ['shehong','射洪',105.39,30.87,'southwest','plain',1],
+    ['santai','三台',105.09,31.10,'southwest','plain',1],
+    ['jiangyou','江油',104.75,31.78,'southwest','mountain',1],
+    ['maoxian','茂县',103.85,31.68,'southwest','mountain',1],
+    // 西北
+    ['xianyang','咸阳',108.71,34.33,'northwest','plain',2],
+    ['wugong','武功',108.20,34.26,'northwest','plain',1],
+    ['qianxian','乾县',108.24,34.53,'northwest','plain',1],
+    ['jingyang','泾阳',108.84,34.53,'northwest','plain',1],
+    ['sanyuan','三原',108.94,34.61,'northwest','plain',1],
+    ['lintong','临潼',109.21,34.37,'northwest','plain',1],
+    ['lantian','蓝田',109.32,34.15,'northwest','mountain',1],
+    ['weinan','渭南',109.50,34.50,'northwest','plain',2],
+    ['huayin','华阴',110.09,34.57,'northwest','plain',1],
+    ['tongguan','潼关',110.25,34.54,'northwest','plain',2],
+    ['dali-sn','大荔',109.94,34.80,'northwest','plain',1],
+    ['hancheng','韩城',110.45,35.48,'northwest','plain',1],
+    ['fuping','富平',109.18,34.75,'northwest','plain',1],
+    ['tongchuan','同官（铜川）',109.09,35.09,'northwest','mountain',1],
+    ['fuxian','鄜县（富县）',109.38,35.99,'northwest','plain',1],
+    ['ganquan','甘泉',109.35,36.28,'northwest','mountain',1],
+    ['qingjian','清涧',110.12,37.09,'northwest','mountain',1],
+    ['mizhi','米脂',110.18,37.76,'northwest','plain',1],
+    ['shenmu','神木',110.50,38.84,'northwest','plain',1],
+    ['jingbian','靖边',108.79,37.60,'northwest','plain',1],
+    ['dingbian','定边',107.60,37.59,'northwest','plain',1],
+    ['yanchi','盐池',107.41,37.78,'northwest','plain',1],
+    ['qingyang','庆阳',107.64,36.03,'northwest','plain',1],
+    ['xunyi','旬邑',108.33,35.11,'northwest','plain',1],
+    ['binxian','邠县（彬县）',108.09,35.04,'northwest','plain',1],
+    ['changwu','长武',107.80,35.21,'northwest','plain',1],
+    ['longxian','陇县',106.86,34.90,'northwest','mountain',1],
+    ['fengxiang','凤翔',107.39,34.52,'northwest','plain',1],
+    ['meixian','眉县',107.75,34.27,'northwest','plain',1],
+    ['fengxian','凤县',106.52,33.91,'northwest','mountain',1],
+    ['liuba','留坝',106.92,33.62,'northwest','mountain',1],
+    ['chenggu','城固',107.33,33.15,'northwest','plain',1],
+    ['yangxian','洋县',107.55,33.22,'northwest','plain',1],
+    ['ankang','安康',109.03,32.69,'northwest','port',2],
+    ['hanyin','汉阴',108.51,32.89,'northwest','plain',1],
+    ['shiquan','石泉',108.25,33.04,'northwest','mountain',1],
+    ['ziyang','紫阳',108.54,32.52,'northwest','mountain',1],
+    ['xunyang','旬阳',109.37,32.83,'northwest','mountain',1],
+    // 甘宁绥
+    ['yuzhong','榆中',104.11,35.85,'northwest','plain',1],
+    ['dingxi','定西',104.63,35.58,'northwest','plain',1],
+    ['longxi','陇西',104.63,35.00,'northwest','plain',1],
+    ['gangu','甘谷',105.33,34.73,'northwest','plain',1],
+    ['qinan','秦安',105.67,34.86,'northwest','plain',1],
+    ['qingshui','清水',106.14,34.75,'northwest','plain',1],
+    ['pingliang','平凉',106.68,35.54,'northwest','plain',2],
+    ['jingchuan','泾川',107.37,35.33,'northwest','plain',1],
+    ['jingning','静宁',105.73,35.52,'northwest','plain',1],
+    ['guyuan','固原',106.24,36.00,'northwest','plain',2],
+    ['haiyuan','海原',105.65,36.56,'northwest','plain',1],
+    ['tongxin','同心',105.91,36.98,'northwest','plain',1],
+    ['zhongning','中宁',105.68,37.49,'northwest','plain',1],
+    ['zhongwei','中卫',105.19,37.51,'northwest','plain',1],
+    ['wuzhong','吴忠',106.20,37.99,'northwest','plain',1],
+    ['wuyuan','五原',108.27,41.10,'north','plain',1],
+    ['linhe','临河',107.39,40.75,'north','plain',1],
+    ['tuoketuo','托克托',111.19,40.28,'north','plain',1],
+    // 台湾
+    ['hsinchu','新竹',120.97,24.80,'taiwan','plain',3],
+    ['miaoli','苗栗',120.82,24.56,'taiwan','mountain',1],
+    ['changhua','彰化',120.54,24.08,'taiwan','plain',2],
+    ['chiayi','嘉义',120.45,23.48,'taiwan','plain',2],
+    ['pingtung','屏东',120.49,22.67,'taiwan','plain',1],
+    ['yilan','宜兰',121.75,24.75,'taiwan','plain',1],
+  ];
+  const railTowns = new Set([
+    'shuangcheng','acheng','ningan','suifenhe','jiaohe','panshi','lishu','shuangliao','yushu','wuchang',
+    'jiutai','nongan','tongzhou','liangxiang','zhuoxian','cangxian','jinghai','wuqing','taian','yanzhou',
+    'tengxian','gaomi','jiaoxian','yidu','xiaogan','xiangtan','xiangxiang','liling','hengshan','lingling',
+    'chenxian','jiangjin','yongchuan','fuling','nanchong','xianyang','weinan','huayin','tongguan','dali-sn',
+    'fuping','tongchuan','fuxian','mizhi','guyuan','zhongning','zhongwei','wuzhong','linhe','hsinchu',
+    'changhua','chiayi',
+  ]);
+  const distance = (a, b) => Math.hypot(a.lon - b.lon, (a.lat - b.lat) * 1.25);
+  const linkKey = (a, b) => [a, b].sort().join('|');
+  const addLink = (a, b, type) => {
+    const key = linkKey(a, b);
+    if (a === b || routeTypes[key]) return;
+    routeTypes[key] = type;
+    links.push([a, b]);
+  };
+  for (const [id, name, lon, lat, region, terrain, value] of extraCities) {
+    cities.push({ id, name, lon, lat, region, terrain, value });
+  }
+  for (const [id] of extraCities) {
+    const city = cities.find(item => item.id === id);
+    const others = cities.filter(item => item.id !== id);
+    const nearest = others
+      .map(other => ({ other, gap: distance(city, other) }))
+      .sort((a, b) => a.gap - b.gap)
+      .slice(0, 2);
+    for (const { other } of nearest) addLink(id, other.id, 'land');
+    if (railTowns.has(id)) {
+      const rail = others
+        .filter(other => railIds.has(other.id) || railTowns.has(other.id))
+        .map(other => ({ other, gap: distance(city, other) }))
+        .sort((a, b) => a.gap - b.gap)[0];
+      if (rail && rail.gap < 1.6) addLink(id, rail.other.id, 'rail');
+    }
+  }
+
+
   const sourcesById = {
     y1945: ['《中国共产党大事记·1945年》','https://cpc.people.com.cn/GB/64162/64164/4416000.html'],
     y1946: ['《中国共产党大事记·1946年》','https://cpc.people.com.cn/GB/64162/64164/4416003.html'],
@@ -684,6 +954,32 @@
   for (const event of events) {
     if (event.city && event.side) addControl(event.date,event.side,event.city);
   }
+  // 新城按同一日期最近的原生城镇继承归属，随战线推移而改变，避免所有新节点默认落到一方。
+  {
+    const extraIds = new Set(extraCities.map(([id]) => id));
+    const cityById = new Map(cities.map(city => [city.id, city]));
+    const cumulative = new Map();
+    const dates = [...ownershipByDate.keys()].sort();
+    for (const date of dates) {
+      const owners = ownershipByDate.get(date);
+      for (const [id, side] of owners) if (!extraIds.has(id)) cumulative.set(id, side);
+      const known = [...cumulative].filter(([id]) => !extraIds.has(id));
+      for (const id of extraIds) {
+        const city = cityById.get(id);
+        let best = null;
+        let bestGap = Infinity;
+        for (const [otherId] of known) {
+          const other = cityById.get(otherId);
+          if (!other) continue;
+          const gap = (other.lon - city.lon) ** 2 + ((other.lat - city.lat) * 1.25) ** 2;
+          if (gap < bestGap) { bestGap = gap; best = otherId; }
+        }
+        const side = best ? cumulative.get(best) : 'roc';
+        owners.set(id, side);
+        cumulative.set(id, side);
+      }
+    }
+  }
   const anchors = [...ownershipByDate].sort(([a],[b]) => a.localeCompare(b)).map(([date,owners]) => ({
     date,
     ccp:[...owners].filter(([,side]) => side === 'ccp').map(([city]) => city),
@@ -709,6 +1005,7 @@
     '阶段性控制在城市节点上简化了城乡、驻军与民政差异。大连、旅顺在苏军军管期间各有民政机构，1950年12月另设旅大市。',
     '桂系、鲁系、川系、东北军为地方军事谱系标签，游戏中的部队归属仍遵循两方编制与场景。',
     '弹药、油料、医疗物资、工事等级、部队支援编制、士气与老兵经验为游戏参数。铁路补给按「后方库存—铁路线—车站—前线」的简化模型计算，地图上的运输瓶颈表示运量紧张，并不等于史料中的实际运量。',
+    '补充的县级城镇采用当时的县名或并列今名，坐标与连线为游戏示意；每座新城按同一日期最近的历史城镇继承归属，因此战线附近的归属会随后续节点变化，而不代表逐村逐镇的精确控制。',
     '剧本中的物资系数与空中支援用于表达各战役的补给条件差异，不表示真实库存或出动架次。工事名称与规模参照当时的野战筑城做法，具体数值服务于玩法。',
     '金门和澎湖计入离岛目标。大陆胜利以全部大陆和海南可玩节点结算。',
   ];
@@ -802,3 +1099,4 @@
     {title:'津浦铁路固镇老站',url:guzhenRail});
   globalThis.CivilWarData = {cities,links,routeTypes,battleLayers,historyCheckpoints,leaders,units,scenarios,events,anchors,sources,groups,capitals,land,notes};
 })();
+
