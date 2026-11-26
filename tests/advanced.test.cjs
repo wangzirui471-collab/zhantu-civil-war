@@ -190,11 +190,12 @@ test('师团支援编制可调整，并影响战力与伤亡', () => {
 test('战报记录伤亡、伤员、俘虏与缴获，并累计士气与老兵经验', () => {
   const state = create();
   assert.equal(engine.order(board, state, 'main', 'advance', 'flank').ok, true);
-  engine.step(board, state, 10);
+  engine.step(board, state, 20);
   const ended = state.log.find(entry => entry.type === 'battle-end' && entry.city === 'flank');
   assert.ok(ended, '应产生战斗结束记录');
   const record = ended.aftermath;
   assert.equal(record.result, 'capture');
+  assert.ok(record.days >= 2, '战役应持续多日');
   assert.ok(record.attackerCasualties > 0);
   assert.ok(record.defenderCasualties > 0);
   assert.ok(record.wounded > 0);
@@ -295,18 +296,24 @@ test('计划达成目标后自动标记完成并记录战况', () => {
 test('战斗伤员在己方城镇逐步回补，士气与老兵写入战报', () => {
   const state = create();
   assert.equal(engine.order(board, state, 'main', 'advance', 'flank').ok, true);
-  engine.step(board, state, 10);
+  engine.step(board, state, 20);
   const ended = state.log.find(entry => entry.type === 'battle-end' && entry.city === 'flank');
+  assert.ok(ended, '应产生战斗结束记录');
   assert.equal(ended.aftermath.moraleAttack, 7);
   assert.equal(ended.aftermath.moraleDefend, -14);
   assert.equal(ended.aftermath.experience, 'ccp');
   const main = unit(state, 'main');
   const wounded = main.wounded;
   assert.ok(wounded > 0, '战后应留下伤员');
-  const strength = main.strength;
+  const leaf = state.units.find(member => member.id === 'main-d1-r1');
+  assert.ok(leaf, '应能定位到团级部队');
+  leaf.strength = 3000;
+  leaf.wounded = 600;
+  const strength = leaf.strength;
   engine.step(board, state, 8);
-  assert.ok(unit(state, 'main').wounded < wounded, '伤员应逐步归队');
-  assert.ok(unit(state, 'main').strength >= strength);
+  const after = state.units.find(member => member.id === 'main-d1-r1');
+  assert.ok(after.wounded < 600, '伤员应逐步归队');
+  assert.ok(after.strength > strength, '归队伤员应补充兵力');
 });
 
 test('存档时间线可回放作战计划、工事与编制指令', () => {
@@ -334,6 +341,183 @@ test('存档时间线可回放作战计划、工事与编制指令', () => {
     state.units.find(unit => unit.id === 'main').city);
 });
 
+test('守备战线：部队按最近的战线城镇布防', () => {
+  const state = create();
+  const made = engine.createPlan(board, state, { units: ['main', 'second'], target: 'far',
+    stance: 'hold', line: ['front', 'hub'] });
+  assert.equal(made.ok, true);
+  assert.equal(state.plans[0].stance, 'hold');
+  assert.deepEqual(state.plans[0].line, ['front', 'hub']);
+  const preview = engine.previewPlan(board, state, made.plan.id);
+  assert.ok(preview.rows.every(row => row.ok));
+  const mainRow = preview.rows.find(row => row.unitId === 'main');
+  const secondRow = preview.rows.find(row => row.unitId === 'second');
+  assert.equal(mainRow.type, 'defend');
+  assert.equal(mainRow.target, 'front');
+  assert.equal(secondRow.target, 'hub');
+  assert.equal(engine.executePlan(board, state, made.plan.id).ok, true);
+  assert.equal(unit(state, 'main').order.type, 'defend');
+  engine.step(board, state, 3);
+  assert.equal(state.plans[0].status, 'active', '守备计划不应自动结束');
+});
+
+test('沿战线进攻与后撤：先到战线再按决心行动', () => {
+  const state = create();
+  const made = engine.createPlan(board, state, { units: ['main', 'second'], target: 'far',
+    stance: 'push', line: ['front'] });
+  const preview = engine.previewPlan(board, state, made.plan.id);
+  const mainRow = preview.rows.find(row => row.unitId === 'main');
+  const secondRow = preview.rows.find(row => row.unitId === 'second');
+  assert.equal(mainRow.type, 'advance');
+  assert.equal(mainRow.target, 'flank');
+  assert.equal(secondRow.type, 'move');
+  assert.equal(secondRow.target, 'front');
+
+  const back = engine.createPlan(board, state, { units: ['main'], target: 'flank',
+    stance: 'fallback', line: ['rear'] });
+  assert.equal(engine.previewPlan(board, state, back.plan.id).rows[0].type, 'move');
+  assert.equal(engine.previewPlan(board, state, back.plan.id).rows[0].target, 'rear');
+});
+
+test('战线可自动取当前边境城镇', () => {
+  const state = create();
+  const made = engine.createPlan(board, state, { units: ['main'], target: 'flank',
+    stance: 'hold', autoLine: true });
+  assert.equal(state.plans[0].autoLine, true);
+  assert.deepEqual(state.plans[0].line, []);
+  const preview = engine.previewPlan(board, state, made.plan.id);
+  assert.equal(preview.rows[0].ok, true);
+  assert.equal(preview.rows[0].target, 'front');
+  assert.equal(engine.updatePlan(board, state, made.plan.id, { line: ['hub'] }).ok, true);
+  assert.equal(state.plans[0].autoLine, false);
+  assert.deepEqual(state.plans[0].line, ['hub']);
+});
+
+test('组织度在战斗中消耗、驻防时恢复并影响战力', () => {
+  const state = create();
+  assert.equal(unit(state, 'main').org, 100);
+  engine.order(board, state, 'main', 'advance', 'flank');
+  engine.step(board, state, 10);
+  assert.ok(state.battles.flank, '应处于多日战役中');
+  assert.ok(state.battles.flank.days >= 2, '战役应跨多日');
+  const stressed = state.units.filter(member => member.strength > 0 && member.org < 95);
+  assert.ok(stressed.length > 0, '战斗应消耗组织度');
+  engine.step(board, state, 24);
+  const leaf = state.units.find(member => member.id === 'main-d1-r1');
+  leaf.org = 40;
+  engine.step(board, state, 1);
+  assert.ok(leaf.org > 40, '驻防应恢复组织度');
+
+  const strong = { ...leaf, org: 100 };
+  const weak = { ...leaf, org: 20 };
+  assert.ok(engine.metadata.power([strong], false) > engine.metadata.power([weak], false),
+    '组织度低时战力应更弱');
+});
+
+test('同等兵力的进攻会被击退，守军撤退而非全歼', () => {
+  const equal = {
+    ...board,
+    units: [
+      { id: 'main', name: '主力军', side: 'ccp', city: 'front', strength: 24_000, equipment: 86 },
+      { id: 'enemy', name: '守备军', side: 'roc', city: 'flank', strength: 24_000, equipment: 86 },
+    ],
+  };
+  const state = engine.createGame(equal, { scenarioId: 'start', side: 'ccp', goal: 'all',
+    scope: 'national', historyMode: 'dynamic' });
+  engine.order(equal, state, 'main', 'defend', 'front');
+  engine.order(equal, state, 'main', 'advance', 'flank');
+  engine.step(equal, state, 8);
+  assert.ok(state.battles.flank, '战役应仍在进行');
+  engine.step(equal, state, 24);
+  const ended = state.log.find(entry => entry.type === 'battle-end' && entry.city === 'flank');
+  assert.ok(ended, '应产生战斗结束记录');
+  assert.equal(ended.result, 'repelled');
+  assert.equal(state.owners.flank, 'roc');
+  assert.ok(ended.aftermath.days >= 2);
+  const enemy = state.units.find(member => member.id === 'enemy');
+  assert.ok(enemy.strength > 12_000, '守军应以撤退保存兵力，而不是被整体歼灭');
+  assert.ok(ended.aftermath.attackerCasualties < 24_000 * 0.25, '多日战役不应一次打光');
+});
+
+test('AI 会在边境空虚时派驻驻军', () => {
+  const wide = {
+    cities: [
+      { id: 'a', name: '甲', region: 'north', terrain: 'plain', value: 4 },
+      { id: 'b', name: '乙', region: 'north', terrain: 'plain', value: 4 },
+      { id: 'c', name: '丙', region: 'north', terrain: 'plain', value: 3 },
+      { id: 'd', name: '丁', region: 'north', terrain: 'plain', value: 3 },
+    ],
+    links: [['a', 'b'], ['b', 'c'], ['c', 'd']],
+    units: [
+      { id: 'mine', name: '我军', side: 'ccp', city: 'a', strength: 20_000 },
+      { id: 'e1', name: '敌军一', side: 'roc', city: 'c', strength: 24_000 },
+      { id: 'e2', name: '敌军二', side: 'roc', city: 'c', strength: 24_000 },
+    ],
+    anchors: [{ date: '1947-01-01', ccp: ['a'], roc: ['b', 'c', 'd'] }],
+    scenarios: [{ id: 's', date: '1947-01-01', focus: 'a', area: 'north' }],
+    events: [],
+  };
+  const state = engine.createGame(wide, { scenarioId: 's', side: 'ccp', scope: 'national',
+    historyMode: 'dynamic', goal: 'all' });
+  engine.step(wide, state, 30);
+  const garrisoned = state.units.some(unit => unit.garrison === 'b' || (unit.city === 'b' && unit.side === 'roc'));
+  assert.ok(garrisoned, 'AI 应派兵驻守边境空城');
+});
+
+test('政治点与决议：动员、整军、空运与冷却', () => {
+  const state = create();
+  state.political.ccp.points = 120;
+  const manpower = state.economy.ccp.manpower;
+  assert.equal(engine.decide(board, state, 'mobilize').ok, true);
+  assert.ok(state.economy.ccp.manpower > manpower);
+  assert.equal(engine.decide(board, state, 'mobilize').ok, false, '冷却中应被拒绝');
+  assert.equal(engine.decide(board, state, 'reorganize', { city: 'front' }).ok, true);
+  assert.equal(engine.decide(board, state, 'airlift', { city: 'front' }).ok, true);
+  const leaf = state.units.find(member => member.id === 'main-d1-r1');
+  assert.ok(leaf.ammo >= 100);
+  state.political.ccp.points = 0;
+  assert.equal(engine.decide(board, state, 'reorganize', { city: 'front' }).ok, false, '政治点不足应被拒绝');
+  assert.equal(engine.decide(board, state, 'reorganize', { city: 'far' }).ok, false, '不能在敌方城镇整军');
+});
+
+test('策反需要接战条件，成功后敌军起义归入本方', () => {
+  const state = create();
+  state.political.ccp.points = 200;
+  const enemy = state.units.find(member => member.id === 'enemy');
+  enemy.city = 'far';
+  assert.equal(engine.decide(board, state, 'defect', { unitId: 'enemy' }).ok, false, '不接战不能策反');
+  enemy.city = 'flank';
+  let success = false;
+  for (let offset = 0; offset < 40 && !success; offset += 1) {
+    state.date = new Date(Date.parse(state.date) + 86_400_000).toISOString().slice(0, 10);
+    state.political.ccp.cooldowns = {};
+    state.political.ccp.points = 200;
+    const result = engine.decide(board, state, 'defect', { unitId: 'enemy' });
+    assert.equal(result.ok, true);
+    success = result.success;
+  }
+  assert.ok(success, '多次尝试后应能策反成功');
+  assert.equal(state.units.find(member => member.id === 'enemy').side, 'ccp');
+  assert.ok(state.log.some(entry => entry.type === 'defect'));
+});
+
+test('首都失守且支持度崩溃时停战，1951 年底也会结算', () => {
+  const state = create();
+  state.capitals.ccp = 'rear';
+  state.owners.rear = 'roc';
+  state.warSupport.ccp = 20;
+  engine.step(board, state, 1);
+  assert.equal(state.winner, 'roc');
+  assert.equal(state.endReason, 'capitulation');
+
+  const late = engine.createGame(board, { date: '1951-12-30', side: 'ccp', goal: 'all',
+    scope: 'national', historyMode: 'dynamic' });
+  late.warSupport = { ccp: 60, roc: 60 };
+  engine.step(board, late, 3);
+  assert.equal(late.endReason, 'timeout');
+  assert.equal(late.winner, 'ccp');
+});
+
 test('四项功能的中文名与显示接口齐全', () => {  const meta = engine.metadata;
   assert.equal(Object.keys(meta.fortKinds).length, 6);
   assert.equal(meta.fortKinds.trench.name, '战壕');
@@ -347,3 +531,4 @@ test('四项功能的中文名与显示接口齐全', () => {  const meta = engi
   assert.ok(reading.cities.rear.roc === 0);
   assert.ok(Object.hasOwn(reading.stocks, 'roc'));
 });
+

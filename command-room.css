@@ -137,6 +137,19 @@ body { overflow: hidden; }
 .comparison-events { font-size: 11px; color: var(--dim); margin-top: 5px; }
 .comparison-events p { margin: 0; }
 .toast { bottom: 84px; }
+.capital-tag { margin-left: 6px; padding: 0 4px; border: 1px solid #a8945c; border-radius: 3px; color: #f0d49b; font-size: 9px; }
+.battle-card { border: 1px solid #8a4a39; background: #33241f; }
+.battle-card h3 { color: #f0b494; }
+.politics-head { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.politics-head div { display: grid; gap: 1px; padding: 5px 8px; border-radius: 4px; background: #2a352e; }
+.politics-head span { color: var(--dim); font-size: 10px; }
+.politics-head strong { color: #f0e2bd; font-size: 15px; }
+.decision-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.decision-card h3 small { margin-left: 4px; color: var(--gold); font-size: 10px; font-weight: 400; }
+.decision-card .field { margin-top: 5px; min-width: 190px; }
+.decision-card button { flex: 0 0 auto; align-self: center; }
+.line-picker { max-height: 168px; overflow-y: auto; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; scrollbar-width: thin; }
+.unit-row small { white-space: nowrap; }
 .map-legend .supply-key { border-top-color: #e8946a; border-top-style: dashed; }
 .plan-card header { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .plan-card h3 { font-size: 13px; }

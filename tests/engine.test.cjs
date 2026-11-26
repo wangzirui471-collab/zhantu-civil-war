@@ -141,7 +141,7 @@ test('战斗结束与易手按顺序记录附近部队，旧档沿用单调编�
   delete state.eventSequence;
   delete state.log[0].seq;
   assert.equal(api.order(board, state, 'first', 'advance', 'b').ok, true);
-  api.step(board, state, 5);
+  api.step(board, state, 16);
   const started = state.log.find(entry => entry.type === 'battle-start' && entry.city === 'b');
   const capture = state.log.find(entry => entry.type === 'capture' && entry.city === 'b');
   const ended = state.log.find(entry => entry.type === 'battle-end' && entry.city === 'b');
@@ -193,7 +193,7 @@ test('失守后没有相邻己方城镇的部队退出战斗', () => {
   };
   const state = api.createGame(isolated, { scenarioId: 'start', historyMode: 'dynamic', goal: 'all' });
   assert.equal(api.order(isolated, state, 'first', 'advance', 'b').ok, true);
-  api.step(isolated, state, 6);
+  api.step(isolated, state, 16);
   assert.equal(state.owners.b, 'ccp');
   assert.equal(state.units.find(unit => unit.id === 'pocket').strength, 0);
   assert.equal(state.owners.d, 'roc');
@@ -402,7 +402,11 @@ test('玩家直接守住的城市保留模拟战果', () => {
   };
   const state = api.createGame(history, { scenarioId: 'start', historyMode: 'historical', goal: 'all' });
   assert.equal(api.order(history, state, 'first', 'defend', 'a').ok, true);
-  api.step(history, state, 19);
+  // 当面之敌按命令进攻，不再依赖电脑的进攻意愿：用于验证玩家守住的城市不被历史节点改写。
+  api.setSide(state, 'roc');
+  assert.equal(api.order(history, state, 'opponent', 'advance', 'a').ok, true);
+  api.setSide(state, 'ccp');
+  api.step(history, state, 24);
   assert.ok(state.log.some(entry => entry.type === 'battle-end' && entry.result === 'repelled' && entry.city === 'a'));
   assert.equal(state.owners.a, 'ccp');
   assert.ok(state.log.some(entry => entry.type === 'divergence' && entry.city === 'a'));

@@ -405,12 +405,59 @@
       }
     }
 
+    function drawBattles() {
+      if (!state.battles) return;
+      for (const [cityId, battle] of Object.entries(state.battles)) {
+        const city = places.get(cityId);
+        if (!city) continue;
+        const [x, y] = project(city.lon, city.lat);
+        if (!inMap(x, y)) continue;
+        const color = battle.side === 'ccp' ? '#e59a80' : '#8fc3da';
+        brush.beginPath();
+        brush.arc(x + 13, y - 12, 8, 0, Math.PI * 2);
+        brush.fillStyle = '#6f2b21e8';
+        brush.fill();
+        brush.strokeStyle = color;
+        brush.lineWidth = 1.1;
+        brush.stroke();
+        brush.fillStyle = '#ffe9c6';
+        brush.font = '700 8px "Microsoft YaHei UI", sans-serif';
+        brush.textAlign = 'center';
+        brush.textBaseline = 'middle';
+        brush.fillText('攻', x + 13, y - 11.5);
+        if (battle.days > 1) {
+          brush.font = '600 8px "Microsoft YaHei UI", sans-serif';
+          brush.fillStyle = '#ffd9a6';
+          brush.fillText(battle.days + '日', x + 13, y + 1);
+        }
+        brush.textAlign = 'start';
+        brush.textBaseline = 'alphabetic';
+      }
+    }
+
     function drawPlans() {
       if (!selection.plans) return;
       for (const plan of selection.plans) {
         const target = places.get(plan.target);
         if (!target) continue;
         const color = plan.side === 'ccp' ? '#f6bb9c' : '#abd8ec';
+        const segments = (plan.resolvedLine ?? plan.line ?? []).map((id) => places.get(id)).filter(Boolean);
+        if (segments.length > 1) {
+          const points = segments.map((city) => [city.lon, city.lat]);
+          line(points, '#3a2a1a9c', 4.4);
+          line(points, '#f4d49a', 2, [6, 4]);
+          for (const city of segments) {
+            const [x, y] = project(city.lon, city.lat);
+            if (!inMap(x, y)) continue;
+            brush.beginPath();
+            brush.rect(x - 3.2, y - 3.2, 6.4, 6.4);
+            brush.fillStyle = '#f7e3b4';
+            brush.fill();
+            brush.strokeStyle = '#4a3320';
+            brush.lineWidth = 1;
+            brush.stroke();
+          }
+        }
         const origins = new Set();
         for (const id of plan.units) {
           const unit = state.units.find(member => member.id === id && member.strength > 0);
@@ -676,6 +723,11 @@
         const badge = profileLabels[unit.profile || unit.branch] || '步';
         brush.fillStyle = '#e6e0c8';
         brush.fillText((status || badge) + ' · ' + (unit.side === state.player ? '' : '约 ') + round.format(believed), left + 5, top + 21, cardWidth - 10);
+        const org = Number.isFinite(unit.org) ? Math.max(0, Math.min(100, unit.org)) : 100;
+        brush.fillStyle = '#0000005c';
+        brush.fillRect(left + 4, top + cardHeight - 3.6, cardWidth - 8, 2);
+        brush.fillStyle = org > 70 ? '#7cc48f' : org > 40 ? '#d8b45c' : '#d4705a';
+        brush.fillRect(left + 4, top + cardHeight - 3.6, (cardWidth - 8) * org / 100, 2);
         hitCards.push({ unit, stack: members.map((member) => member.id), left, top, width: cardWidth, height: cardHeight });
       }
     }
@@ -745,6 +797,7 @@
       drawCampaigns(layers);
       drawSupply();
       drawCities(layers);
+      drawBattles();
       drawForts();
       drawPlans();
       drawOrders();
@@ -908,6 +961,21 @@
         draw();
       } else if (event.key === '+' || event.key === '=') zoom(1.25);
       else if (event.key === '-') zoom(.8);
+      else if (event.key === 'PageUp' || event.key === 'PageDown') {
+        event.preventDefault();
+        const own = state.units.filter((unit) => !unit.parent && unit.side === state.player
+          && unit.strength > 0 && !unit.inactive)
+          .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+        if (!own.length) return;
+        const index = own.findIndex((unit) => unit.id === selection.unit);
+        const step = event.key === 'PageDown' ? 1 : -1;
+        const next = own[index < 0 ? (step > 0 ? 0 : own.length - 1) : (index + step + own.length) % own.length];
+        handlers.selectUnit(next.id);
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        const city = highlightedCity || state.units.find((unit) => unit.id === selection.unit)?.city;
+        if (city) handlers.selectCity(city);
+      }
     });
 
     return {

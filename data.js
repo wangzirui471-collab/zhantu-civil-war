@@ -385,6 +385,9 @@
     },
   ];
 
+  // 首都用于投降判断：若剧本开局未控制史实首都，引擎会退回首府城市中价值最高者。
+  const capitals = { ccp: 'yanan', roc: 'nanjing' };
+
   const groups = [
     {id:'guixi',name:'桂系',side:'roc',region:'south',summary:'以李宗仁、白崇禧为代表的新桂系。内战后期，白崇禧指挥的华中军政系统包含桂系嫡系第7军，也统辖其他来源的部队。',source:src('hengbao')},
     {id:'luxi',name:'鲁系',side:'roc',region:'east',summary:'游戏用此名称标记韩复榘第三路军的部分人员谱系。1948年吴化文部是国民党军的一个部队，后来在济南战役中起义。',source:src('wuhua')},
@@ -797,5 +800,5 @@
   ];
   sources.push({title:'平津战役军史',url:pingjinDetail},{title:'京张铁路沿线车站',url:jingzhangRail},
     {title:'津浦铁路固镇老站',url:guzhenRail});
-  globalThis.CivilWarData = {cities,links,routeTypes,battleLayers,historyCheckpoints,leaders,units,scenarios,events,anchors,sources,groups,land,notes};
+  globalThis.CivilWarData = {cities,links,routeTypes,battleLayers,historyCheckpoints,leaders,units,scenarios,events,anchors,sources,groups,capitals,land,notes};
 })();

@@ -30,6 +30,8 @@
   const supportInfo = meta.supportKinds || {};
   const supportOrder = meta.supportKeys || [];
   const planModeNames = meta.planModes || {};
+  const planStanceNames = meta.planStances || {};
+  const decisionInfo = meta.decisionKinds || {};
   const goodsNames = meta.supplyGoods || {};
   const planStatusNames = { draft: '待执行', active: '执行中', paused: '已暂停', done: '已达成' };
   const transportNames = { rail: '铁路', road: '公路', sea: '海运', local: '本地' };
@@ -92,6 +94,8 @@
   let recentBrief;
   let fortCity;
   let supplyView;
+  const undoStack = [];
+  const undoLimit = 24;
   let pausePreferences;
   try { pausePreferences = JSON.parse(localStorage.getItem(storageKey + '-auto-pause') || '{}') || {}; }
   catch { pausePreferences = {}; }
@@ -263,7 +267,9 @@
     $('scope-label').textContent = group?.name || (state.scope === 'national' ? '全国指挥' : regions[area()] || '战区指挥');
     $('date').textContent = fmtDate(state.date);
     $('date').dateTime = state.date;
-    $('clock-label').textContent = state.winner ? '已统一' : running ? '运行中' : '已暂停';
+    $('clock-label').textContent = state.winner
+      ? (state.endReason === 'capitulation' ? '已停战' : state.endReason === 'timeout' ? '已休战' : '已统一')
+      : running ? '运行中' : '已暂停';
     $('pause').textContent = running ? 'Ⅱ' : '▶';
     $('pause').disabled = Boolean(state.winner);
     $('step').disabled = Boolean(state.winner);
@@ -294,7 +300,9 @@
       + (stats.ccp * 100 / cityCount) + '%"></i></div>'
       + '<p class="territory-status">' + escape(regions[area()] || '') + ' · 我方 '
       + Data.cities.filter((city) => city.region === area() && state.owners[city.id] === state.player).length + ' 城 / '
-      + Data.cities.filter((city) => city.region === area()).length + ' 城</p>';
+      + Data.cities.filter((city) => city.region === area()).length + ' 城</p>'
+      + '<p class="territory-status">战争支持 · 共产党 ' + format(valueOf(state.warSupport, 'ccp', 82))
+      + ' · 国民党 ' + format(valueOf(state.warSupport, 'roc', 58)) + '</p>';
     $('resources').innerHTML = resourceTiles(state.economy[state.player]);
   }
 
@@ -303,11 +311,22 @@
     const display = own ? format(unit.strength) : '约 ' + format(Math.round(unit.strength / 100) * 100);
     return '<button class="unit-row ' + (own ? '' : 'enemy') + '" type="button" data-unit="' + escape(unit.id)
       + '" aria-pressed="' + (unit.id === selectedUnit) + '" title="' + escape(unit.name) + '"><span><b class="dot ' + unit.side
-      + '"></b><strong>' + escape(unit.name) + '</strong></span><small>' + display + ' 人</small></button>';
+      + '"></b><strong>' + escape(unit.name) + '</strong></span><small>' + display + ' 人 · 组织 '
+      + format(valueOf(unit, 'org', 100)) + '</small></button>';
   }
 
   function unitRows(units, empty) {
     return units.length ? units.map(unitRow).join('') : '<p class="empty">' + escape(empty) + '</p>';
+  }
+
+  function battlePanel(cityId) {
+    const battle = state.battles?.[cityId];
+    if (!battle) return '';
+    const ratio = typeof battle.lastRatio === 'number' ? battle.lastRatio.toFixed(2) : '—';
+    return '<div class="card battle-card"><h3>围攻第 ' + format(battle.days) + ' 天</h3>'
+      + '<p>' + escape(short[battle.side] || battle.side) + '进攻 · 优势比 ' + ratio
+      + ' · 累计伤亡 ' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人</p>'
+      + '<p class="subtext">组织度耗尽的一方将退出战斗；守军只有在没有退路时才会被歼灭。</p></div>';
   }
 
   function fortPanel(city) {
@@ -348,9 +367,11 @@
     const checkpoints = [...checkpointById.values()].filter((point) => point.city === city.id
       || point.related?.includes(city.id)).sort((a, b) => Number(b.city === city.id) - Number(a.city === city.id)
         || a.date.localeCompare(b.date));
-    return '<div class="city-title"><h3>' + escape(city.name) + '</h3>' + sideTag(state.owners[city.id]) + '</div>'
+    return '<div class="city-title"><h3>' + escape(city.name) + '</h3>' + sideTag(state.owners[city.id])
+      + (state.capitals?.[state.owners[city.id]] === city.id ? '<span class="capital-tag">首都</span>' : '') + '</div>'
       + '<p class="city-meta">' + escape(city.province || regions[city.region] || city.region) + ' · ' + escape(terrainName[city.terrain] || '城市')
       + ' · 城市价值 ' + format(city.value) + '</p>'
+      + battlePanel(city.id)
       + '<div class="sector-summary"><div><span>己方驻军</span><strong>' + format(own)
       + '</strong></div><div><span>对方估算</span><strong>' + format(Math.round(other / 100) * 100) + '</strong></div></div>'
       + fortPanel(city)
@@ -412,7 +433,8 @@
       + '<span>弹药 ' + percent(valueOf(unit, 'ammo', 100)) + ' · 油料 ' + percent(valueOf(unit, 'fuel', 100))
       + ' · 医疗 ' + percent(valueOf(unit, 'medical', 100)) + '</span>'
       + '<span>士气 ' + format(valueOf(unit, 'morale', 70)) + ' · 老兵 ' + format(valueOf(unit, 'veteran', 0))
-      + ' 级' + (valueOf(unit, 'wounded', 0) > 0 ? ' · 伤员 ' + format(unit.wounded) + ' 回补中' : '') + '</span>'
+      + ' 级 · 组织 ' + format(valueOf(unit, 'org', 100))
+      + (valueOf(unit, 'wounded', 0) > 0 ? ' · 伤员 ' + format(unit.wounded) + ' 回补中' : '') + '</span>'
       + (group ? '<span>' + escape(group.name) + '</span>' : '') + '</div></div>'
       + (allowed ? '<button type="button" class="link-button" data-delegate="' + escape(root?.id) + '">'
         + (root?.delegated ? '收回司令员指挥权' : '委托司令员指挥') + '</button>'
@@ -477,7 +499,12 @@
     const unit = inspectUnit();
     orderPreviews = permitted(unit) ? Engine.previewOrders(Data, state, unit.id) : {};
     const plans = (state.plans || []).filter((plan) => plan.side === state.player
-      && (plan.status === 'active' || plan.status === 'paused'));
+      && (plan.status === 'active' || plan.status === 'paused'))
+      .map((plan) => ({
+        ...plan,
+        resolvedLine: typeof meta.resolvePlanLine === 'function'
+          ? meta.resolvePlanLine(Data, state, plan) : plan.line,
+      }));
     map.update(state, { city: selectedCity, unit: selectedUnit, command: pendingOrder, previews: orderPreviews,
       units: [...selectedUnits], plans, supply: supplyView,
       guideUnit: tutorial?.step === 0 ? 'nw3' : undefined });
@@ -554,10 +581,32 @@
     if (jump) map.jump(city);
   }
 
+  let lastActionResult = null;
+
   function action(key, args) {
+    const before = { state: Engine.snapshot(state), timeline: structuredClone(timeline) };
     const result = Timeline.apply(timeline, Engine, Data, state, key, args);
+    lastActionResult = result;
     if (result?.ok === false) { notify(result.error); return false; }
+    undoStack.push(before);
+    if (undoStack.length > undoLimit) undoStack.shift();
     return true;
+  }
+
+  function undo() {
+    const entry = undoStack.pop();
+    if (!entry) { notify('没有可撤销的操作。'); return; }
+    state = entry.state;
+    timeline = entry.timeline;
+    pendingOrder = undefined;
+    selectedUnit = undefined;
+    selectedUnits = new Set();
+    stack = undefined;
+    fortCity = undefined;
+    setMapHelp();
+    render();
+    saveAuto(true);
+    notify('已撤销上一步。');
   }
 
   function setMapHelp() {
@@ -624,6 +673,7 @@
       + label + '</button>').join('')
       + '<button type="button" data-deck-plan' + (count > 1 || unit ? '' : ' disabled') + '>编成计划</button>'
       + (count > 1 ? '<button type="button" data-deck-clear>清空编队</button>' : '')
+      + '<button type="button" data-deck-undo' + (undoStack.length ? '' : ' disabled') + '>撤销</button>'
       + '<button type="button" data-deck-target' + (pendingOrder ? '' : ' disabled') + '>选目标</button>'
       + '<button type="button" data-deck-cancel' + (pendingOrder ? '' : ' disabled') + '>取消</button>';
   }
@@ -891,8 +941,14 @@
       + '右侧直接展开纵队、师和团，点击任意一行可切换指挥对象。按住 Ctrl 或 Shift 点击可多选。</p></div>'
       + '<div class="card"><h3>下命令</h3><p>选中后，右键相邻敌城进攻，右键己方城镇调动。'
       + '也可以拖动部队牌到目标，或先选底部的命令再点击地图。围城和围点打援均需选相邻敌城。</p></div>'
-      + '<div class="card"><h3>作战计划</h3><p>Ctrl 多选部队后点底部的「编成计划」，指定目标、方式和编成，'
-      + '统一预览后一键执行。执行中的计划可暂停、撤销，或交给司令员按补给与战况调整。</p></div>'
+      + '<div class="card"><h3>作战计划</h3><p>Ctrl 多选部队后点底部的「编成计划」，先选<strong>作战决心</strong>：'
+      + '突击目标、守备战线、沿战线进攻或后撤至战线，并指定目标与战线。'
+      + '统一预览后一键执行，执行中可暂停、撤销或交给司令员。</p></div>'
+      + '<div class="card"><h3>组织度与战役</h3><p>部队牌底部的小条是组织度。进攻与防守按日消耗组织度，'
+      + '组织度先耗尽的一方退出战斗：守军通常撤退而不是被全歼，只有在没有退路时才会成建制被俘。'
+      + '驻防和补给充足的部队每天恢复组织度。</p></div>'
+      + '<div class="card"><h3>政治与决议</h3><p>顶部「政治决议」用政治点执行策反、整军、空运补给与动员。'
+      + '战争支持度会随城镇得失升降，支持度崩溃又丢掉首都时，这一方可能停战。</p></div>'
       + '<div class="card"><h3>铁路补给</h3><p>顶部「铁路补给」查看后方库存、运输瓶颈与各城镇补给覆盖，'
       + '并在地图上标出缺口。弹药、油料、医疗物资分别计算，补给越差，部队战斗力与整补越慢。</p></div>'
       + '<div class="card"><h3>工事与编制</h3><p>城镇面板的「修筑工事」由驻军工兵施工，可修战壕、掩体、障碍、'
@@ -1042,8 +1098,10 @@
         : row.error;
       return '<li><span>' + escape(unit?.name || row.unitId) + '</span><em>' + escape(detail) + '</em></li>';
     }).join('');
-    return '<p class="subtext">' + escape(planModeNames[plan.mode] || plan.mode) + ' · ' + escape(cityName(plan.target))
-      + (plan.front ? ' · 战线 ' + escape(cityName(plan.front)) : '')
+    return '<p class="subtext">' + escape(planStanceNames[plan.stance] || planStanceNames.spearhead)
+      + ' · ' + escape(planModeNames[plan.mode] || plan.mode) + ' · ' + escape(cityName(plan.target))
+      + (plan.line?.length ? ' · 战线 ' + plan.line.length + ' 城' : plan.autoLine ? ' · 自动战线' : '')
+      + (plan.front ? ' · 集结 ' + escape(cityName(plan.front)) : '')
       + ' · ' + plan.units.length + ' 支部队' + (preview.days ? ' · 约 ' + preview.days + ' 天' : '')
       + (preview.ok ? '' : ' · 暂不可执行') + '</p><ul class="plan-units">' + rows + '</ul>';
   }
@@ -1084,24 +1142,49 @@
     const selected = new Set(current);
     const target = plan?.target || (selectedUnit ? inspectUnit().city : selectedCity)
       || scenarioNow()?.focus || Data.cities[0]?.id;
+    const stance = plan?.stance || 'spearhead';
+    const autoLine = plan ? plan.autoLine !== false : true;
+    const lineChosen = new Set(plan?.line || []);
+    const border = Data.cities.filter((city) => state.owners[city.id] === state.player
+      && (cityConnected.get(city.id) || []).some((id) => state.owners[id] !== state.player))
+      .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
     const rows = units.length ? units.map((unit) => '<label class="event-row"><span>' + escape(armyLabel(unit))
       + ' · ' + format(unit.strength) + ' 人</span><input type="checkbox" name="units" value="' + escape(unit.id) + '"'
       + (selected.has(unit.id) ? ' checked' : '') + ' aria-label="' + escape(unit.name) + '"></label>').join('')
       : '<p class="empty">当前指挥范围内没有可编入的部队。</p>';
+    const lineRows = border.length ? border.map((city) => '<label class="event-row"><span>'
+      + escape(city.name) + ' · ' + escape(regions[city.region] || '') + '</span><input type="checkbox" name="line" value="'
+      + escape(city.id) + '"' + (lineChosen.has(city.id) ? ' checked' : '') + ' aria-label="' + escape(city.name) + '"></label>').join('')
+      : '<p class="empty">当前没有与敌相邻的己方城镇。</p>';
     const body = showDialog(plan ? '编辑作战计划' : '新建作战计划', '<form id="plan-form">'
       + '<label class="field">计划名称<input name="name" maxlength="40" placeholder="留空则按目标自动命名" value="'
       + escape(plan?.name || '') + '"></label>'
       + '<div class="form-grid">' + citySelect('target', '目标城镇', target)
-      + '<label>作战方式<select name="mode">'
+      + '<label>作战决心<select name="stance">'
+      + Object.entries(planStanceNames).map(([id, label]) => option(id, label, stance)).join('')
+      + '</select></label><label>作战方式<select name="mode">'
       + Object.entries(planModeNames).map(([id, label]) => option(id, label, plan?.mode || 'advance')).join('')
-      + '</select></label><label>战线（先集结的城镇）<select name="front">'
+      + '</select></label><label>战线<select name="lineMode">'
+      + option('auto', '自动取当前边境城镇', autoLine ? 'auto' : 'manual')
+      + option('manual', '手动选择战线城镇', autoLine ? 'auto' : 'manual') + '</select></label>'
+      + '<label>集结城镇（突击用）<select name="front">'
       + option('', '不设集结，直接向目标推进', plan?.front || '')
       + Data.cities.slice().sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')).map((city) =>
         option(city.id, city.name + ' · ' + (regions[city.region] || city.region), plan?.front || '')).join('')
-      + '</select></label></div><p class="roster-label">编入部队</p><div class="plan-picker">' + rows + '</div>'
+      + '</select></label></div>'
+      + '<div class="line-picker" id="line-picker"' + (autoLine ? ' hidden' : '') + '>'
+      + '<p class="roster-label">战线城镇（守备 / 沿战线进攻 / 后撤用）</p>' + lineRows + '</div>'
+      + '<p class="roster-label">编入部队</p><div class="plan-picker">' + rows + '</div>'
       + '<div class="dialog-actions"><button class="gold" type="submit">' + (plan ? '保存计划' : '建立计划')
       + '</button><button type="button" data-plan-back>返回列表</button></div></form>');
     const form = body.querySelector('form');
+    form.elements.lineMode.onchange = () => {
+      body.querySelector('#line-picker').hidden = form.elements.lineMode.value === 'auto';
+    };
+    form.elements.stance.onchange = () => {
+      body.querySelector('#line-picker').hidden = form.elements.stance.value === 'spearhead'
+        || form.elements.lineMode.value === 'auto';
+    };
     form.onsubmit = (event) => {
       event.preventDefault();
       const settings = new FormData(form);
@@ -1109,7 +1192,8 @@
       if (!unitsPicked.length) { notify('请至少选择一支部队。'); return; }
       const config = { name: String(settings.get('name') || '').trim(),
         target: settings.get('target'), mode: settings.get('mode'), units: unitsPicked,
-        front: settings.get('front') || null };
+        stance: settings.get('stance'), autoLine: settings.get('lineMode') === 'auto',
+        line: settings.getAll('line'), front: settings.get('front') || null };
       if (plan) {
         if (!action('updatePlan', [plan.id, config])) return;
         notify('作战计划已更新。');
@@ -1240,6 +1324,48 @@
       + '<th>通路</th><th>弹药</th><th>覆盖</th></tr></thead><tbody>' + (coverageRows || '<tr><td colspan="5">暂无驻军。</td></tr>')
       + '</tbody></table><div class="dialog-actions"><button type="button" data-supply-overlay>在地图显示补给</button>'
       + '<button type="button" data-supply-close>关闭</button></div>');
+  }
+
+  function politicsTargets(kind) {
+    if (kind === 'defect') {
+      const enemies = Engine.activeUnits(state).filter((unit) => !unit.parent && unit.side !== state.player
+        && unit.strength > 0).sort((a, b) => b.strength - a.strength).slice(0, 40);
+      return '<label class="field">策反对象<select name="unit">'
+        + enemies.map((unit) => option(unit.id, unit.name + ' · ' + cityName(unit.city), '')).join('')
+        + '</select></label>';
+    }
+    if (kind === 'reorganize' || kind === 'airlift') {
+      const garrisoned = new Set(Engine.activeUnits(state)
+        .filter((unit) => unit.side === state.player && unit.strength > 0).map((unit) => unit.city));
+      const cities = Data.cities.filter((city) => state.owners[city.id] === state.player)
+        .sort((a, b) => (Number(garrisoned.has(b.id)) - Number(garrisoned.has(a.id)))
+          || a.name.localeCompare(b.name, 'zh-CN'));
+      return '<label class="field">目标城镇<select name="city">'
+        + cities.map((city) => option(city.id, city.name + ' · ' + (regions[city.region] || city.region)
+          + (garrisoned.has(city.id) ? '（有驻军）' : ''), '')).join('')
+        + '</select></label>';
+    }
+    return '';
+  }
+
+  function politicsPanel() {
+    const side = state.player;
+    const politics = state.political?.[side] ?? { points: 0, cooldowns: {} };
+    const support = valueOf(state.warSupport, side, 60);
+    const capital = state.capitals?.[side];
+    const cards = Object.entries(decisionInfo).map(([kind, info]) => {
+      const cooldown = politics.cooldowns?.[kind] ?? 0;
+      const disabled = Boolean(cooldown) || politics.points < info.cost;
+      return '<article class="card decision-card"><div><h3>' + escape(info.name) + ' <small>' + info.cost
+        + ' 点</small></h3><p>' + escape(info.hint) + '</p>' + politicsTargets(kind) + '</div>'
+        + '<button type="button" data-decide="' + escape(kind) + '"' + (disabled ? ' disabled' : '') + '>'
+        + (cooldown ? cooldown + ' 天后' : politics.points < info.cost ? '点数不足' : '执行') + '</button></article>';
+    }).join('');
+    showDialog('政治与决议', '<p>政治点随控制城镇每日增长。决议有冷却，战争支持度低于 25 又丢掉首都时可能停战。</p>'
+      + '<div class="politics-head"><div><span>政治点</span><strong>' + format(politics.points) + '</strong></div>'
+      + '<div><span>战争支持</span><strong>' + format(support) + '</strong></div>'
+      + '<div><span>首都</span><strong>' + escape(cityName(capital)) + '</strong></div></div>'
+      + cards + '<div class="dialog-actions"><button type="button" data-politics-close>关闭</button></div>');
   }
 
   function economy() {
@@ -1617,6 +1743,23 @@
       dialog.close();
       notify('地图已显示补给覆盖与运输瓶颈。');
     }
+    else if (d.decide) {
+      const card = event.target.closest('.decision-card');
+      const city = card?.querySelector('select[name=city]')?.value;
+      const unitId = card?.querySelector('select[name=unit]')?.value;
+      if (action('decide', [d.decide, { city, unitId }])) {
+        saveAuto(true);
+        render();
+        const info = decisionInfo[d.decide];
+        if (d.decide === 'defect') {
+          notify(lastActionResult?.success ? '策反成功，对方部队宣布起义。' : '策反未成，对方仍在观望。');
+        } else {
+          notify((info?.name || '决议') + '已执行。');
+        }
+        politicsPanel();
+      }
+    }
+    else if (d.politicsClose !== undefined) dialog.close();
     else if (d.groupRoster || d.groupControl) {
       const group = groupsById.get(d.groupRoster || d.groupControl);
       if (!group) return;
@@ -1652,6 +1795,7 @@
   $('economy').onclick = economy;
   $('plans').onclick = plansPanel;
   $('supply').onclick = logisticsPanel;
+  $('politics').onclick = politicsPanel;
   $('gear').onclick = gear;
   $('history-mode').onclick = historicalEvents;
   $('help').onclick = guide;
@@ -1690,6 +1834,7 @@
     if (args.command) chooseCommand(args.command);
     else if (args.deckPlan !== undefined) planEditor();
     else if (args.deckClear !== undefined) { selectedUnits = new Set(); render(); }
+    else if (args.deckUndo !== undefined) undo();
     else if (args.deckTarget !== undefined) cityPicker(true);
     else if (args.deckCancel !== undefined) { pendingOrder = undefined; setMapHelp(); render(); }
   };
@@ -1720,6 +1865,12 @@
     } catch (error) { notify(error.message); }
   };
   document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !dialog.open
+      && !event.target.closest('input,select,textarea')) {
+      event.preventDefault();
+      undo();
+      return;
+    }
     if (event.code === 'Space' && !dialog.open && !event.target.closest('button,input,select,textarea')) {
       event.preventDefault();
       setRun(!running);

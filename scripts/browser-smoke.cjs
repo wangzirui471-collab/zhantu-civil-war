@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -287,8 +287,12 @@ async function main() {
     })()`);
     await set('#plan-form [name=target]', 'jinzhou');
     await set('#plan-form [name=mode]', 'advance');
+    assert(await evaluate('!!document.querySelector("#plan-form [name=stance]") && !!document.querySelector("#plan-form [name=lineMode]")'));
+    await set('#plan-form [name=stance]', 'hold');
     await click('#plan-form button[type=submit]');
     assert.equal((await state()).plans.length, 1);
+    assert.equal((await state()).plans[0].stance, 'hold');
+    assert.equal((await state()).plans[0].autoLine, true);
     assert((await value('#dialog-body')).includes('执行'));
     await click('[data-plan-run]');
     assert.equal((await state()).plans[0].status, 'active');
@@ -299,6 +303,22 @@ async function main() {
     await click('[data-plan-remove]');
     assert.equal((await state()).plans.length, 0);
     await click('[data-plan-close]');
+
+    // 政治决议与撤销
+    await click('#politics');
+    const politicsText = await value('#dialog-body');
+    assert(politicsText.includes('政治点'));
+    assert(politicsText.includes('策反'));
+    assert(politicsText.includes('整军'));
+    await evaluate(`(() => {
+      const select = document.querySelector('.decision-card select[name=city]');
+      if (select && select.options.length) select.value = select.options[0].value;
+    })()`);
+    await click('[data-decide=reorganize]');
+    assert.ok((await state()).political.ccp.cooldowns.reorganize > 0);
+    await click('[data-politics-close]');
+    await click('[data-deck-undo]');
+    assert.ok(!(await state()).political.ccp.cooldowns.reorganize, '撤销应回滚决议');
 
     // 工事：修筑战壕并推进到完工
     await click('#find-city');
@@ -339,14 +359,22 @@ async function main() {
     assert.ok((await state()).units.some((unit) => unit.support?.medical === 82));
     await click('#dialog-close');
 
-    // 战报后果与累计战果
-    for (let day = 0; day < 6; day++) await click('#step');
+    // 战报后果与累计战果（多日战役需要更长的推进时间）
+    await evaluate(`(() => { const back = document.querySelector('[data-back-roster]'); if (back) back.click(); })()`);
+    await click('#tab-army');
+    await click('#inspector-body [data-unit=nw3]');
+    await click('[data-command=advance]');
+    const jinzhouPoint = await point('jinzhou');
+    await mouse('mousePressed', jinzhouPoint);
+    await mouse('mouseReleased', jinzhouPoint);
+    assert.equal((await state()).units.find((unit) => unit.id === 'nw3').order.type, 'advance', await value('#toast'));
+    for (let day = 0; day < 22; day++) await click('#step');
     await click('#show-log');
     assert((await value('#dialog-body')).includes('累计战果'));
     await choose('#brief-filter', 'all');
     const battleIndex = await evaluate(`(() => {
       const button = [...document.querySelectorAll('#brief-list [data-brief-index]')]
-        .find((item) => item.textContent.includes('战斗结束'));
+        .find((item) => item.textContent.includes('战斗结束') || item.textContent.includes('围攻受挫'));
       return button ? button.dataset.briefIndex : null;
     })()`);
     assert(battleIndex !== null, '应记录含后果的作战简报');
@@ -396,7 +424,7 @@ async function main() {
       const result = await request('Page.captureScreenshot', { format: 'png' });
       await fs.writeFile(process.env.CIVIL_WAR_SCREENSHOT, Buffer.from(result.data, 'base64'));
     }
-    console.log('浏览器通过：地图命令、多选作战计划、铁路补给面板、工事修筑、部队编制、战报后果、单屏界面、锦州完整引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
+    console.log('浏览器通过：地图命令、多选作战计划（决心与战线）、政治决议与撤销、铁路补给面板、工事修筑、部队编制、多日战役与战报后果、单屏界面、锦州引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
   } finally {
     socket?.close();
     child.kill();
@@ -405,3 +433,4 @@ async function main() {
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
+

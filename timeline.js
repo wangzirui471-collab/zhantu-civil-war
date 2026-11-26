@@ -4,9 +4,9 @@
   const actions = new Set(['order', 'setSide', 'setScope', 'setPolicy', 'setDelegated', 'setGroup', 'setLeader',
     'setEquipment', 'setHistoryMode', 'setHistoricalEvent',
     'createPlan', 'updatePlan', 'executePlan', 'pausePlan', 'delegatePlan', 'removePlan',
-    'buildFort', 'setSupport']);
+    'buildFort', 'setSupport', 'decide']);
   const usesData = new Set(['order', 'setLeader', 'setEquipment', 'createPlan', 'updatePlan', 'executePlan',
-    'pausePlan', 'buildFort', 'setSupport']);
+    'pausePlan', 'buildFort', 'setSupport', 'decide']);
   const day = 86400000;
   const toTime = (value) => Date.parse(value + 'T00:00:00Z');
   const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
