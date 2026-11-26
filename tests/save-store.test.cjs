@@ -24,7 +24,9 @@ test('旧 localStorage 存档首次打开时迁移到 IndexedDB', async () => {
   const backend = SaveStore.create({ storage, database });
 
   const loaded = await backend.load('civil-war-map-v1');
-  assert.deepEqual(loaded, { auto: 'legacy', slots: [{ name: '旧档', raw: 'a' }] });
+  assert.equal(loaded.auto, 'legacy');
+  assert.deepEqual(loaded.slots, [{ name: '旧档', raw: 'a' }]);
+  assert.ok(loaded.updatedAt > 0);
   assert.deepEqual(await database.get('civil-war-map-v1'), loaded);
 });
 
@@ -36,6 +38,16 @@ test('已有 IndexedDB 存档优先载入并同步回 localStorage', async () =>
   const loaded = await backend.load('civil-war-map-v1');
   assert.equal(loaded.auto, 'new');
   assert.equal(JSON.parse(storage.getItem('civil-war-map-v1')).auto, 'new');
+});
+
+test('localStorage 备份比未完成写入的 IndexedDB 新时保留较新版本', async () => {
+  const storage = memoryStorage({ 'civil-war-map-v1': JSON.stringify({ auto: 'newer', slots: [], updatedAt: 20 }) });
+  const database = memoryDatabase({ 'civil-war-map-v1': { auto: 'stale', slots: [], updatedAt: 10 } });
+  const backend = SaveStore.create({ storage, database });
+
+  const loaded = await backend.load('civil-war-map-v1');
+  assert.equal(loaded.auto, 'newer');
+  assert.equal((await database.get('civil-war-map-v1')).auto, 'newer');
 });
 
 test('IndexedDB 不可用时仍可从 localStorage 读取并写入', async () => {

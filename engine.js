@@ -1839,7 +1839,9 @@
       const otherGroup = state.group && army.group !== state.group;
       const outsideControl = army.side !== state.player || otherTheater || otherGroup;
       if (!outsideControl && !army.delegated) continue;
-      const objective = army.delegated && army.delegateTarget;
+      const aiPlan = (state.plans ?? []).find(plan => plan.aiGenerated && plan.side === army.side
+        && plan.status === 'active' && plan.units?.includes(army.id));
+      const objective = army.delegated && army.delegateTarget || aiPlan?.target;
       const distances = objective ? distancesTo(map, objective) : null;
       const armyGroups = groupByCity(leaves(army, tree).filter(unit => {
         if (unit.garrison) {
@@ -3684,6 +3686,7 @@
   function systemsAI(data, state) {
     const map = index(data);
     const day = Math.floor(Date.parse(state.date) / dayMillis);
+    const combat = unitTree(state).combat;
     for (const side of sides) {
       if (side === state.player) continue;
       const research = state.research[side];
@@ -3709,7 +3712,11 @@
       }
       const force = state.airWar[side];
       const enemy = side === 'ccp' ? 'roc' : 'ccp';
-      if (state.air[side] < 35 && force.mission !== 'cas') force.mission = 'cas';
+      const isolatedNeeds = combat.some(unit => unit.side === side && unit.strength > 0 && !unit.inactive
+        && pocketFactor(map, state, unit.city, side) < 1
+        && (unitAmmo(unit) < 45 || unitFuel(unit) < 35 || num(unit.food, 100) < 35));
+      if (force.planes > 15 && isolatedNeeds) force.mission = 'airdrop';
+      else if (state.air[side] < 35 && force.mission !== 'cas') force.mission = 'cas';
       else if (state.air[side] > 65 && force.mission !== 'superiority') force.mission = 'superiority';
       else if (state.air[side] >= 35 && state.air[side] <= 65 && force.mission !== 'interdiction') force.mission = 'interdiction';
       const line = state.aiFronts[side] ?? [];

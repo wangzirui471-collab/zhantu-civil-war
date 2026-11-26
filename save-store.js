@@ -8,7 +8,8 @@
   function normalize(value) {
     const slots = Array.isArray(value?.slots) ? value.slots.filter(slot =>
       slot && typeof slot.name === 'string' && typeof slot.raw === 'string') : [];
-    return { auto: typeof value?.auto === 'string' ? value.auto : '', slots };
+    return { auto: typeof value?.auto === 'string' ? value.auto : '', slots,
+      updatedAt: Number.isFinite(value?.updatedAt) ? Math.max(0, value.updatedAt) : 0 };
   }
 
   function localValue(storage, key) {
@@ -62,6 +63,11 @@
     }
     const suppliedDatabase = options.database;
     let databasePromise;
+    let lastWriteAt = 0;
+    const stamp = value => {
+      lastWriteAt = Math.max(Date.now(), lastWriteAt + 1);
+      return { ...normalize(value), updatedAt: lastWriteAt };
+    };
     const database = () => {
       if (suppliedDatabase) return Promise.resolve(suppliedDatabase);
       if (!databasePromise) {
@@ -74,22 +80,31 @@
 
     async function load(key) {
       const legacy = localValue(storage, key);
+      lastWriteAt = Math.max(lastWriteAt, legacy.updatedAt);
       try {
         const db = await database();
         if (!db) return legacy;
         const saved = await db.get(key);
         if (saved === null || saved === undefined) {
+          const migrated = stamp(legacy);
+          await db.put(key, migrated);
+          try { storage?.setItem(key, JSON.stringify(migrated)); } catch { /* 保留 IndexedDB 存档。 */ }
+          return migrated;
+        }
+        const normalized = normalize(saved);
+        lastWriteAt = Math.max(lastWriteAt, normalized.updatedAt);
+        if (legacy.updatedAt > normalized.updatedAt) {
           await db.put(key, legacy);
           return legacy;
         }
-        const normalized = normalize(saved);
         try { storage?.setItem(key, JSON.stringify(normalized)); } catch { /* 保留 IndexedDB 存档。 */ }
         return normalized;
       } catch { return legacy; }
     }
 
     async function write(key, value) {
-      const normalized = normalize(value);
+      lastWriteAt = Math.max(lastWriteAt, localValue(storage, key).updatedAt);
+      const normalized = stamp(value);
       try { storage?.setItem(key, JSON.stringify(normalized)); } catch { /* 尝试写入 IndexedDB。 */ }
       try {
         const db = await database();

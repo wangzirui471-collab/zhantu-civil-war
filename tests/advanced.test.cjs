@@ -683,6 +683,96 @@ test('旧存档缺少海域字段时，全国推进仍能重建舰队状态并�
   assert.ok(Array.isArray(state.aiFronts.ccp));
 });
 
+test('AI 自动战线计划会约束进攻方向，避免绕开计划目标抢攻弱点', () => {
+  const data = {
+    cities: [
+      { id: 'base', name: '前沿基地', region: 'north', terrain: 'plain', value: 4 },
+      { id: 'objective', name: '计划目标', region: 'north', terrain: 'plain', value: 8 },
+      { id: 'weak', name: '薄弱侧翼', region: 'north', terrain: 'plain', value: 2 },
+    ],
+    links: [['base', 'objective'], ['base', 'weak']],
+    routeTypes: { 'base|objective': 'land', 'base|weak': 'land' },
+    units: [
+      { id: 'ai-force', name: '自动战线部队', side: 'roc', city: 'base', strength: 60_000 },
+      { id: 'objective-guard', name: '目标守军', side: 'ccp', city: 'objective', strength: 54_000 },
+      { id: 'weak-guard', name: '侧翼守军', side: 'ccp', city: 'weak', strength: 1_000 },
+    ],
+    anchors: [{ date: '1947-01-01', ccp: ['objective', 'weak'], roc: ['base'] }],
+    scenarios: [{ id: 's', date: '1947-01-01', focus: 'base', area: 'north' }],
+    events: [],
+  };
+  const state = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+  engine.step(data, state, 7);
+  const plan = state.plans.find(item => item.side === 'roc' && item.aiGenerated && item.status === 'active');
+  const force = state.units.find(unit => unit.id === 'ai-force');
+  assert.ok(plan);
+  assert.equal(plan.target, 'objective');
+  assert.ok(force.order, 'AI 应按计划保持进攻或集结命令');
+  assert.notEqual(force.order.target, 'weak', '弱侧翼不应绕开自动战线计划成为进攻目标');
+});
+
+test('AI 空军会轰炸范围内的敌方工业节点并留下战报', () => {
+  const data = {
+    cities: [
+      { id: 'roc-base', name: '空军基地', region: 'north', lon: 120, lat: 31, terrain: 'plain', value: 6 },
+      { id: 'ccp-hub', name: '敌方枢纽', region: 'north', lon: 121, lat: 31, terrain: 'rail', value: 8 },
+    ],
+    links: [], routeTypes: {},
+    units: [
+      { id: 'roc-garrison', name: '基地守军', side: 'roc', city: 'roc-base', strength: 20_000 },
+      { id: 'ccp-garrison', name: '枢纽守军', side: 'ccp', city: 'ccp-hub', strength: 20_000 },
+    ],
+    anchors: [{ date: '1947-01-01', ccp: ['ccp-hub'], roc: ['roc-base'] }],
+    scenarios: [{ id: 's', date: '1947-01-01', focus: 'ccp-hub', area: 'north' }],
+    events: [],
+  };
+  const state = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+  const control = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+  state.airWar.roc.planes = 300;
+  control.airWar.roc.planes = 0;
+  engine.step(data, state, 12);
+  engine.step(data, control, 12);
+  assert.ok(state.log.some(entry => entry.type === 'air-strike' && entry.action === 'strategic-bombing'));
+  assert.ok(state.economy.ccp.treasury < control.economy.ccp.treasury,
+    '轰炸应降低敌方经济储备：' + state.economy.ccp.treasury + ' / ' + control.economy.ccp.treasury);
+});
+
+test('AI 会为被合围且补给不足的守军转入空投补给', () => {
+  const data = {
+    cities: [
+      { id: 'pocket', name: '孤立据点', region: 'north', terrain: 'plain', value: 3 },
+      { id: 'west', name: '西侧敌城', region: 'north', terrain: 'plain', value: 2 },
+      { id: 'east', name: '东侧敌城', region: 'north', terrain: 'plain', value: 2 },
+    ],
+    links: [['pocket', 'west'], ['pocket', 'east']],
+    routeTypes: { 'pocket|west': 'land', 'east|pocket': 'land' },
+    units: [
+      { id: 'isolated', name: '孤立守军', side: 'roc', city: 'pocket', strength: 10_000 },
+      { id: 'west-army', name: '西侧围军', side: 'ccp', city: 'west', strength: 8_000 },
+      { id: 'east-army', name: '东侧围军', side: 'ccp', city: 'east', strength: 8_000 },
+    ],
+    anchors: [{ date: '1947-01-01', ccp: ['west', 'east'], roc: ['pocket'] }],
+    scenarios: [{ id: 's', date: '1947-01-01', focus: 'pocket', area: 'north' }],
+    events: [],
+  };
+  const state = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+  const control = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+  for (const current of [state, control]) {
+    for (const unit of current.units.filter(member => member.side === 'roc')) {
+      unit.ammo = 15;
+      unit.fuel = 15;
+      unit.food = 15;
+    }
+  }
+  state.airWar.roc.planes = 120;
+  control.airWar.roc.planes = 0;
+  engine.step(data, state, 1);
+  engine.step(data, control, 1);
+  assert.equal(state.airWar.roc.mission, 'airdrop');
+  assert.ok(engine.supplyReading(data, state).coverage.roc.pocket
+    > engine.supplyReading(data, control).coverage.roc.pocket, '空投任务应提高被围守军的补给覆盖');
+});
+
 test('旧版与新版舰队存档字段双向迁移时保留海域任务', () => {
   const legacy = create();
   legacy.seaZones = {};
@@ -804,6 +894,43 @@ test('未签租借条约时援助请求不扣除政治点或进入冷却', () =>
   assert.equal(state.foreignActionCooldowns.ccp['ussr:lend-lease'], undefined);
 });
 
+test('美国、苏联与东北日械影响按战后阶段和城镇控制变化', () => {
+  const data = {
+    cities: [
+      { id: 'nanjing', name: '南京', region: 'east', terrain: 'plain', value: 8 },
+      { id: 'harbin', name: '哈尔滨', region: 'northeast', terrain: 'plain', value: 5 },
+    ],
+    links: [['nanjing', 'harbin']],
+    routeTypes: { 'harbin|nanjing': 'land' },
+    units: [],
+    anchors: [{ date: '1945-08-01', ccp: ['harbin'], roc: ['nanjing'] }],
+    scenarios: [{ id: 's', date: '1945-08-01', focus: 'harbin', area: 'northeast' }],
+    events: [],
+  };
+  const make = date => engine.createGame(data, { date, scenarioId: 's', side: 'ccp', historyMode: 'dynamic' });
+  const early = make('1945-08-14');
+  const earlyStock = early.stock.ccp.infantry;
+  engine.step(data, early, 1);
+  assert.equal(early.date, '1945-08-15');
+  assert.ok(early.foreign.ussr.support > 0, '苏联影响应在东北阶段出现');
+  assert.ok(early.foreign.japan.stock > 0, '日本投降后遗留装备应进入早期库存');
+  assert.ok(early.stock.ccp.infantry > earlyStock);
+
+  const american = make('1945-12-31');
+  engine.step(data, american, 1);
+  assert.equal(american.date, '1946-01-01');
+  assert.ok(american.foreign.usa.support > 0, '美国援助应从战后援助阶段开始');
+
+  const late = make('1948-12-31');
+  late.foreign.usa.support = 0.5;
+  late.foreign.ussr.support = 0.4;
+  late.foreign.japan.stock = 50;
+  engine.step(data, late, 1);
+  assert.equal(late.foreign.usa.support, 0.49, '1949 年后美国援助强度应开始回落');
+  assert.equal(late.foreign.ussr.support, 0.388);
+  assert.equal(late.foreign.japan.stock, 50, '日本遗留装备不应继续增加');
+});
+
 test('高程网格会提高山地守军在战斗中的地形优势', () => {
   const makeBoard = (elevation, targetLongitude = 121) => {
     const samples = Buffer.alloc(8);
@@ -840,6 +967,14 @@ test('高程网格会提高山地守军在战斗中的地形优势', () => {
   const plain = firstBattleRecord(makeBoard(0));
   const mountain = firstBattleRecord(makeBoard(3200));
   assert.ok(plain.lastRatio > mountain.lastRatio);
+  const movementDays = elevation => {
+    const data = makeBoard(elevation);
+    const state = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+    const preview = engine.previewOrder(data, state, 'attacker', 'advance', 'b');
+    assert.equal(preview.ok, true);
+    return preview.days;
+  };
+  assert.ok(movementDays(3200) > movementDays(0), '高程网格应增加山地行军时间');
   assert.equal(plain.log.find(entry => entry.type === 'battle-start')?.period, plain.period);
   const night = firstBattleRecord(makeBoard(0, 121));
   const day = firstBattleRecord(makeBoard(0, 60));
