@@ -10,7 +10,15 @@
 
 **https://wangzirui471-collab.github.io/zhantu-civil-war/**
 
-打开网页即可开始，进度存在浏览器本地（localStorage）。
+打开网页即可开始，进度存在浏览器本地（localStorage）。如果所在网络访问 github.io 较慢，可克隆仓库后双击 `index.html`，或用下面的本地服务器在局域网内分享。
+
+## 界面截图
+
+![作战计划](docs/plan.png)
+
+![铁路补给](docs/supply.png)
+
+![战区地图与工事](docs/map.png)
 
 ## 主要功能
 

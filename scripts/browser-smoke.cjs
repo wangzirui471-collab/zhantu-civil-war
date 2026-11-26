@@ -1,4 +1,4 @@
-﻿const assert = require('node:assert/strict');
+const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -86,7 +86,8 @@ async function main() {
         Object.defineProperty(globalThis, 'CivilWarMap', { value: object });
       } });
     ` });
-    const url = pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
+    const url = process.env.CIVIL_WAR_URL
+      || pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
     await request('Page.navigate', { url });
     await poll(() => value('#date'), (label) => label === '1948.09.12');
     assert.equal(await value('#date'), '1948.09.12');
