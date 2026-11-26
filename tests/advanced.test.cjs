@@ -441,6 +441,40 @@ test('同等兵力的进攻会被击退，守军撤退而非全歼', () => {
   assert.ok(ended.aftermath.attackerCasualties < 24_000 * 0.25, '多日战役不应一次打光');
 });
 
+test('多日战役会把战斗开始后抵达的增援计入投入兵力', () => {
+  const data = {
+    cities: [
+      { id: 'origin', name: '出发地', region: 'north', terrain: 'plain', value: 4 },
+      { id: 'front', name: '交战点', region: 'north', terrain: 'plain', value: 4 },
+    ],
+    links: [['origin', 'front']], routeTypes: { 'front|origin': 'land' },
+    units: [
+      { id: 'first', name: '先头部队', side: 'ccp', city: 'origin', strength: 8_000 },
+      { id: 'reserve', name: '增援部队', side: 'ccp', city: 'origin', strength: 8_000 },
+      { id: 'garrison', name: '守军', side: 'roc', city: 'front', strength: 60_000 },
+    ],
+    anchors: [{ date: '1947-01-01', ccp: ['origin'], roc: ['front'] }],
+    scenarios: [{ id: 's', date: '1947-01-01', focus: 'origin', area: 'north' }],
+    events: [],
+  };
+  const state = engine.createGame(data, { scenarioId: 's', side: 'ccp', historyMode: 'dynamic', goal: 'all' });
+  const ready = id => state.units.filter(unit => unit.id === id || unit.id.startsWith(id + '-'))
+    .forEach(unit => { unit.orderDays = 0; });
+  assert.equal(engine.order(data, state, 'first', 'advance', 'front').ok, true);
+  ready('first');
+  engine.step(data, state, 1);
+  assert.ok(state.battles.front, '先头部队应先建立一场持续战斗');
+  const initialStrength = state.battles.front.attackerStrength;
+
+  assert.equal(engine.order(data, state, 'reserve', 'advance', 'front').ok, true);
+  ready('reserve');
+  engine.step(data, state, 1);
+  const record = state.battles.front ?? state.log.findLast(entry => entry.type === 'battle-end'
+    && entry.city === 'front')?.aftermath;
+  assert.ok(record);
+  assert.ok(record.attackerStrength > initialStrength, '增援应计入整场战役投入兵力');
+});
+
 test('AI 会在边境空虚时派驻驻军', () => {
   const wide = {
     cities: [

@@ -2152,6 +2152,7 @@
       city: city.id, side, defendingSide, since: state.date, days: 0,
       period: battlePeriod(state.date, city),
       attackerStrength: 0, defenderStrength: 0,
+      attackerUnitIds: [], defenderUnitIds: [],
       attackerCasualties: 0, defenderCasualties: 0, wounded: 0, prisoners: 0, routed: 0,
       lastRatio: 1,
     };
@@ -2321,9 +2322,23 @@
       if (!battle) battle = startBattle(state, city, side, defendingSide);
       battle.days += 1;
       battle.period = battlePeriod(state.date, city);
-      if (battle.days === 1) {
-        battle.attackerStrength = Math.round(attackersAll.reduce((sum, unit) => sum + unit.strength, 0));
-        battle.defenderStrength = Math.round(defenders.reduce((sum, unit) => sum + unit.strength, 0));
+      for (const [units, idsKey, strengthKey] of [
+        [attackersAll, 'attackerUnitIds', 'attackerStrength'], [defenders, 'defenderUnitIds', 'defenderStrength'],
+      ]) {
+        if (!Array.isArray(battle[idsKey])) {
+          battle[idsKey] = units.map(unit => unit.id);
+          if (!battle[strengthKey]) {
+            battle[strengthKey] = Math.round(units.reduce((sum, unit) => sum + unit.strength, 0));
+          }
+          continue;
+        }
+        const counted = new Set(battle[idsKey]);
+        for (const unit of units) {
+          if (counted.has(unit.id)) continue;
+          counted.add(unit.id);
+          battle[idsKey].push(unit.id);
+          battle[strengthKey] += Math.round(unit.strength);
+        }
       }
 
       const finishAttack = (won) => {
