@@ -6,7 +6,7 @@
     'createPlan', 'updatePlan', 'executePlan', 'pausePlan', 'delegatePlan', 'removePlan',
     'buildFort', 'setSupport', 'decide',
     'createDesign', 'updateDesign', 'assignDesign', 'researchTech', 'setAirMission', 'startFocus',
-    'setProduction', 'commandAbility', 'intelOperation', 'setLaw', 'diplomacyAction']);
+    'setProduction', 'commandAbility', 'intelOperation', 'setLaw', 'diplomacyAction', 'foreignAction', 'setNavalMission']);
   const usesData = new Set(['order', 'setLeader', 'setEquipment', 'createPlan', 'updatePlan', 'executePlan',
     'pausePlan', 'buildFort', 'setSupport', 'decide', 'commandAbility']);
   const day = 86400000;

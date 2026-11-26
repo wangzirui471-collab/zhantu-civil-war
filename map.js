@@ -12,6 +12,7 @@
     defend: { label: '布防', color: '#234e76', dash: [4, 3] },
     siege: { label: '围城', color: '#7d3a6b', dash: [5, 3] },
     intercept: { label: '围点打援', color: '#78395d', dash: [2, 3] },
+    bombard: { label: '轰炸', color: '#d7a347', dash: [2, 5] },
     hold: { label: '驻防', color: '#595843', dash: [] },
   };
   const orderStatus = { advance: '进攻中', move: '调动中', defend: '布防中',

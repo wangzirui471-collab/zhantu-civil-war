@@ -1,9 +1,10 @@
-﻿(() => {
+(() => {
   'use strict';
 
   const Data = globalThis.CivilWarData;
   const Engine = globalThis.CivilWarEngine;
   const Timeline = globalThis.CivilWarTimeline;
+  const SaveStore = globalThis.CivilWarSaveStore;
   const Portraits = globalThis.CivilWarPortraits || {};
   const $ = (id) => document.getElementById(id);
   if (!Data || !Engine || !Timeline) {
@@ -15,8 +16,8 @@
   const short = { ccp: '共产党', roc: '国民党' };
   const regions = { national: '全国', northeast: '东北战区', north: '华北战区', east: '华东战区',
     central: '中原战区', south: '华南战区', southwest: '西南战区', northwest: '西北战区', taiwan: '台湾' };
-  const commands = { advance: '进攻', defend: '布防', move: '调动', siege: '围城', intercept: '围点打援', hold: '原地待命' };
-  const enemyCommands = new Set(['advance', 'siege', 'intercept']);
+  const commands = { advance: '进攻', defend: '布防', move: '调动', siege: '围城', intercept: '围点打援', hold: '原地待命', bombard: '战略轰炸' };
+  const enemyCommands = new Set(['advance', 'siege', 'intercept', 'bombard']);
   const equipmentTypes = {
     infantry: ['步兵装备', '消耗补给较少，适合驻防和日常行动。'],
     artillery: ['炮兵装备', '在围城时提供火力加成。'],
@@ -141,14 +142,14 @@
     } catch { return { auto: '', slots: [] }; }
   }
   const store = loadStore();
+  const storeBackend = SaveStore?.create?.();
 
   function writeStore(next) {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      Object.assign(store, next);
-      return true;
-    }
-    catch { return false; }
+    let localSaved = false;
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); localSaved = true; } catch { /* IndexedDB 仍可保存。 */ }
+    Object.assign(store, next);
+    if (storeBackend) { void storeBackend.write(storageKey, next); return true; }
+    return localSaved;
   }
 
   function validateSave(raw) {
@@ -655,7 +656,7 @@
 
   function setMapHelp() {
     $('map-help').textContent = pendingOrder
-      ? (enemyCommands.has(pendingOrder) ? '命令目标 · 点击相邻敌城' : '命令目标 · 点击有己方通路的城镇')
+      ? (pendingOrder === 'bombard' ? '战略轰炸 · 点击 18 度范围内敌城' : enemyCommands.has(pendingOrder) ? '命令目标 · 点击相邻敌城或隔海目标' : '命令目标 · 点击有己方通路的城镇')
       : selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支 · 点「编成计划」统一目标'
         : permitted(inspectUnit()) ? '浅蓝为调动 · 暖色为进攻 · 悬停查看时间 · Ctrl 点击多选'
           : '点击部队牌选中 · 右键或拖到城镇下令 · 滚轮缩放';
@@ -715,6 +716,8 @@
     $('command-bar').innerHTML = Object.entries(commands).map(([type, label]) => '<button type="button" data-command="'
       + type + '" data-deck-command="' + type + '" aria-pressed="' + (pendingOrder === type) + '">'
       + label + '</button>').join('')
+      + '<button type="button" data-command="bombard" data-deck-command="bombard" aria-pressed="' + (pendingOrder === 'bombard') + '"'
+      + (unit && permitted(unit) && (state.airWar?.[state.player]?.planes ?? 0) >= 10 ? '' : ' disabled') + '>战略轰炸</button>'
       + '<button type="button" data-deck-plan' + (count > 1 || unit ? '' : ' disabled') + '>编成计划</button>'
       + (count > 1 ? '<button type="button" data-deck-clear>清空编队</button>' : '')
       + '<button type="button" data-deck-undo' + (undoStack.length ? '' : ' disabled') + '>撤销</button>'
@@ -1150,6 +1153,7 @@
       + ' · ' + escape(planModeNames[plan.mode] || plan.mode) + ' · ' + escape(cityName(plan.target))
       + (plan.line?.length ? ' · 战线 ' + plan.line.length + ' 城' : plan.autoLine ? ' · 自动战线' : '')
       + (plan.front ? ' · 集结 ' + escape(cityName(plan.front)) : '')
+      + (plan.autoLine || plan.line?.length ? ' · 战线 ' + (plan.autoLine ? '自动' : escape(plan.line.map(cityName).join('、'))) : '')
       + ' · ' + plan.units.length + ' 支部队' + (preview.days ? ' · 约 ' + preview.days + ' 天' : '')
       + (preview.ok ? '' : ' · 暂不可执行') + '</p><ul class="plan-units">' + rows + '</ul>';
   }
@@ -1569,14 +1573,53 @@
     const occupied = Data.cities.filter((city) => state.owners[city.id] !== side
       && state.coreOwners?.[city.id] === side).length;
     const resistance = Object.values(state.occupation ?? {}).filter((record) => (record.resistance ?? 0) > 50).length;
+    const foreignNames = { usa: '美国', ussr: '苏联', japan: '日本' };
+    const politicalPoints = state.political?.[side]?.points ?? 0;
+    const foreignStatus = Object.entries(foreignNames).map(([id, label]) => {
+      const actor = state.foreign?.[id] ?? {};
+      const relation = Math.round((actor.support ?? 0) * 100);
+      const cooldowns = state.externalCooldowns?.[side] ?? {};
+      const actions = id === 'japan'
+        ? '<p class="subtext">投降后装备记录 ' + Math.round(actor.stock ?? 0) + ' · 仅作战后初期影响</p>'
+        : '<div class="unit-actions">'
+          + '<button type="button" data-foreign="' + id + '" data-foreign-action="request-aid"'
+          + (cooldowns[id + ':request-aid'] || politicalPoints < 45 ? ' disabled' : '') + '>援助（45）</button>'
+          + '<button type="button" data-foreign="' + id + '" data-foreign-action="pressure"'
+          + (cooldowns[id + ':pressure'] || politicalPoints < 35 ? ' disabled' : '') + '>施压（35）</button>'
+          + '<button type="button" data-foreign="' + id + '" data-foreign-action="embargo"'
+          + (cooldowns[id + ':embargo'] || politicalPoints < 40 ? ' disabled' : '') + '>禁运（40）</button></div>';
+      return '<article class="card defense-card foreign-card"><header><h3>' + label + '</h3><span class="plan-status is-draft">'
+        + '影响 ' + relation + '</span></header><p class="subtext">'
+        + (id === 'usa' ? '扶蒋援助、调停与撤援政策。'
+          : id === 'ussr' ? '东北进驻、移交部分日械与政治压力。'
+            : '战败后留下的武器装备，仅限战后初期影响。')
+        + '</p>' + actions + '</article>';
+    }).join('');
+    const seaZones = ['东北外海', '黄海', '东海', '台湾海峡', '珠江口'];
+    const seaRows = seaZones.map(zone => {
+      const own = state.seaZones?.[zone]?.[side]?.mission ?? '';
+      return '<label>' + zone + '<select data-sea-zone="' + zone + '">'
+        + option('', '未部署', own)
+        + option('patrol', '巡逻/制海', own)
+        + option('escort', '护航', own)
+        + option('raid', '破交', own)
+        + option('invasion', '登陆准备', own)
+        + '</select></label>';
+    }).join('');
     return '<div class="stat-line">' + statChips({
       '情报水平': Math.round(intel.level), '情报点': Math.round(intel.points),
       '稳定度': stability, '我方沦陷城镇': occupied, '抵抗较高': resistance,
-    }) + '</div><div class="defense-cards">' + Object.entries(intelOpInfo).map(([id, op]) =>
-      '<article class="card defense-card"><header><h3>' + escape(op.name) + '</h3><span class="plan-status is-draft">'
-      + op.cost + ' 点</span></header><p class="subtext">' + escape(op.hint) + '</p>'
-      + '<div class="unit-actions"><button type="button" data-intel="' + id + '"'
-      + (intel.points < op.cost || intel.cooldowns?.[id] ? ' disabled' : '') + '>执行</button></div></article>').join('')
+      '战争支持': Math.round(state.warSupport?.[side] ?? 0),
+    }) + '</div><div class="foreign-grid">' + foreignStatus + '</div><div class="card"><h3>外部势力影响（简化推演）</h3>'
+      + '<p class="subtext">美国援助/禁运与外交压力；苏联 1945—46 年东北影响、装备援助；日本仅模拟投降后遗留武器，非日本参战。</p></div>'
+      + '<div class="card"><h3>海域任务</h3><div class="sea-zone-grid">' + seaRows + '</div>'
+      + '<button type="button" data-naval-save>执行海军部署</button>'
+      + '<p class="subtext">巡逻提高制海，护航降低海运补给成本，破交压低对方运输，登陆准备积累滩头优势。</p></div>'
+      + '<div class="defense-cards">' + Object.entries(intelOpInfo).map(([id, op]) =>
+        '<article class="card defense-card"><header><h3>' + escape(op.name) + '</h3><span class="plan-status is-draft">'
+        + op.cost + ' 点</span></header><p class="subtext">' + escape(op.hint) + '</p>'
+        + '<div class="unit-actions"><button type="button" data-intel="' + id + '"'
+        + (intel.points < op.cost || intel.cooldowns?.[id] ? ' disabled' : '') + '>执行</button></div></article>').join('')
       + '</div><div class="card"><h3>法令与稳定度</h3><div class="form-grid">'
       + Object.entries({ conscription: '征兵法令', economy: '经济法令' }).map(([kind, label]) =>
         '<label>' + label + '<select name="law-' + kind + '">'
@@ -1584,7 +1627,10 @@
         + '</select></label>').join('')
       + '</div><div class="unit-actions"><button type="button" data-law="conscription">更换征兵法令</button>'
       + '<button type="button" data-law="economy">更换经济法令</button></div></div>'
-      + '<div class="card"><h3>外交</h3><div class="unit-actions">'
+      + '<div class="card"><h3>外交</h3><label>外部国家<select name="diplomacy-actor">'
+      + option('usa', '美国', side === 'roc' ? 'usa' : 'ussr')
+      + option('ussr', '苏联', side === 'ccp' ? 'ussr' : 'usa')
+      + '</select></label><div class="unit-actions">'
       + Object.entries(diplomacyInfo).map(([id, op]) => '<button type="button" data-diplomacy="' + id + '"'
         + (state.diplomacy?.[side]?.cooldowns?.[id] ? ' disabled' : '') + '>' + escape(op.name)
         + '（' + op.cost + ' 点）</button>').join('')
@@ -2117,12 +2163,42 @@
       }
     }
     else if (d.diplomacy) {
-      if (action('diplomacyAction', [d.diplomacy])) {
+      const actor = document.querySelector('[name=diplomacy-actor]')?.value || (state.player === 'ccp' ? 'ussr' : 'usa');
+      if (action('diplomacyAction', [d.diplomacy, actor])) {
         saveAuto(true);
         render();
         notify(d.diplomacy === 'ceasefire' ? '双方接受调停，战争结束。'
           : (diplomacyInfo[d.diplomacy]?.name ?? '外交行动') + '已完成。');
         defensePanel('intel');
+      }
+    }
+    else if (d.foreign && d.foreignAction) {
+      if (action('foreignAction', [d.foreign, d.foreignAction])) {
+        saveAuto(true);
+        render();
+        notify('已通过' + ({ usa: '美国', ussr: '苏联', japan: '日本' }[d.foreign] || d.foreign) + '渠道执行外交行动。');
+        defensePanel('intel');
+      }
+    }
+    else if (d.navalSave !== undefined) {
+      const selectors = [...document.querySelectorAll('[data-sea-zone]')];
+      const before = { state: Engine.snapshot(state), timeline: structuredClone(timeline) };
+      let changed = 0;
+      for (const selector of selectors) {
+        const zone = selector.dataset.seaZone;
+        const current = state.seaZones?.[zone]?.[state.player]?.mission ?? '';
+        if (selector.value === current) continue;
+        const result = Timeline.apply(timeline, Engine, Data, state, 'setNavalMission', [zone, selector.value]);
+        if (result.ok) changed += 1;
+        else notify(result.error);
+      }
+      if (changed) {
+        undoStack.push(before);
+        if (undoStack.length > undoLimit) undoStack.shift();
+        saveAuto(true);
+        render();
+        notify('海军海域任务已更新。');
+        defensePanel('navy');
       }
     }
     else if (d.groupRoster || d.groupControl) {
@@ -2247,15 +2323,25 @@
     if (event.error) notify('操作遇到问题，请在存档菜单保留当前进度。');
   });
 
-  let restored;
-  if (store.auto) {
-    try { restored = validateSave(store.auto); }
-    catch { notify('旧存档无法读取，已载入默认剧本。'); }
+  async function restoreSavedGame() {
+    const saved = storeBackend ? await storeBackend.load(storageKey) : loadStore();
+    Object.assign(store, saved);
+    let restored;
+    if (store.auto) {
+      try { restored = validateSave(store.auto); }
+      catch { notify('旧存档无法读取，已载入默认剧本。'); }
+    }
+    const initial = restored?.state || Engine.createGame(Data, {
+      scenarioId: 'liaoshen', scope: 'theater', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
+    });
+    setActive(initial, restored?.timeline || Timeline.create(initial, Engine), false);
   }
-  const initial = restored?.state || Engine.createGame(Data, {
-    scenarioId: 'liaoshen', scope: 'theater', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
+  restoreSavedGame().catch(() => {
+    const initial = Engine.createGame(Data, {
+      scenarioId: 'liaoshen', scope: 'theater', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
+    });
+    setActive(initial, Timeline.create(initial, Engine), false);
   });
-  setActive(initial, restored?.timeline || Timeline.create(initial, Engine), false);
 })();
 
 

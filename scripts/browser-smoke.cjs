@@ -355,6 +355,12 @@ async function main() {
     await click('[data-defense-tab=intel]');
     await click('[data-intel=recon]');
     assert.ok((await state()).intel.ccp.level > 35);
+    assert((await value('#dialog-body')).includes('美国') && (await value('#dialog-body')).includes('苏联'));
+    assert(await evaluate('document.querySelector("[data-foreign=ussr][data-foreign-action=request-aid]").disabled'));
+    assert(await evaluate('typeof CivilWarSaveStore?.create === "function"'));
+    await choose('[data-sea-zone="黄海"]', 'raid');
+    await click('[data-naval-save]');
+    assert.equal((await state()).navy.ccp.zones['黄海'].mission, 'raid', '海军部署应写入游戏状态');
     await click('[data-defense-tab=navy]');
     assert((await value('#dialog-body')).includes('运输船'));
     await click('#dialog-close');
@@ -407,7 +413,7 @@ async function main() {
     await mouse('mousePressed', jinzhouPoint);
     await mouse('mouseReleased', jinzhouPoint);
     assert.equal((await state()).units.find((unit) => unit.id === 'nw3').order.type, 'advance', await value('#toast'));
-    for (let day = 0; day < 22; day++) await click('#step');
+    for (let day = 0; day < 60; day++) await click('#step');
     await click('#show-log');
     assert((await value('#dialog-body')).includes('累计战果'));
     await choose('#brief-filter', 'all');
