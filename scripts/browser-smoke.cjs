@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const http = require('node:http');
 const { pathToFileURL } = require('node:url');
 const { setTimeout: wait } = require('node:timers/promises');
 
@@ -20,6 +21,27 @@ async function poll(read, predicate = Boolean) {
 }
 
 async function main() {
+  // 测试服务器只在内存中注入状态读取入口，正式游戏文件不包含该入口。
+  const root = path.resolve(__dirname, '..');
+  const server = http.createServer(async (request, response) => {
+    try {
+      const relative = decodeURIComponent(new URL(request.url, 'http://localhost').pathname).replace(/^\/+/, '') || 'index.html';
+      const filename = path.resolve(root, relative);
+      if (!filename.startsWith(root + path.sep)) { response.writeHead(403); response.end(); return; }
+      let data = await fs.readFile(filename);
+      if (relative === 'app.js') {
+        const marker = '  restoreSavedGame().catch(() => {';
+        const source = data.toString('utf8');
+        assert(source.includes(marker), '找不到测试入口位置');
+        data = Buffer.from(source.replace(marker,
+          '  Object.defineProperty(window, "__smokeState", { get: () => state });\n' + marker));
+      }
+      const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+        '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' }[path.extname(filename)] || 'application/octet-stream';
+      response.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store' }); response.end(data);
+    } catch { response.writeHead(404); response.end(); }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const binary = process.env.CIVIL_WAR_CHROMIUM
     || path.join(process.env.ProgramFiles || 'C:/Program Files', 'Google/Chrome/Application/chrome.exe');
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'civil-war-map-'));
@@ -65,7 +87,7 @@ async function main() {
     const set = (query, next) => evaluate('document.querySelector(' + JSON.stringify(query) + ').value=' + JSON.stringify(next));
     const choose = (query, next) => evaluate('(() => { const node = document.querySelector(' + JSON.stringify(query)
       + '); node.value = ' + JSON.stringify(next) + '; node.dispatchEvent(new Event("change", { bubbles: true })); })()');
-    const state = () => evaluate('JSON.parse(JSON.parse(localStorage.getItem("civil-war-map-v1")).auto).state');
+    const state = () => evaluate('structuredClone(window.__smokeState)');
     const point = (city) => evaluate(`(() => {
       const r = document.querySelector('#map').getBoundingClientRect();
       const [x,y] = window.testMap.point(${JSON.stringify(city)});
@@ -87,10 +109,30 @@ async function main() {
       } });
     ` });
     const url = process.env.CIVIL_WAR_URL
-      || pathToFileURL(path.resolve(__dirname, '..', 'index.html')).href;
+      || 'http://127.0.0.1:' + server.address().port + '/';
     await request('Page.navigate', { url });
+    await poll(() => value('#date'), (label) => label === '1946.06.26');
+    assert.equal(await value('#date'), '1946.06.26');
+    assert.equal(await evaluate('document.querySelector("[data-scenario=war1946]").getAttribute("aria-pressed")'), 'true');
+    assert.equal(await evaluate('document.querySelector("[data-layer=situation]").getAttribute("aria-pressed")'), 'true');
+    assert.equal(await evaluate('document.querySelector("[data-overlay=terrainBack]").getAttribute("aria-pressed")'), 'true');
+    await click('[data-overlay=terrainBack]');
+    assert.equal(await evaluate('document.querySelector("[data-overlay=terrainBack]").getAttribute("aria-pressed")'), 'false');
+    await click('[data-overlay=terrainBack]');
+    assert.equal(await evaluate('document.querySelector("[data-overlay=terrainBack]").getAttribute("aria-pressed")'), 'true');
+    assert.equal(await evaluate('document.querySelector("#territory-note").hidden'), false);
+    if (process.env.CIVIL_WAR_TERRITORY_SCREENSHOT) {
+      const shot = await request('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(process.env.CIVIL_WAR_TERRITORY_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    await click('[data-layer=faction]');
+    assert(await evaluate('!document.querySelector("#faction-key").hidden && document.querySelector("#faction-key").children.length >= 2'), '派系图应显示颜色说明');
+    await click('[data-layer=terrain]');
+    assert(await evaluate('document.querySelector("#territory-note").hidden'), '地形图应隐藏势力范围说明');
+    await click('[data-layer=situation]');
+    await click('[data-scenario=liaoshen]');
+    await click('#start-form [type=submit]');
     await poll(() => value('#date'), (label) => label === '1948.09.12');
-    assert.equal(await value('#date'), '1948.09.12');
     const originalMapWidth = await evaluate('document.querySelector("#map").getBoundingClientRect().width');
     await click('#map-expand');
     await wait(180);
@@ -107,6 +149,43 @@ async function main() {
       testMap.focus('northeast', 'jinzhou'); return after / before;
     })()`);
     assert(zoomExpansion > 1.4, '高倍率下地图应仍可继续放大');
+    const separation = () => evaluate(`(() => { const a = testMap.point('jinzhou'), b = testMap.point('tashan');
+      return Math.hypot(a[0] - b[0], a[1] - b[1]); })()`);
+    const beforeDetail = await separation();
+    await click('#detail-view');
+    const afterDetail = await separation();
+    assert(afterDetail > beforeDetail * 3, '局部视角应放大地图的实际城镇间距');
+    await evaluate('testMap.zoom(1000)');
+    assert(await separation() > afterDetail * 10, '地图高倍率应继续提供空间');
+    await evaluate("testMap.focus('northeast', 'jinzhou')");
+    await evaluate('testMap.zoom(2)');
+    const selectFigure = async (except) => {
+      const figure = await evaluate(`(() => {
+        const r = document.querySelector('#map').getBoundingClientRect();
+        return testMap.markers().filter(m => m.figure && m.side === 'ccp' && m.unitId !== ${JSON.stringify(except || '')})
+          .map(m => ({ ...m, x: m.left + m.width / 2, y: m.top + m.height / 2, rx: r.left, ry: r.top }))
+          .find(m => m.x > 5 && m.y > 5 && m.x < r.width - 5 && m.y < r.height - 5
+            && testMap.hitTest(m.x, m.y)?.unitId === m.unitId && testMap.hitTest(m.x, m.y)?.figure);
+      })()`);
+      assert(figure, '地图上应有可直接点选的己方三维人物');
+      const expected = await evaluate(`window.__smokeState.units.find(unit => unit.id === ${JSON.stringify(figure.unitId)})?.name`);
+      await mouse('mousePressed', [figure.rx + figure.x, figure.ry + figure.y]);
+      await mouse('mouseReleased', [figure.rx + figure.x, figure.ry + figure.y]);
+      assert(expected && (await value('#deck-unit')).includes(expected), '点击人物应选择其所属部队');
+      return figure.unitId;
+    };
+    const firstFigure = await selectFigure();
+    const secondFigure = await selectFigure(firstFigure);
+    assert.notEqual(firstFigure, secondFigure, '不同部队人物应可分别选择');
+    assert(await evaluate(`(() => { const readout = document.querySelector('.unit-readout');
+      const headline = document.querySelector('.unit-headline');
+      return readout && headline && readout.getBoundingClientRect().width >= headline.getBoundingClientRect().width * .85; })()`),
+    '部队数据应占据整行，不能被头像和模型挤成窄列');
+    if (process.env.CIVIL_WAR_FIGURE_SCREENSHOT) {
+      const screenshot = await request('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(process.env.CIVIL_WAR_FIGURE_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
+    }
+    await evaluate("testMap.focus('northeast', 'jinzhou')");
     assert.equal(await evaluate('document.querySelector("#map").dataset.humanModel'), 'webgl',
       '浏览器应实际启用 WebGL 人物模型');
     assert(await evaluate(`(() => {
@@ -117,6 +196,19 @@ async function main() {
       for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) visible++;
       return visible > 100;
     })()`), '三维模型应真实绘制出可见人物');
+    const clippedSprites = await evaluate(`(() => {
+      const r = CivilWarHuman3D.createRenderer(), bad = [];
+      const scenes = [['human','march'],['human','fire'],['human','entrench'],['human','rest'],['human','sleep'],
+        ['tank','march'],['tank','fire'],['artillery','fire'],['aircraft','march']];
+      for (const [kind, action] of scenes) for (const side of ['ccp','roc']) for (const phase of [0, 550]) {
+        const frame = r.frame(side,true,phase,kind,action), w=frame.width, p=frame.getContext('2d').getImageData(0,0,w,w).data;
+        let edge=false; for(let x=0;x<w;x++) if(p[x*4+3] || p[((w-1)*w+x)*4+3]) edge=true;
+        for(let y=0;y<w;y++) if(p[y*w*4+3] || p[(y*w+w-1)*4+3]) edge=true;
+        if(edge) bad.push(kind+'/'+action+'/'+side+'/'+phase);
+      }
+      return bad;
+    })()`);
+    assert.deepEqual(clippedSprites, [], '地图模型不应被精灵画布裁切：' + clippedSprites.join('、'));
     assert(await evaluate('document.documentElement.scrollHeight <= innerHeight'));
     assert(await evaluate('CivilWarGeography.grids.length === 3 && CivilWarGeography.provinces.length > 30'));
     const mapImageBefore = await evaluate('document.querySelector("#map").toDataURL().length');
@@ -157,7 +249,7 @@ async function main() {
     await click('[data-command=hold]');
     assert(await value('#toast').then((message) => message.includes('已下达')));
     const regiment = (await state()).units.find((unit) => unit.level === 'regiment' && unit.order?.type === 'hold');
-    assert(regiment, '团级命令应写入存档');
+    assert(regiment, '团级命令应写入当前战局');
     assert.equal(regiment.manualAssignment, true, '手动命令应保留玩家对该团的控制');
     assert((await value('#inspector-body')).includes('位置与任务'));
     await click('[data-release-ai="' + regiment.id + '"]');
@@ -228,13 +320,9 @@ async function main() {
     assert.equal((await state()).policies.recruit, 'high');
     for (let day = 0; day < 6; day++) await click('#step');
     assert.equal(await value('#date'), '1948.10.20');
-    await click('#save-menu');
-    await set('#branch-form [name=date]', '1948-10-16');
-    await click('#branch-form button[type=submit]');
-    assert.equal(await value('#date'), '1948.10.16');
-    await click('#save-menu');
-    await click('[data-load-slot="0"]');
-    assert.equal(await value('#date'), '1948.10.20');
+    assert(await evaluate('document.querySelector("#save-menu").disabled'), '应关闭存档入口');
+    assert.equal(await evaluate(`(() => { localStorage.setItem('smoke', 'x'); return localStorage.getItem('smoke'); })()`), null);
+    assert.equal(await evaluate('typeof indexedDB'), 'undefined');
 
     await click('#groups');
     assert((await value('#dialog-body')).includes('桂系'));
@@ -249,17 +337,6 @@ async function main() {
     const photos = await evaluate('Promise.all([...document.images].map(img => img.decode())).then(() => document.images.length)');
     assert(photos >= 30);
     await click('#dialog-close');
-    await evaluate(`(() => {
-      const raw = JSON.parse(localStorage.getItem('civil-war-map-v1'));
-      const progress = JSON.parse(raw.auto);
-      delete progress.state.owners.nianzhuang;
-      delete progress.timeline.origin.owners.nianzhuang;
-      raw.auto = JSON.stringify(progress);
-      localStorage.setItem('civil-war-map-v1', JSON.stringify(raw));
-    })()`);
-    await request('Page.reload');
-    await poll(() => value('#date'), (label) => label === '1948.10.20');
-    assert.equal((await state()).group, 'guixi');
     await click('#national-view');
     assert((await state()).owners.nianzhuang);
 
@@ -277,10 +354,10 @@ async function main() {
     assert((await value('#dialog-body')).includes('城镇控制数'));
     await click('#dialog-close');
 
-    const formalSave = await state();
     await click('#forecast');
     await set('#forecast-months', '6');
     await click('#compare-forecast');
+    const formalSave = await state();
     await click('#calculate-comparison');
     assert.equal(await evaluate('document.querySelectorAll(".comparison-table tbody tr").length'), 6);
     assert(await value('#comparison-output').then((text) => text.includes('粮食') && text.includes('整补结束')));
@@ -466,7 +543,7 @@ async function main() {
         assert.equal(await evaluate('document.querySelector("#battle-hud").hidden'), false,
           '进行中的战斗应立即显示战场指挥面板');
         const battleChoice = await evaluate(`(() => {
-          const saved = JSON.parse(JSON.parse(localStorage.getItem('civil-war-map-v1')).auto).state;
+          const saved = window.__smokeState;
           const city = document.querySelector('#battle-hud [data-battle-posture]')?.dataset.battleCity;
           const battle = saved.battles?.[city];
           const posture = saved.player === battle?.side ? 'assault' : 'hold';
@@ -580,11 +657,41 @@ async function main() {
       const screenshot = await request('Page.captureScreenshot', { format: 'png' });
       await fs.writeFile(process.env.CIVIL_WAR_REVIEW_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
     }
+    await request('Emulation.clearDeviceMetricsOverride');
+    await request('Page.navigate', { url: pathToFileURL(path.resolve(__dirname, '..', '军舰审阅.html')).href });
+    await poll(() => evaluate(`(() => { const c = document.querySelector('#ship');
+      if (!c) return false; const data = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+      for (let i=3;i<data.length;i+=4) if (data[i]) return true; return false; })()`));
+    const clippedAngles = await evaluate(`(() => {
+      const renderer = CivilWarHuman3D.createRenderer({resolution: 512}), clipped = [];
+      for (let angle=0; angle<8; angle++) {
+        const frame = renderer.frame('roc', false, 0, 'ship', 'idle', '', angle * Math.PI / 4);
+        const pixels = frame.getContext('2d').getImageData(0,0,512,512).data;
+        let edge = false;
+        for (let x=0; x<512; x++) if (pixels[(x*4)+3] || pixels[((511*512+x)*4)+3]) edge=true;
+        for (let y=0; y<512; y++) if (pixels[(y*512*4)+3] || pixels[((y*512+511)*4)+3]) edge=true;
+        if (edge) clipped.push(angle * 45);
+      }
+      return clipped;
+    })()`);
+    assert.deepEqual(clippedAngles, [], '军舰八个审阅角度应完整显示：' + clippedAngles.join('、'));
+    const shipBefore = await evaluate('document.querySelector("#ship").toDataURL()');
+    await click('#right');
+    await poll(() => evaluate('document.querySelector("#ship").toDataURL()'), image => image !== shipBefore);
+    await click('[data-action=attack]');
+    assert.equal(await evaluate('document.querySelector("[data-action=attack]").getAttribute("aria-pressed")'), 'true');
+    await click('[data-action=idle]');
+    if (process.env.CIVIL_WAR_SHIP_SCREENSHOT) {
+      await wait(250);
+      const screenshot = await request('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(process.env.CIVIL_WAR_SHIP_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
+    }
     assert.deepEqual(errors, []);
-    console.log('浏览器通过：地图命令、多选作战计划、政治决议与撤销、国策科研生产编制空军指挥情报、铁路补给、工事、实时战斗姿态与地图动效、多日战役与战报、单屏界面、锦州引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
+    console.log('浏览器通过：地图命令、多选作战计划、政治决议与撤销、国策科研生产编制空军指挥情报、铁路补给、工事、实时战斗姿态与地图动效、多日战役与战报、单屏界面、锦州引导、两方案预测与局势隔离、历史日期开局、自动暂停、关闭存档和照片。');
   } finally {
     socket?.close();
     child.kill();
+    server.close();
     if (errors.length) console.error(errors.join('\n'));
   }
 }

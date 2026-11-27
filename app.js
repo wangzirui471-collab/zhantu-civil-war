@@ -58,7 +58,7 @@
   const citiesById = new Map(Data.cities.map((city) => [city.id, city]));
   const leadersById = new Map((Data.leaders || []).map((leader) => [leader.id, leader]));
   const groupsById = new Map((Data.groups || []).map((group) => [group.id, group]));
-  const priorityScenarios = ['liaoshen', 'northwest', 'huaihai', 'pingjin', 'jinzhou', 'tashan', 'siping'];
+  const priorityScenarios = ['war1946', 'liaoshen', 'huaihai', 'pingjin', 'jinzhou', 'tashan', 'siping'];
   const scenarioMarks = { liaoshen: '辽', northwest: '西', huaihai: '淮', pingjin: '平', jinzhou: '锦', tashan: '塔', siping: '四', changchun: '长', full: '全' };
   const stageTargets = new Map([['liaoshen', ['jinzhou', 'tashan', 'shenyang', 'changchun']]]);
   const historyFamily = (id) => ({ jinzhou: 'liaoshen', tashan: 'liaoshen', changchun: 'liaoshen' }[id] || id);
@@ -199,10 +199,7 @@
     return result;
   }
 
-  function saveAuto(force = false) {
-    if (!state || (!force && state.date === saveDay)) return;
-    if (writeStore({ ...store, auto: Timeline.serialize(state, timeline) })) saveDay = state.date;
-  }
+  function saveAuto() { /* 当前版本不产生自动存档 */ }
 
   function notify(text) {
     $('toast').textContent = text;
@@ -676,7 +673,7 @@
         : unit.profile === 'mobile' || unit.branch === 'armor' ? 'tank' : 'human')
       + '" style="width:72px;height:72px;border-radius:6px;border:1px solid #4e5e52;background:#1a241f;flex-shrink:0;" title="3D 实时兵模预览"></canvas>'
       + '<div class="unit-readout"><span>现役兵力 <strong>' + strength + '</strong> / ' + format(unit.maxStrength)
-      + ' 人（地图 ' + format(figureIcons) + ' 兵标' + (tankIcons ? ' · ' + format(tankIcons) + ' 坦克标' : '') + '）</span>'
+      + ' 人（地图 ' + format(figureIcons) + ' 兵标' + (tankIcons ? ' · 约 ' + format(tankIcons) + ' 坦克标' : '') + '）</span>'
       + (leader ? '<span>现任主官：' + escape(leader.name + '（' + (leader.role || '司令官') + '）') + '</span>' : '<span>现任主官：暂缺（可任命）</span>')
       + (group ? '<span>派系与军服：' + escape(group.name) + '</span>' : '')
       + (divisionSummary ? '<span>' + escape(divisionSummary) + '</span>' : '')
@@ -999,7 +996,7 @@
     $('deck-hint').textContent = count > 1
       ? '已选 ' + count + ' 支纵队：点战术命令再点城镇可协同行动'
       : pendingOrder ? '已选「' + commands[pendingOrder] + '」：点击目标城镇，或点「就地执行」'
-        : unit && permitted(unit) ? '每个战术对应专属三维动作 · 5000人/兵 · 5坦/标 · 3机/标 · 1舰/标'
+        : unit && permitted(unit) ? '5000人/兵 · 5坦/标（估算）· 3机/标 · 1舰/标'
           : '直接点击地图上的任一纵队/军即可单独调遣（Ctrl 多选）';
     const commandButton = (type) => '<button type="button" data-command="' + type + '" data-deck-command="' + type
       + '" aria-pressed="' + (pendingOrder === type) + '">' + commands[type] + '</button>';
@@ -1150,7 +1147,7 @@
       + '<label>剧本<select name="scenario">' + Data.scenarios.map((item) => option(item.id, item.title, scenario.id)).join('') + '</select></label>'
       + '<label>开局日期<input required type="date" name="date" min="1945-08-15" max="1951-12-31" value="' + startDate + '"></label>'
       + '<label>接管阵营<select name="side">' + Object.entries(sides).map((item) => option(...item, pickedSide)).join('') + '</select></label>'
-      + '<label>指挥范围<select name="scope">' + option('theater', '当前战区', scenario.id === 'full' ? 'national' : 'theater') + option('national', '全国', scenario.id === 'full' ? 'national' : 'theater') + '</select></label>'
+      + '<label>指挥范围<select name="scope">' + option('theater', '当前战区', ['full', 'war1946'].includes(scenario.id) ? 'national' : 'theater') + option('national', '全国', ['full', 'war1946'].includes(scenario.id) ? 'national' : 'theater') + '</select></label>'
       + '<label>历史AI模式<select name="historyMode">' + option('historical', '历史事件优先', state.historyMode) + option('dynamic', '随局势推演', state.historyMode) + '</select></label>'
       + '<label>统一目标<select name="goal">' + option('mainland', '统一大陆', state.goal) + option('all', '统一大陆及台湾', state.goal) + '</select></label>'
       + '</div><div class="dialog-actions"><button class="gold" type="submit" style="min-width:150px;font-size:14px;padding:9px 20px;">⚔ 开始指挥</button>'
@@ -2352,7 +2349,7 @@
   }
 
   function forecast() {
-    const body = showDialog('局势预测', '<p>从当前日期复制战局，按月推演两方城市、兵员及胜负。正式存档照常保留。</p>'
+    const body = showDialog('局势预测', '<p>从当前日期复制战局，按月推演两方城市、兵员及胜负。当前战局不会被预测修改。</p>'
       + '<label class="field">预测跨度<select id="forecast-months"><option value="3">未来 3 个月</option>'
       + '<option value="6">未来 6 个月</option><option value="12">未来 12 个月</option></select></label>'
       + '<div class="dialog-actions"><button id="run-forecast" type="button" class="gold">开始推演</button>'
@@ -2470,7 +2467,7 @@
   }
 
   function switchSide() {
-    const body = showDialog('更换接管阵营', '<p>当前日期和双方此前的行动记录会随存档继续。</p>'
+    const body = showDialog('更换接管阵营', '<p>当前日期和双方此前的行动记录会继续保留在本次战局中。</p>'
       + '<div class="dialog-actions"><button type="button" data-control-side="ccp">接管中国共产党</button>'
       + '<button type="button" data-control-side="roc">接管中国国民党</button></div>');
     body.querySelectorAll('[data-control-side]').forEach((item) => {
@@ -2490,12 +2487,7 @@
     });
   }
 
-  function saveSlot() {
-    const name = (scenarioNow()?.title || '自订战局') + ' · ' + state.date + ' · ' + short[state.player];
-    const raw = Timeline.serialize(state, timeline);
-    if (store.slots[0]?.raw === raw) return true;
-    return writeStore({ ...store, slots: [{ name, raw }, ...store.slots].slice(0, 6) });
-  }
+  function saveSlot() { notify('当前版本不保存进度'); return false; }
 
   function downloadSave() {
     const url = URL.createObjectURL(new Blob([Timeline.serialize(state, timeline)], { type: 'application/json' }));
@@ -2975,6 +2967,7 @@
       }
     };
   }
+  $('detail-view').onclick = () => map.detail(inspectUnit()?.city || selectedCity);
   $('map-expand').onclick = (event) => {
     const expanded = document.querySelector('.workspace').classList.toggle('map-expanded');
     event.currentTarget.setAttribute('aria-pressed', String(expanded));
@@ -3100,7 +3093,7 @@
   });
   window.addEventListener('pagehide', () => saveAuto(true));
   window.addEventListener('error', (event) => {
-    if (event.error) notify('操作遇到问题，请在存档菜单保留当前进度。');
+    if (event.error) notify('操作遇到问题，请检查当前操作。');
   });
 
   async function restoreSavedGame() {
@@ -3112,13 +3105,13 @@
       catch { notify('旧存档无法读取，已载入默认剧本。'); }
     }
     const initial = restored?.state || Engine.createGame(Data, {
-      scenarioId: 'liaoshen', scope: 'theater', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
+      scenarioId: 'war1946', scope: 'national', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
     });
     setActive(initial, restored?.timeline || Timeline.create(initial, Engine), false);
   }
   restoreSavedGame().catch(() => {
     const initial = Engine.createGame(Data, {
-      scenarioId: 'liaoshen', scope: 'theater', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
+      scenarioId: 'war1946', scope: 'national', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
     });
     setActive(initial, Timeline.create(initial, Engine), false);
   });

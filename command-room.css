@@ -80,6 +80,12 @@ body { overflow: hidden; }
 .map-layers button { min-height: 24px; font-size: 10px; padding: 2px 6px; color: #e6e5d5; background: #1d2922ee; border-color: #5b6d58; }
 .map-layers button[aria-pressed=true] { color: #fff0bd; background: #4d4b36f5; border-color: #bda674; }
 .map-legend { left: 12px; bottom: 38px; background: #1d2922e0; }
+.territory-note { position: absolute; left: 12px; bottom: 67px; z-index: 1; padding: 3px 7px; border-radius: 3px; font-size: 10px; color: #f3e7c5; background: #1d2922e8; pointer-events: none; }
+.territory-note[hidden] { display: none; }
+.faction-key { position: absolute; left: 12px; top: 82px; z-index: 1; display: grid; gap: 3px; max-height: 40%; overflow: auto; padding: 6px 8px; color: #f3e7c5; background: #1d2922e8; border-radius: 4px; font-size: 10px; }
+.faction-key[hidden] { display: none; }
+.faction-key span { display: flex; gap: 5px; align-items: center; }
+.faction-key i { width: 9px; height: 9px; border-radius: 2px; }
 .map-legend .attack-key { border-top-color: #f07755; border-top-style: dashed; }
 .map-legend .shell-key { border-top-color: #ffe6a2; border-top-style: dotted; }
 .map-legend .sea-key { border-top-color: #91c9e4; }
@@ -134,6 +140,9 @@ dialog { background: rgba(22, 26, 24, 0.92); border: 1px solid #8c7853; backdrop
 .commander-chip { display: flex; flex: 0 0 auto; align-items: center; text-align: left; gap: 5px; padding: 3px 5px; font-size: 9px; }
 .commander-chip img { width: 31px; height: 38px; object-fit: cover; object-position: top; border-radius: 2px; }
 .commander-chip strong { display: block; color: #e4cea0; font-size: 12px; }
+.unit-headline { display: grid; grid-template-columns: minmax(0, 1fr) 72px; align-items: start; gap: 6px; }
+.unit-headline .commander-chip { min-width: 0; }
+.unit-headline .unit-readout { grid-column: 1 / -1; min-width: 0; }
 .roster-pages { display: flex; gap: 4px; align-items: center; justify-content: space-between; font-size: 10px; margin-top: 5px; color: var(--dim); }
 .roster-pages button { min-height: 25px; padding-inline: 5px; }
 

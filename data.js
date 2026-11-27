@@ -1068,6 +1068,7 @@
   }));
 
   const scenarios = [
+    {id:'war1946',title:'全面内战爆发',date:'1946-06-26',focus:'xuanhuadian',area:'central',summary:'1946年6月26日，国民党军进攻中原解放区，全面内战爆发。以全国范围接管战局；城市归属、部队位置和势力范围使用现有史实节点及游戏推演，不能视为精确历史边界。',source:src('y1946')},
     {id:'liaoshen',title:'辽沈战役',date:'1948-09-12',focus:'jinzhou',area:'northeast',summary:'北宁铁路将锦州、锦西和山海关连在一起，沈阳与长春仍由国民党军控制。战役自9月12日开始，官方军史以11月2日为结束日。选择任一方，可将东北的决策交给自己，其他战区仍继续推进。',source:src('liaoshen')},
     {id:'jinzhou',title:'锦州攻坚战',date:'1948-10-14',focus:'jinzhou',area:'northeast',summary:'10月14日，东北野战军向锦州发起总攻。守军由范汉杰指挥，塔山方向的援军与辽西方向的第9兵团也影响战局。历史上锦州在10月15日易手。',source:src('jinzhou')},
     {id:'tashan',title:'塔山阻击战',date:'1948-10-10',focus:'tashan',area:'northeast',summary:'塔山位于锦州和锦西之间的滨海走廊。东北野战军第4纵队等部承担阻援任务，国民党军第17兵团从锦西、葫芦岛方向援锦。战事持续至10月15日。',source:src('tashan')},

@@ -34,6 +34,30 @@
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
   const linkKey = (a, b) => a < b ? a + '|' + b : b + '|' + a;
 
+  // 城市节点仅供近似推算显示，不能当作历史控制边界。
+  function territoryNodes(data, state, factions = false) {
+    const groups = new Map();
+    if (factions) for (const unit of state.units || []) {
+      if (unit.parent || unit.inactive || !(unit.strength > 0) || !unit.group
+        || unit.side !== state.owners?.[unit.city]) continue;
+      const old = groups.get(unit.city);
+      if (!old || unit.strength > old.strength) groups.set(unit.city, unit);
+    }
+    return (data.cities || []).filter(city => ['ccp', 'roc'].includes(state.owners?.[city.id]))
+      .map(city => ({ id: city.id, lon: city.lon, lat: city.lat, owner: state.owners[city.id],
+        group: groups.get(city.id)?.group || null }));
+  }
+
+  function nearestTerritory(lon, lat, nodes, maximum = 3.5) {
+    let nearest = null, best = maximum * maximum;
+    for (const node of nodes) {
+      const dx = (lon - node.lon) * .76, dy = lat - node.lat;
+      const distance = dx * dx + dy * dy;
+      if (distance < best) { best = distance; nearest = node; }
+    }
+    return nearest;
+  }
+
   function prepareGrid(grid, index) {
     const binary = atob(grid.samples);
     const meters = new Int16Array(grid.width * grid.height);
@@ -99,7 +123,7 @@
       outlets.set(a, (outlets.get(a) || 0) + 1);
       outlets.set(b, (outlets.get(b) || 0) + 1);
     }
-    const options = { mode: 'terrain', rail: true, province: true, battle: true, maritime: false,
+    const options = { mode: 'situation', terrainBack: true, rail: true, province: true, battle: true, maritime: false,
       supply: false, fort: true, models3d: true };
     let width = 1;
     let height = 1;
@@ -126,6 +150,10 @@
     let lastMapEventSequence = 0;
     const cache = document.createElement('canvas');
     const backdrop = cache.getContext('2d');
+    const territoryCanvas = document.createElement('canvas');
+    const territoryBrush = territoryCanvas.getContext('2d');
+    let territoryKey = '';
+    let factionLegendKey = '';
     const mapLabel = canvas.getAttribute('aria-label') || '战区地图';
     const keyboardHelp = 'Page Up 和 Page Down 浏览标记，Enter 打开所选部队或同城名册';
     canvas.setAttribute('aria-keyshortcuts', 'PageUp PageDown Enter');
@@ -209,7 +237,7 @@
     }
 
     function drawBase() {
-      const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province].join('|');
+      const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province, options.terrainBack].join('|');
       if (key === backgroundKey) return;
       backgroundKey = key;
       const ctx = backdrop;
@@ -221,7 +249,7 @@
       shape(ctx, land);
       ctx.fillStyle = options.mode === 'contour' ? '#e3d7b7' : '#d3c9a7';
       ctx.fill();
-      if (options.mode !== 'situation') {
+      if (options.mode === 'terrain' || options.mode === 'contour' || options.terrainBack) {
         ctx.save();
         ctx.clip();
         for (const grid of grids) {
@@ -492,7 +520,7 @@
       for (let index = 0; index < count; index++) {
         const px = x + (index % columns - (columns - 1) / 2) * size * .52;
         const py = y - Math.floor(index / columns) * size * .28;
-        if (humanRenderer) {
+        if (humanRenderer && options.models3d) {
           brush.drawImage(humanRenderer.frame(side, activeSea, now + index * 140, 'ship', action), px - size / 2, py - size * .62, size, size);
         } else drawShip(px, py, color, mission, .8);
       }
@@ -710,13 +738,52 @@
       const situationMode = options.mode === 'situation';
       const showFill = situationMode || factionMode || supplyHeat || national;
       const radius = national ? clamp(camera.zoom * 1.9, 16, 42) : clamp(camera.zoom * 1.05, 16, 54);
-      const groupByCity = factionMode ? new Map() : null;
-      if (groupByCity) {
-        for (const u of state.units) {
-          if (!u.parent && u.strength > 0 && !u.inactive && u.group && !groupByCity.has(u.city)) groupByCity.set(u.city, u.group);
+      if ((situationMode || factionMode) && !supplyHeat) {
+        const nodes = territoryNodes(data, state, factionMode);
+        const signature = nodes.map(node => node.id + ':' + node.owner + ':' + node.group).join(',');
+        const legend = document.getElementById('faction-key');
+        if (legend) {
+          legend.hidden = !factionMode;
+          if (factionMode && factionLegendKey !== signature) {
+            factionLegendKey = signature;
+            const groupIds = [...new Set(nodes.filter(node => node.owner === 'roc' && factionZoneColors[node.group]).map(node => node.group))];
+            const entries = [['共产党', factionZoneColors.ccp], ['国民党（未归派系）', '#3c5e78'],
+              ...groupIds.map(id => [groups.get(id)?.name || id, factionZoneColors[id]])];
+            legend.replaceChildren(...entries.map(([name, color]) => {
+              const row = document.createElement('span'), swatch = document.createElement('i');
+              swatch.style.background = color;
+              row.append(swatch, document.createTextNode(name));
+              return row;
+            }));
+          }
         }
-      }
-      if (showFill) {
+        const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, signature].join('|');
+        if (key !== territoryKey) {
+          territoryKey = key;
+          const step = 6;
+          territoryCanvas.width = Math.ceil(width / step);
+          territoryCanvas.height = Math.ceil(height / step);
+          const pixels = territoryBrush.createImageData(territoryCanvas.width, territoryCanvas.height);
+          for (let y = 0; y < territoryCanvas.height; y++) for (let x = 0; x < territoryCanvas.width; x++) {
+            const [lon, lat] = unproject((x + .5) * step, (y + .5) * step);
+            const node = nearestTerritory(lon, lat, nodes);
+            if (!node) continue;
+            const color = factionMode && node.owner === 'roc' && factionZoneColors[node.group]
+              ? factionZoneColors[node.group] : node.owner === 'ccp' ? '#9e3c38' : '#3c5e78';
+            const offset = (y * territoryCanvas.width + x) * 4;
+            pixels.data[offset] = parseInt(color.slice(1, 3), 16);
+            pixels.data[offset + 1] = parseInt(color.slice(3, 5), 16);
+            pixels.data[offset + 2] = parseInt(color.slice(5, 7), 16);
+            pixels.data[offset + 3] = 130;
+          }
+          territoryBrush.putImageData(pixels, 0, 0);
+        }
+        brush.save();
+        shape(brush, geography?.boundary?.length ? geography.boundary : land); brush.clip();
+        brush.imageSmoothingEnabled = true;
+        brush.drawImage(territoryCanvas, 0, 0, width, height);
+        brush.restore();
+      } else if (showFill) {
         brush.save();
         shape(brush, land);
         brush.clip();
@@ -729,11 +796,6 @@
             const cov = selection.supply.coverage[state.player]?.[city.id];
             if (cov !== undefined) color = cov >= 0.85 ? '#2b82cc' : cov >= 0.45 ? '#cc8824' : '#c4322b';
             else color = '#46544e';
-          } else if (factionMode) {
-            const owner = state.owners[city.id];
-            const grp = groupByCity.get(city.id);
-            color = owner === 'ccp' ? factionZoneColors.ccp
-              : (factionZoneColors[grp] || (city.region === 'northwest' ? '#6b5c7c' : city.region === 'southwest' ? '#4d6f49' : factionZoneColors.roc));
           }
           const halo = brush.createRadialGradient(x, y, 2, x, y, radius);
           halo.addColorStop(0, color + alpha);
@@ -1029,8 +1091,7 @@
       return active.filter((unit) => {
         if (!unit.parent || unit.id === selection.unit) return true;
         const parent = byId.get(unit.parent);
-        return parent && ((zoomLevel() === 'detail' && unit.level === 'division')
-          || (parent.city !== unit.city && (unit.side === state.player || camera.zoom > 72)));
+        return parent && ((zoomLevel() === 'detail' && unit.level === 'division') || (parent.city !== unit.city && (unit.side === state.player || camera.zoom > 72)));
       });
     }
 
@@ -1064,9 +1125,29 @@
       }
     }
 
+      const spriteBounds = new WeakMap();
+      function drawCroppedSprite(sprite, x, y, w, h) {
+        let bounds = spriteBounds.get(sprite);
+        if (!bounds) {
+          const sw = sprite.width, sh = sprite.height, pixels = sprite.getContext('2d').getImageData(0, 0, sw, sh).data;
+          let left = sw, right = -1, top = sh, bottom = -1;
+          for (let yy = 0; yy < sh; yy++) for (let xx = 0; xx < sw; xx++) if (pixels[(yy * sw + xx) * 4 + 3] > 8) {
+            left = Math.min(left, xx); right = Math.max(right, xx); top = Math.min(top, yy); bottom = Math.max(bottom, yy);
+          }
+          bounds = right >= left ? {left, top, width: right-left+1, height: bottom-top+1} : {left: 0, top: 0, width: sw, height: sh};
+          spriteBounds.set(sprite, bounds);
+        }
+        const scale = Math.min(w / bounds.width, h / bounds.height);
+        const dw = bounds.width * scale, dh = bounds.height * scale;
+        brush.drawImage(sprite, bounds.left, bounds.top, bounds.width, bounds.height, x + (w-dw)/2, y + h-dh, dw, dh);
+      }
+
     function drawUnits() {
       hitCards = [];
       const units = deployed();
+      const parentIds = new Set(state.units.map(member => member.parent).filter(Boolean));
+      const unitById = new Map(state.units.map(member => [member.id, member]));
+      const localStrength = globalThis.CivilWarHuman3D.formationStrengthByCity(state.units);
       const chosen = new Set(selection.units ?? []);
       const national = zoomLevel() === 'national';
       const nightMode = Boolean(state.nightMode);
@@ -1078,6 +1159,20 @@
       const candidates = units.filter((unit) => !national || !unit.parent || unit.id === selection.unit)
         .sort((a, b) => priority(b) - priority(a));
 
+      // 已显示的下级从上级的显示人物中扣除，避免同一兵员重复绘制。
+      const visibleById = new Map(candidates.map(unit => [unit.id, unit]));
+      const shownChildren = new Map();
+      for (const child of candidates) {
+        let parent = unitById.get(child.parent);
+        while (parent) {
+          if (visibleById.has(parent.id) && parent.city === child.city && parent.side === child.side) {
+            const key = parent.id + '|' + child.city;
+            shownChildren.set(key, (shownChildren.get(key) || 0) + (localStrength.get(child.id + '|' + child.city) || 0));
+            break;
+          }
+          parent = unitById.get(parent.parent);
+        }
+      }
       // 按城市分组，同城多支纵队/军独立扇形排开，每支纵队拥有独立三维兵阵与独立可点击标牌！
       const byCity = new Map();
       for (const unit of candidates) {
@@ -1099,32 +1194,7 @@
         const [cx, cy] = project(anchorCity.lon, anchorCity.lat);
         if (!inMap(cx, cy)) continue;
 
-        // 1. 缩放自适应 + 3D兵模一键开关：战略视角自动隐藏3D模型保持清爽，战术拉近时平滑淡入！
-        // 2. 同格只显示 1 个最高阶代表模型（坦克 > 炮兵 > 步兵），缩小至约 45% 偏上占位，且完全不占鼠标点击热区！
-        const show3D = Boolean(options.models3d) && camera.zoom >= 52 && !national && Boolean(humanRenderer);
-        if (show3D && members.length) {
-          const rep = members.find((u) => (globalThis.CivilWarHuman3D?.unitTanks(u) || 0) >= 5 || u.branch === 'armor' || u.profile === 'mobile')
-            || members.find((u) => (globalThis.CivilWarHuman3D?.unitArtillery(u) || 0) >= 12 || u.branch === 'artillery' || u.profile === 'artillery')
-            || members[0];
-          const repKind = ((globalThis.CivilWarHuman3D?.unitTanks(rep) || 0) >= 5 || rep.branch === 'armor' || rep.profile === 'mobile') ? 'tank'
-            : ((globalThis.CivilWarHuman3D?.unitArtillery(rep) || 0) >= 12 || rep.branch === 'artillery' || rep.profile === 'artillery') ? 'artillery' : 'human';
-          const repBattle = state.battles?.[rep.order?.target] || state.battles?.[rep.city];
-          const repRawAct = globalThis.CivilWarHuman3D?.orderAction(rep, Boolean(repBattle), nightMode) || 'idle';
-          const repAct = repRawAct === 'bombard' ? 'hold' : repRawAct;
-          const repAnim = !['idle', 'hold'].includes(repAct);
-          const repSize = clamp(32 * Math.sqrt(camera.zoom / 56), 30, 54);
-          const fadeAlpha = clamp((camera.zoom - 52) / 22, 0.35, 1);
-          const rx = cx, ry = cy - repSize * 0.92 - 8;
-          brush.save();
-          brush.globalAlpha = fadeAlpha;
-          brush.beginPath();
-          brush.ellipse(rx, ry + repSize - 3, repSize * 0.19, repSize * 0.06, 0, 0, Math.PI * 2);
-          brush.fillStyle = rep.side === 'ccp' ? '#a54f40cc' : '#406e82cc';
-          brush.fill();
-          brush.drawImage(humanRenderer.frame(rep.side, repAnim, now, repKind, repKind === 'human' ? repAct : (repAct === 'march' ? 'march' : 'idle'), rep.group || ''),
-            rx - repSize / 2, ry, repSize, repSize);
-          brush.restore();
-        }
+        const show3D = Boolean(options.models3d) && Boolean(humanRenderer);
 
         members.forEach((unit, idx) => {
           const totalInSide = members.length;
@@ -1134,6 +1204,37 @@
             const spread = national ? 48 : zoomLevel() === 'detail' ? 86 : 68;
             ux = cx + ringSlot * spread;
             uy = cy + (unit.side === 'ccp' ? -Math.abs(ringSlot) * 7 : Math.abs(ringSlot) * 7);
+          }
+
+          // 每支纵队有自己的兵模和可点击区域；小人数量按该驻地的实际基层兵力计算。
+          const localCount = localStrength.get(unit.id + '|' + unit.city) ?? (parentIds.has(unit.id) ? 0 : unit.strength);
+          const strength = Math.max(0, localCount - (shownChildren.get(unit.id + '|' + unit.city) || 0));
+          if (show3D && strength > 0) {
+            const battle = state.battles?.[unit.order?.target] || state.battles?.[unit.city];
+            const action = globalThis.CivilWarHuman3D.orderAction(unit, Boolean(battle), nightMode);
+            const size = national ? 21 : zoomLevel() === 'detail' ? 43 : 34;
+            const count = globalThis.CivilWarHuman3D.iconCount(strength);
+            const columns = Math.min(count, 5);
+            const sprite = humanRenderer.frame(unit.side, !['idle', 'hold', 'sleep'].includes(action), now, 'human', action, unit.group || '');
+            for (let n = 0; n < count; n++) {
+              const px = ux + (n % columns - (columns - 1) / 2) * size * .45;
+              const py = uy - size - 10 - Math.floor(n / columns) * size * .45;
+              drawCroppedSprite(sprite, px - size / 2, py, size, size);
+              hitCards.push({ unit, stack: [unit.id], figureHit: true, spriteHit: true, left: px - size * .23, top: py + size * .12, width: size * .46, height: size * .77 });
+            }
+            // 编制缺少实际车辆数时 unitTanks / unitArtillery 是估算，不能作为逐辆实有数。
+            const tanks = globalThis.CivilWarHuman3D.tankIcons(globalThis.CivilWarHuman3D.unitTanks(unit));
+            const guns = globalThis.CivilWarHuman3D.artilleryIcons(globalThis.CivilWarHuman3D.unitArtillery(unit));
+            let equipmentSlot = 0;
+            for (const [kind, amount] of [['tank', tanks], ['artillery', guns]]) {
+              if (!amount) continue;
+              const vehicleAction = globalThis.CivilWarHuman3D.equipmentAction(action);
+              const vehicle = humanRenderer.frame(unit.side, vehicleAction !== 'idle', now, kind, vehicleAction, unit.group || '');
+              for (let n = 0; n < amount; n++, equipmentSlot++) {
+                const px = ux + 38 + (equipmentSlot % 4) * 20, py = uy - 25 - Math.floor(equipmentSlot / 4) * 18;
+                brush.drawImage(vehicle, px - 15, py - 15, 30, 30);
+              }
+            }
           }
 
           const label = shortUnitName(unit);
@@ -1195,7 +1296,7 @@
 
           if (!national) {
             brush.font = '500 9px "Microsoft YaHei UI", sans-serif';
-            const believed = unit.side === state.player ? unit.strength : Math.round(unit.strength / 100) * 100;
+            const believed = unit.side === state.player ? localCount : Math.round(localCount / 100) * 100;
             const badge = profileLabels[unit.profile || unit.branch] || '步';
             brush.fillStyle = '#e6e0c8';
             brush.fillText((status || badge) + ' · ' + (unit.side === state.player ? '' : '约') + round.format(believed), left + 5, top + 20.5, cardWidth - 10);
@@ -1228,7 +1329,7 @@
 
     function drawAirForce() {
       for (const side of ['ccp', 'roc']) {
-        const planes = Number(state.airWar?.[side]?.planes) || 0;
+        const planes = Math.max(0, Math.floor(Number(state.airWar?.[side]?.planes) || 0));
         const count = globalThis.CivilWarHuman3D?.airIcons(planes) || 0;
         if (!count) continue;
         const bases = data.cities.filter(city => state.owners[city.id] === side && (Number(city.value) || 0) >= 5)
@@ -1236,22 +1337,23 @@
           .slice(0, zoomLevel() === 'national' ? 1 : 3);
         if (!bases.length) continue;
         bases.forEach((base, baseIdx) => {
-          const share = baseIdx === bases.length - 1
-            ? count - Math.floor(count / bases.length) * baseIdx
-            : Math.max(1, Math.floor(count / bases.length));
+          const basePlanes = Math.floor(planes / bases.length) + (baseIdx < planes % bases.length ? 1 : 0);
+          const share = globalThis.CivilWarHuman3D.airIcons(basePlanes);
           if (share <= 0) return;
           const [x, y] = project(base.lon, base.lat);
           if (!inMap(x, y)) return;
-          const drawIcons = Math.min(zoomLevel() === 'national' ? 3 : 6, share);
+          const drawIcons = share;
           const sz = zoomLevel() === 'national' ? 28 : 38;
           for (let i = 0; i < drawIcons; i++) {
-            const px = x + (i % 6 - (drawIcons - 1) / 2) * (sz * .48), py = y - 42 - Math.floor(i / 6) * 15;
-            if (humanRenderer) brush.drawImage(humanRenderer.frame(side, false, 0, 'aircraft', 'idle'), px - sz / 2, py - sz / 2, sz, sz);
+            const cols = Math.min(drawIcons, 8);
+            const px = x + (i % cols - (cols - 1) / 2) * (sz * .5), py = y - 42 - Math.floor(i / cols) * (sz * .48);
+            if (humanRenderer && options.models3d) brush.drawImage(humanRenderer.frame(side, false, 0, 'aircraft', 'idle'), px - sz / 2, py - sz / 2, sz, sz);
+            else { brush.font = '14px sans-serif'; brush.fillStyle = side === 'cccp' ? '#a54f40' : '#406e82'; brush.fillText('✈', px - 7, py); }
           }
           if (zoomLevel() !== 'national') {
             brush.save(); brush.font = '600 9px "Microsoft YaHei UI", sans-serif';
             brush.textAlign = 'center'; brush.lineWidth = 3; brush.strokeStyle = '#1b2b32e8';
-            const label = '空军 ' + Math.round(planes / bases.length) + '架（' + share + '标）';
+            const label = '空军示意 ' + basePlanes + '架（' + share + '标）';
             brush.strokeText(label, x, y - 56); brush.fillStyle = '#fff0cc'; brush.fillText(label, x, y - 56); brush.restore();
           }
         });
@@ -1891,7 +1993,7 @@
 
     function zoom(factor, x = width / 2, y = height / 2) {
       const [lon, lat] = unproject(x, y);
-      camera.zoom = clamp(camera.zoom * factor, 3.4, 1800);
+      camera.zoom = clamp(camera.zoom * factor, 3.4, 5400);
       const [afterLon, afterLat] = unproject(x, y);
       camera.lon += lon - afterLon;
       camera.lat += lat - afterLat;
@@ -1922,6 +2024,15 @@
       if (!city) return;
       camera.lon = city.lon;
       camera.lat = city.lat;
+      draw();
+    }
+
+    function detail(cityId) {
+      const city = places.get(cityId);
+      if (!city) return;
+      camera.lon = city.lon;
+      camera.lat = city.lat;
+      camera.zoom = Math.max(camera.zoom, 480);
       draw();
     }
 
@@ -2086,9 +2197,31 @@
 
     return {
       update(next, nextSelection) { state = next; selection = nextSelection; queueBattleAnimations(next); draw(); },
-      layer(mode) { options.mode = mode; draw(); },
-      overlay(id, enabled) { options[id] = enabled; draw(); },
-      focus, jump, zoom, resize,
+      layer(mode) {
+        options.mode = mode;
+        const note = document.getElementById('territory-note');
+        if (note) note.hidden = !['situation', 'faction'].includes(mode);
+        const legend = document.getElementById('faction-key');
+        if (legend && mode !== 'faction') legend.hidden = true;
+        draw();
+      },
+      overlay(id, enabled) {
+        options[id] = enabled;
+        if (id === 'supply') {
+          const note = document.getElementById('territory-note'), legend = document.getElementById('faction-key');
+          if (note) note.hidden = enabled || !['situation', 'faction'].includes(options.mode);
+          if (legend) legend.hidden = enabled || options.mode !== 'faction';
+        }
+        draw();
+      },
+      focus, jump, detail, zoom, resize,
+      markers: () => hitCards.map(({ unit, spriteHit, left, top, width, height }) => ({
+        unitId: unit.id, city: unit.city, side: unit.side, figure: Boolean(spriteHit), left, top, width, height,
+      })),
+      hitTest: (x, y) => {
+        const hit = markerAt(x, y);
+        return hit ? { unitId: hit.unit.id, figure: Boolean(hit.spriteHit) } : null;
+      },
       point: (id) => {
         const city = places.get(id);
         return city && project(city.lon, city.lat);
@@ -2096,5 +2229,5 @@
     };
   }
 
-  globalThis.CivilWarMap = { mount };
+  globalThis.CivilWarMap = { mount, territoryNodes, nearestTerritory };
 })();

@@ -48,6 +48,18 @@ test('海军舰艇按 1:1 精确换算舰队与海域图标', () => {
   assert.equal(deployed.zones.get('黄海') + deployed.zones.get('台湾海峡'), 4);
 });
 
+test('同城纵队分别计算兵模，分驻两地的下属不重复算入驻地', () => {
+  const local = Human3D.formationStrengthByCity([
+    { id: 'a', city: 'jinzhou', strength: 15000 },
+    { id: 'a1', parent: 'a', city: 'jinzhou', strength: 10000 },
+    { id: 'a2', parent: 'a', city: 'tashan', strength: 5000 },
+    { id: 'b', city: 'jinzhou', strength: 5000 },
+  ]);
+  assert.equal(Human3D.iconCount(local.get('a|jinzhou')), 2);
+  assert.equal(Human3D.iconCount(local.get('a|tashan')), 1);
+  assert.equal(Human3D.iconCount(local.get('b|jinzhou')), 1);
+});
+
 test('支援重装备与全套战术/城内休整/夜间宿营动作一一映射', () => {
   const state = {
     units: [
@@ -69,6 +81,9 @@ test('支援重装备与全套战术/城内休整/夜间宿营动作一一映射
   assert.equal(Human3D.orderAction({ order: { type: 'hold', target: 'shenyang' } }, false, true), 'sleep');
   assert.equal(Human3D.orderAction({}, false, true), 'sleep');
   assert.equal(Human3D.orderAction({ order: { type: 'bombard', target: 'shenyang' } }, false), 'bombard');
+  assert.equal(Human3D.equipmentAction('march'), 'march');
+  assert.equal(Human3D.equipmentAction('siege'), 'fire');
+  assert.equal(Human3D.equipmentAction('rest'), 'idle');
 });
 
 test('三维人物、精细军舰、各系地方军阀战服与全动作网格完整无坏值无穿地', () => {

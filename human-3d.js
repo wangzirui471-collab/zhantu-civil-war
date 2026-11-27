@@ -309,7 +309,8 @@
 
     function emblemStar(cx, cy, cz, radius, facing = 'Z') {
       parts++;
-      const mapPt = (u, v, w) => facing === 'Z' ? [cx + u, cy + v, cz + w]
+      const mapPt = (u, v, w) => facing === 'Y' ? [cx + u, cy + w, cz - v]
+        : facing === 'Z' ? [cx + u, cy + v, cz + w]
         : facing === '-Z' ? [cx - u, cy + v, cz - w]
         : facing === 'X' ? [cx + w, cy + v, cz - u] : [cx - w, cy + v, cz + u];
       const apex = mapPt(0, 0, radius * 0.28);
@@ -1091,6 +1092,18 @@
       // 两舷吊艇架与白色救生艇 (Whaleboats)
       b.ellipsoid(sx * 0.27, 0.58, -0.16, 0.055, 0.048, 0.19, MAT.rocSunWhite);
       b.ellipsoid(sx * 0.27, 0.60, -0.16, 0.042, 0.030, 0.15, MAT.woodLight);
+      // 艇架、舷梯与甲板栏杆：作为地图用的通用舰艇示意。
+      for (const z of [-0.32, 0.00]) {
+        b.cyl(sx * 0.20, 0.50, z, sx * 0.30, 0.76, z, 0.009, 0.007, MAT.gunmetal, 7);
+        b.cyl(sx * 0.30, 0.76, z, sx * 0.34, 0.70, z, 0.007, 0.006, MAT.gunmetal, 7);
+      }
+      for (let z = -1.35; z <= 1.15; z += 0.22) {
+        const edge = z > 0.42 ? Math.max(0.13, 0.30 - (z - 0.42) * 0.15) : z < -1.1 ? 0.25 : 0.31;
+        const deck = z > 0.42 ? 0.53 : 0.42;
+        b.cyl(sx * edge, deck, z, sx * edge, deck + 0.10, z, 0.005, 0.005, MAT.brightStl, 6);
+      }
+      b.cyl(sx * 0.31, 0.52, -1.1, sx * 0.31, 0.52, 0.40, 0.005, 0.005, MAT.brightStl, 6);
+      for (let step = 0; step < 4; step++) b.box(sx * 0.23, 0.48 + step * 0.055, 0.48, 0.018, 0.012, 0.11, MAT.gunmetal);
       // 4 座防空高炮巢 (AA Tubs)
       for (const az of [0.16, -0.52]) {
         b.cyl(sx * 0.24, 0.46, az, sx * 0.24, 0.55, az, 0.068, 0.072, MAT.navalLight, 10);
@@ -1198,12 +1211,13 @@
   function buildMapAircraft(b, side = 'roc', action = 'idle', phase = 0) {
     const bodyMat = side === 'ccp' ? MAT.armorSov : MAT.rocUSJacket;
     const wingMat = side === 'ccp' ? MAT.ccpTunic : MAT.rocKhaki;
-    const bank = Math.sin(phase * 1.4) * 0.12;
+    // 尚无整机骨架：保持部件同一姿态，避免机翼、尾翼与徽记随动画分离。
+    const bank = 0;
     b.ellipsoid(0, 0.84, 0, 0.22, 0.24, 1.22, bodyMat, Math.PI, 0, 0, bank);
     b.ellipsoid(0, 1.04, 0.08, 0.15, 0.16, 0.38, MAT.glass, Math.PI * 0.65, 0, 0, bank);
     b.box(0, 0.80, 0.12, 2.72, 0.07, 0.52, wingMat, 0, 0, bank);
     for (const wx of [-0.94, 0.94]) {
-      if (side === 'ccp') b.emblemStar(wx, 0.85, 0.12, 0.15, 'Z');
+      if (side === 'ccp') b.emblemStar(wx, 0.845, 0.12, 0.15, 'Y');
       else {
         b.cyl(wx, 0.835, 0.12, wx, 0.848, 0.12, 0.16, 0.16, MAT.rocBlue, 14);
         b.cyl(wx, 0.848, 0.12, wx, 0.856, 0.12, 0.09, 0.09, MAT.rocSunWhite, 10);
@@ -1305,6 +1319,25 @@
     return totals;
   }
 
+  // 按上级部队和实际驻地归集基层兵员；跨城分兵不在上级驻地重复计数。
+  function formationStrengthByCity(units = []) {
+    const byId = new Map(units.map(unit => [unit.id, unit]));
+    const parents = new Set(units.map(unit => unit.parent).filter(Boolean));
+    const result = new Map();
+    for (const leaf of units) {
+      if (parents.has(leaf.id) || leaf.inactive || !(Number(leaf.strength) > 0)) continue;
+      let current = leaf;
+      const seen = new Set();
+      while (current && !seen.has(current.id)) {
+        seen.add(current.id);
+        const key = current.id + '|' + leaf.city;
+        result.set(key, (result.get(key) || 0) + Number(leaf.strength));
+        current = byId.get(current.parent);
+      }
+    }
+    return result;
+  }
+
   function supportIcons(state = {}) {
     const units = state.units || [];
     const parents = new Set(units.map(unit => unit.parent).filter(Boolean));
@@ -1338,9 +1371,9 @@
 
   function orderAction(unit = {}, activeBattle = false, nightMode = false) {
     const order = unit.order;
-    const moving = Array.isArray(order?.route) && order.route.length > 1;
+    const moving = Array.isArray(order?.route) && order.route.length > 1 && unit.city !== order.target;
     if (!order) return nightMode ? 'sleep' : 'idle';
-    if (order.type === 'rest') return nightMode ? 'sleep' : 'rest';
+    if (order.type === 'rest') return moving ? 'march' : nightMode ? 'sleep' : 'rest';
     if (order.type === 'entrench') return moving ? 'march' : 'entrench';
     if (order.type === 'move') return 'march';
     if (order.type === 'advance') return moving && !activeBattle && order.route.length > 2 ? 'march' : 'fire';
@@ -1350,6 +1383,10 @@
     if (order.type === 'hold') return nightMode ? 'sleep' : 'hold';
     if (order.type === 'bombard') return 'bombard';
     return nightMode ? 'sleep' : 'idle';
+  }
+
+  function equipmentAction(action) {
+    return action === 'march' ? 'march' : ['fire', 'siege', 'bombard'].includes(action) ? 'fire' : 'idle';
   }
 
   // ==================== 高清离屏 WebGL 精灵渲染缓存器 ====================
@@ -1365,9 +1402,9 @@
     ]);
   }
 
-  function createRenderer() {
+  function createRenderer({ resolution = 160 } = {}) {
     if (typeof document === 'undefined') return null;
-    const SPRITE = 160;
+    const SPRITE = Math.max(64, Math.min(640, Math.round(Number(resolution) || 160)));
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = SPRITE;
     const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false });
@@ -1458,40 +1495,46 @@
     function cameraFor(kind, action, side) {
       const dir = side === 'ccp' ? 1 : -1;
       if (kind === 'ship' || kind === 'warship') {
-        return { eye: [dir * 2.45, 1.48, 2.55], center: [0, 0.56, 0.06], fov: 0.62 };
+        return { eye: [dir * 3.4, 1.9, 3.5], center: [0, 0.56, 0.06], fov: 0.98 };
       }
       if (kind === 'tank') {
-        return { eye: [dir * 2.25, 1.52, 2.25], center: [0, 0.66, 0.08], fov: 0.64 };
+        return { eye: [dir * 3.5, 1.9, 3.5], center: [0, 0.66, 0.08], fov: 0.98 };
       }
       if (kind === 'artillery') {
-        return { eye: [dir * 2.15, 1.42, 2.10], center: [0, 0.56, 0.0], fov: 0.64 };
+        return { eye: [dir * 3.5, 1.9, 3.5], center: [0, 0.56, 0.0], fov: 1.04 };
       }
       if (kind === 'aircraft') {
-        return { eye: [dir * 2.40, 2.05, 2.20], center: [0, 0.84, 0.05], fov: 0.66 };
+        return { eye: [dir * 3.7, 2.8, 3.5], center: [0, 0.84, 0.05], fov: 1.0 };
       }
       if (action === 'sleep') {
-        return { eye: [dir * 1.95, 1.55, 1.75], center: [-0.08, 0.22, 0.04], fov: 0.64 };
+        return { eye: [dir * 3.0, 2.2, 2.9], center: [-0.08, 0.22, 0.04], fov: 0.98 };
       }
       if (action === 'rest') {
-        return { eye: [dir * 1.85, 1.25, 2.05], center: [-0.06, 0.62, 0.08], fov: 0.62 };
+        return { eye: [dir * 2.8, 1.8, 3.1], center: [-0.06, 0.62, 0.08], fov: 0.98 };
       }
       if (action === 'entrench' || action === 'defend' || action === 'siege' || action === 'intercept') {
-        return { eye: [dir * 1.95, 1.32, 2.15], center: [0, 0.68, 0.16], fov: 0.62 };
+        return { eye: [dir * 2.9, 1.9, 3.1], center: [0, 0.68, 0.16], fov: 1.02 };
       }
-      return { eye: [dir * 1.65, 1.22, 2.22], center: [0, 0.84, 0.04], fov: 0.58 };
+      return { eye: [dir * 2.8, 1.8, 3.4], center: [0, 0.84, 0.04], fov: 0.98 };
     }
 
-    function frame(side, moving = false, timeMs = 0, kind = 'human', action = moving ? 'march' : 'idle', variant = '') {
+    function frame(side, moving = false, timeMs = 0, kind = 'human', action = moving ? 'march' : 'idle', variant = '', orbit = 0) {
       const normalizedSide = side === 'ccp' ? 'ccp' : 'roc';
       const normalizedKind = kind === 'warship' ? 'ship' : kind;
       const isStatic = !moving && ['idle', 'hold'].includes(action);
       const step = isStatic ? 0 : Math.floor((Math.max(0, Number(timeMs) || 0)) / 110) % 10;
-      const key = `${normalizedSide}|${variant}|${normalizedKind}|${action}|${step}`;
+      const orbitStep = Math.round((Number(orbit) || 0) / (Math.PI / 4));
+      const key = `${normalizedSide}|${variant}|${normalizedKind}|${action}|${step}|${orbitStep}`;
       if (spriteCache.has(key)) return spriteCache.get(key);
 
       const phase = step * (Math.PI * 2 / 10);
       const built = buildKindScene(normalizedKind, normalizedSide, action, phase, variant);
       const cam = cameraFor(normalizedKind, action, normalizedSide);
+      if (orbitStep) {
+        const angle = orbitStep * Math.PI / 4, dx = cam.eye[0] - cam.center[0], dz = cam.eye[2] - cam.center[2];
+        cam.eye[0] = cam.center[0] + dx * Math.cos(angle) + dz * Math.sin(angle);
+        cam.eye[2] = cam.center[2] - dx * Math.sin(angle) + dz * Math.cos(angle);
+      }
 
       gl.viewport(0, 0, SPRITE, SPRITE);
       gl.clearColor(0, 0, 0, 0);
@@ -1522,7 +1565,7 @@
   globalThis.CivilWarHuman3D = {
     PEOPLE_PER_ICON, TANKS_PER_ICON, ARTILLERY_PER_ICON, PLANES_PER_ICON, SHIPS_PER_ICON,
     iconCount, tankIcons, artilleryIcons, regimentCount, airIcons, airRegiments,
-    unitTanks, unitArtillery, troopTotals, supportIcons, fleetIcons, orderAction,
+    unitTanks, unitArtillery, troopTotals, formationStrengthByCity, supportIcons, fleetIcons, orderAction, equipmentAction,
     createMesh, buildKindScene, createRenderer,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = globalThis.CivilWarHuman3D;

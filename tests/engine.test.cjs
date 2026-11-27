@@ -41,6 +41,20 @@ function create(options = {}) {
   return getEngine().createGame(data, { scenarioId: 'start', historyMode: 'dynamic', ...options });
 }
 
+test('同城两支纵队分别下令，休整不会覆盖另一支的命令', () => {
+  const state = create();
+  for (const unit of state.units) {
+    if (unit.id === 'second' || unit.id.startsWith('second-')) unit.city = 'a';
+  }
+  assert.equal(engine.order(data, state, 'second', 'entrench', 'a').ok, true);
+  assert.equal(engine.order(data, state, 'first', 'rest', 'a').ok, true);
+  assert.equal(state.units.find(unit => unit.id === 'first').order.type, 'rest');
+  assert.equal(state.units.find(unit => unit.id === 'second').order.type, 'entrench');
+  engine.step(data, state, 1);
+  assert.equal(state.units.find(unit => unit.id === 'first').order.type, 'rest');
+  assert.equal(state.units.find(unit => unit.id === 'second').order.type, 'entrench');
+});
+
 test('场景可初始化归属，历史锚点在场景覆盖之前应用', () => {
   assert.equal(create().owners.b, 'roc');
   assert.equal(create({ date: '1947-01-08' }).owners.b, 'ccp');

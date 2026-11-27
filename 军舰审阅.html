@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>军舰模型审阅</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101c1d;color:#e5e0cd;font:15px "Microsoft YaHei",sans-serif}main{max-width:980px;margin:auto;padding:12px}h1{font-size:25px;color:#efdaa4}p{line-height:1.7;color:#b9c2b6}.controls{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}button{background:#263d39;border:1px solid #708879;color:#edf0dd;border-radius:5px;padding:9px 13px;cursor:pointer}button[aria-pressed=true]{background:#8b7040;color:#fff8de}.view{display:grid;place-items:center;border:1px solid #57665b;background:radial-gradient(ellipse at center,#466362,#192e2c 70%);border-radius:8px}canvas{width:min(100%,620px,calc(100vh - 275px));height:auto;aspect-ratio:1}small{color:#a8b5aa}
+</style></head><body><main><h1>军舰模型审阅 · 游戏草稿</h1><p>这是游戏地图中使用的同一套三维舰艇模型。切换阵营、动作和视角，检查炮塔、舰桥、桅杆、救生艇与栏杆。</p>
+<div class="controls" aria-label="选择阵营"><button data-side="ccp" aria-pressed="false">解放军</button><button data-side="roc" aria-pressed="true">国民党</button></div>
+<div class="controls" aria-label="选择动作"><button data-action="idle" aria-pressed="true">待命</button><button data-action="march" aria-pressed="false">航行</button><button data-action="attack" aria-pressed="false">开火</button><button id="left">向左旋转 45°</button><button id="right">向右旋转 45°</button></div>
+<div class="view"><canvas id="ship" width="512" height="512" aria-label="军舰三维模型"></canvas></div><p id="status"><small>这是用于策略地图的通用舰艇示意，并非经考证的特定舰号。</small></p></main>
+<script src="human-3d.js"></script><script>
+(() => {
+  const canvas = document.getElementById('ship'), ctx = canvas.getContext('2d');
+  const renderer = CivilWarHuman3D.createRenderer({ resolution: 512 });
+  if (!renderer) { document.getElementById('status').textContent = '浏览器未能启用 WebGL。'; return; }
+  let side = 'roc', action = 'idle', orbit = 0;
+  for (const button of document.querySelectorAll('[data-side]')) button.onclick = () => {
+    side = button.dataset.side;
+    for (const item of document.querySelectorAll('[data-side]')) item.setAttribute('aria-pressed', String(item === button));
+  };
+  for (const button of document.querySelectorAll('[data-action]')) button.onclick = () => {
+    action = button.dataset.action;
+    for (const item of document.querySelectorAll('[data-action]')) item.setAttribute('aria-pressed', String(item === button));
+  };
+  document.getElementById('left').onclick = () => orbit--;
+  document.getElementById('right').onclick = () => orbit++;
+  const bounds = new WeakMap();
+  function frame(t) {
+    const image = renderer.frame(side, action !== 'idle', t, 'ship', action, '', orbit * Math.PI / 4);
+    let box = bounds.get(image);
+    if (!box) {
+      const pixels = image.getContext('2d').getImageData(0, 0, 512, 512).data;
+      let left = 511, right = 0, top = 511, bottom = 0;
+      for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) {
+        if (pixels[(y * 512 + x) * 4 + 3] > 8) {
+          left = Math.min(left, x); right = Math.max(right, x);
+          top = Math.min(top, y); bottom = Math.max(bottom, y);
+        }
+      }
+      box = right >= left ? { left, top, width: right - left + 1, height: bottom - top + 1 } : { left: 0, top: 0, width: 512, height: 512 };
+      bounds.set(image, box);
+    }
+    const scale = Math.min(470 / box.width, 470 / box.height);
+    const width = box.width * scale, height = box.height * scale;
+    ctx.clearRect(0, 0, 512, 512);
+    ctx.drawImage(image, box.left, box.top, box.width, box.height, (512 - width) / 2, (512 - height) / 2, width, height);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script></body></html>
