@@ -631,3 +631,27 @@ test('海峡护航只改善所属海域的海上补给', () => {
   assert(engine.setNavalMission(state,'台湾海峡','escort').ok);
   assert(engine.supplyReading(board,state).cities.island.ccp>baseline);
 });
+
+test('首都失守时仍占有大部分城镇，不能只因支持度低于25就立即结束', () => {
+  require('../data.js');
+  const full = globalThis.CivilWarData;
+  const state = engine.createGame(full, { scenarioId:'siping', side:'roc', historyMode:'dynamic' });
+  state.owners[state.capitals.roc] = 'ccp';
+  state.warSupport.roc = 12;
+  assert(engine.stats(full,state).roc > full.cities.length * 0.5);
+  engine.step(full,state,1);
+  assert.equal(state.winner,null);
+});
+
+test('夺取没有守军的空城不应额外结算战斗政治冲击', () => {
+  const state=create({goal:'all'});
+  const army=state.units.find(u=>u.id==='first');
+  assert.equal(engine.order(data,state,army.id,'advance','b').ok,true);
+  for (let i=0;i<15 && state.owners.b!=='ccp';i++) engine.step(data,state,1);
+  assert.equal(state.owners.b,'ccp');
+  const outcome=state.log.find(x=>x.type==='battle-end' && x.city==='b')?.aftermath;
+  assert(outcome);
+  assert.equal(outcome.defenderStrength,0);
+  assert.equal(outcome.supportAttack,0);
+  assert.equal(outcome.supportDefend,0);
+});

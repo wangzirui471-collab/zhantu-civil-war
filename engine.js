@@ -2497,12 +2497,14 @@
         const casualtyRatio = (attackerCasualties + defenderCasualties)
           / Math.max(1, attackerStart + defenderStart);
         const shock = clampValue(casualtyRatio * 3, 0.15, 1.8);
-        supportAttack = 0.45 + shock * 0.2;
-        supportDefend = -0.5 - shock * 0.55;
-        state.warSupport[attackingSide] = clampValue(num(state.warSupport?.[attackingSide], 60)
-          + supportAttack, 2, 100);
-        state.warSupport[defendingSide] = clampValue(num(state.warSupport?.[defendingSide], 60)
-          + supportDefend, 2, 100);
+        if (defenderStart > 0) {
+          supportAttack = 0.45 + shock * 0.2;
+          supportDefend = -0.5 - shock * 0.55;
+          state.warSupport[attackingSide] = clampValue(num(state.warSupport?.[attackingSide], 60)
+            + supportAttack, 2, 100);
+          state.warSupport[defendingSide] = clampValue(num(state.warSupport?.[defendingSide], 60)
+            + supportDefend, 2, 100);
+        }
       } else {
         const casualtyRatio = (attackerCasualties + defenderCasualties)
           / Math.max(1, attackerStart + defenderStart);
@@ -4946,7 +4948,10 @@
       const support = num(state.warSupport?.[side], 60);
       const owned = data.cities.filter(city => state.owners[city.id] === side).length;
       const share = owned / data.cities.length;
-      const collapse = (capitalLost && support < 25) || support < 8
+      // 全国地图上的一城失守不应令仍控制大片地区的一方立即投降。
+      // 小型测试地图保留原规则；全国局需同时出现领土与支持度危机。
+      const territorialCrisis = data.cities.length <= 40 || share < 0.35;
+      const collapse = ((capitalLost && support < 25) || support < 8) && territorialCrisis
         || (data.cities.length > 40 && share < 0.1 && support < 25);
       if (!collapse) continue;
       state.winner = other;

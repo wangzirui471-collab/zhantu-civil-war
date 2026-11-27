@@ -4,7 +4,8 @@ require('../data.js');
 require('../engine.js');
 const D = globalThis.CivilWarData, E = globalThis.CivilWarEngine;
 const rounds = Number(process.env.PLAYTEST_ROUNDS || 100), days = Number(process.env.PLAYTEST_DAYS || 14);
-let random = 20261127;
+const initialSeed = Number(process.env.PLAYTEST_SEED || 20261127) >>> 0;
+let random = initialSeed;
 const pick = (array) => { random = (Math.imul(random, 1664525) + 1013904223) >>> 0; return array[random % array.length]; };
 const results = [], failures = [];
 for (let i = 0; i < rounds; i++) {
@@ -44,5 +45,5 @@ for (let i = 0; i < rounds; i++) {
     results.push({round:i+1,scenario:scenario.id,side,difficulty,days:Math.round((Date.parse(state.date)-Date.parse(scenario.date))/86400000),orders,attacks,moves,winner:state.winner||null});
   } catch(error) { failures.push({round:i+1,scenario:scenario.id,side,difficulty,error:error.stack}); }
 }
-console.log(JSON.stringify({requested:rounds,completed:results.length,failures,daysPerGame:days,totalOrders:results.reduce((n,r)=>n+r.orders,0),totalAttacks:results.reduce((n,r)=>n+r.attacks,0),totalMoves:results.reduce((n,r)=>n+r.moves,0),byScenario:Object.fromEntries(D.scenarios.map(s=>[s.id,results.filter(r=>r.scenario===s.id).length])),results}, null, 2));
+console.log(JSON.stringify({seed:initialSeed,requested:rounds,completed:results.length,failures,daysPerGame:days,totalOrders:results.reduce((n,r)=>n+r.orders,0),totalAttacks:results.reduce((n,r)=>n+r.attacks,0),totalMoves:results.reduce((n,r)=>n+r.moves,0),byScenario:Object.fromEntries(D.scenarios.map(s=>[s.id,results.filter(r=>r.scenario===s.id).length])),results}, null, 2));
 if(failures.length || results.length!==rounds)process.exitCode=1;
