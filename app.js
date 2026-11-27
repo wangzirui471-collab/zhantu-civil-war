@@ -126,6 +126,7 @@
     quickOrder,
     canOrder: permitted,
     previewCity,
+    openBattle: (cityId) => openBattleModal(cityId),
     selectBox(ids) {
       const roots = [...new Set(ids.map((id) => topUnit(state.units.find((u) => u.id === id))?.id).filter(Boolean))].slice(0, 24);
       if (!roots.length) return;
@@ -331,11 +332,15 @@
       const rifleDelta = rifles - 200;
       const rifleClass = rifleDelta >= 0 ? 'surplus' : 'deficit';
       const supRatio = Math.round((supplyView?.ration?.[side] ?? 1) * 100);
-      $('hoi-hud-stats').innerHTML =
+      const nextHudHtml =
         '<button type="button" class="hoi-stat-pill" data-open-panel="economy" title="兵源人力储备">👥 人力 <b>' + mp + 'k</b></button>'
         + '<button type="button" class="hoi-stat-pill ' + rifleClass + '" data-open-panel="production" title="枪炮库存盈余/缺口">🔫 枪炮 <b>' + (rifleDelta >= 0 ? '+' : '') + format(rifles) + '</b></button>'
         + '<button type="button" class="hoi-stat-pill' + (supRatio < 70 ? ' deficit' : '') + '" data-open-panel="supply" title="全军补给覆盖率">📦 补给 <b>' + supRatio + '%</b></button>'
         + '<button type="button" class="hoi-stat-pill" data-open-panel="politics" title="政治点数 / 军心支持度">🏛️ 政治 <b>' + pp + '</b> · ' + ws + '%</button>';
+      if ($('hoi-hud-stats').dataset.lastHtml !== nextHudHtml) {
+        $('hoi-hud-stats').dataset.lastHtml = nextHudHtml;
+        $('hoi-hud-stats').innerHTML = nextHudHtml;
+      }
     }
     $('brief-settings').setAttribute('aria-pressed', Object.keys(pauseLabels).some((key) => pausePreferences[key]));
     document.querySelectorAll('[data-speed]').forEach((item) => item.setAttribute('aria-pressed', Number(item.dataset.speed) === speed));
@@ -492,6 +497,7 @@
         + '>' + label + '</button>').join('')
       + '<button type="button" data-battle-action="barrage" data-battle-city="' + escape(city) + '" title="需目标周边有炮兵；削弱守军防御 5 天；消耗指挥点 ' + ability.cost + '"'
         + (!isAttacker || cooldown > 0 || shortage || !artilleryReady ? ' disabled' : '') + '>' + barrageText + '</button>'
+      + '<button type="button" class="gold" data-battle-modal="' + escape(city) + '">⚔ 战况详情</button>'
       + '<button type="button" data-battle-focus="' + escape(city) + '">定位战场</button></div>'
       + '<p class="battle-hud-note">' + (isAttacker
         ? '可从远处下令；部队沿道路逐站集结，铁路会加快行军。抵达阵地后可多方向进攻，预备队会接替前线。'
@@ -782,12 +788,13 @@
   function setRun(next) {
     running = Boolean(next) && !state.winner;
     clearInterval(timer);
-    if (running) timer = setInterval(() => tick(speed), speed === 3 ? 330 : 620);
+    if (running) timer = setInterval(() => tick(speed), speed === 5 ? 160 : speed === 3 ? 330 : 620);
     renderHeader();
   }
 
   function tick(days) {
     const winner = state.winner;
+    let openEventId = null;
     for (let elapsed = 0; elapsed < days && !state.winner; elapsed++) {
       const seen = state.eventSequence ?? state.log.at(-1)?.seq ?? 0;
       Engine.step(Data, state, 1);
@@ -796,6 +803,12 @@
         const result = entries.find((entry) => entry.city === 'jinzhou'
           && (entry.type === 'battle-end' || entry.type === 'capture' || entry.phase === 'cleared'));
         if (result) { tutorial.entry = result; tutorial.step = 3; setRun(false); }
+      }
+      if (state.pendingEvent?.id && !tutorial && !dialog.open) {
+        openEventId = state.pendingEvent.id;
+        setRun(false);
+        saveAuto(true);
+        break;
       }
       const local = entries.filter(importantBrief);
       if (local.length) recentBrief = local.at(-1);
@@ -815,6 +828,7 @@
     }
     if (Number(state.date.slice(-2)) % 4 === 0 || state.winner) saveAuto();
     render();
+    if (openEventId) openEventClipboard(openEventId);
   }
 
   function setInspectorOpen(open) {
@@ -1067,15 +1081,91 @@
 
   function chooseScenario(id, checkpoint) {
     const scenario = scenariosById.get(id) || Data.scenarios[0];
-    const body = showDialog(scenario.title, '<p>' + escape(checkpoint?.summary || scenario.summary) + '</p><form id="start-form"><div class="form-grid">'
+    const startDate = checkpoint?.date || scenario.date;
+    let pickedSide = state.player || 'ccp';
+    const previewState = Engine.createGame(Data, { scenarioId: scenario.id, date: startDate, side: pickedSide });
+    const previewStats = Engine.stats(Data, previewState);
+    const factionProfiles = {
+      ccp: {
+        leader: '毛泽东 · 朱德',
+        portrait: globalThis.CivilWarPortraits?.mao || globalThis.CivilWarPortraits?.linbiao || '',
+        flag: 'linear-gradient(135deg,#9f1c1c 0%,#c73030 65%,#e4b84b 100%)',
+        emblem: '★',
+        doctrine: '灵活机动运动战 · 人民战争',
+        spirits: [
+          ['🌾', '土地改革支前', '解放区兵员动员加快，军心士气恢复 +18%'],
+          ['⭐', '三大纪律八项注意', '占领区顺从度稳步提升，后方补给畅通'],
+          ['⚔️', '集中优势兵力', '多方向包围歼灭时火力与缴获大幅提升'],
+        ],
+        brief: '依托东北、华北与华东解放区巩固后方，通过土改与诉苦运动壮大主力纵队，灵活截断铁路干线、实施“包饺子”歼灭战，从战略防御转向全面大反攻。',
+      },
+      roc: {
+        leader: '蒋介石 · 陈诚',
+        portrait: globalThis.CivilWarPortraits?.chiang || globalThis.CivilWarPortraits?.duyuming || '',
+        flag: 'linear-gradient(135deg,#183a7a 0%,#2656a8 55%,#b82929 55%,#c73535 100%)',
+        emblem: '☀',
+        doctrine: '重点进攻 · 铁路据点固守',
+        spirits: [
+          ['🛡️', '美械整编主力', '重炮与机械化火力强劲，初期拥有制空与海运优势'],
+          ['⚠️', '陆军派系与腐败', '中央军与地方派系协同受阻（需耗陆军经验逐步改革）'],
+          ['💸', '后方法币通胀', '战时财政承压，需稳控金融与铁路动脉'],
+        ],
+        brief: '凭借初期兵力、空军、海军海运与美械整编师优势，控制全国主要大城市与铁路干线。须协调东北、华北、华中与西北各路集团，避免主力被孤立合围。',
+      },
+    };
+    const renderDossier = (side) => {
+      const p = factionProfiles[side];
+      const cities = previewStats[side];
+      const troops = previewStats[side + 'Strength'];
+      const rifles = Math.round(previewState.stock?.[side]?.infantry ?? 0);
+      return '<div class="hoi-parchment-3col">'
+        + '<section class="hoi-parchment"><h4>阵营档案 · ' + escape(sides[side]) + '</h4>'
+        + '<p><b>最高统帅：</b>' + escape(p.leader) + '</p>'
+        + '<p><b>控制城镇：</b>' + format(cities) + ' 座</p>'
+        + '<p><b>开局兵力：</b>约 ' + format(troops) + ' 人</p>'
+        + '<p><b>步枪储备：</b>' + format(rifles) + ' 批</p>'
+        + '<p><b>军事学说：</b>' + escape(p.doctrine) + '</p></section>'
+        + '<section class="hoi-parchment"><h4>民族精神徽章（悬停查看）</h4><div class="hoi-emblem-grid">'
+        + p.spirits.map(([ico, name, tip]) => '<div class="hoi-emblem" title="' + escape(name + '：' + tip)
+          + '"><b>' + ico + '</b><span>' + escape(name) + '</span></div>').join('')
+        + '</div></section>'
+        + '<section class="hoi-parchment"><h4>' + escape(scenario.title) + ' · 战役简史</h4>'
+        + '<p>' + escape(checkpoint?.summary || scenario.summary) + '</p>'
+        + '<p style="margin-top:6px;">' + escape(p.brief) + '</p></section></div>';
+    };
+    const tabsHtml = '<div class="hoi-start-tabs">' + Data.scenarios.map((item) =>
+      '<button type="button" data-hoi-scenario="' + escape(item.id) + '" aria-pressed="' + (item.id === scenario.id) + '">'
+      + escape(item.title) + ' · ' + escape(item.date.slice(0, 7)) + '</button>').join('') + '</div>';
+    const factionCardsHtml = '<div class="hoi-faction-row">' + ['ccp', 'roc'].map((side) => {
+      const p = factionProfiles[side];
+      const img = p.portrait ? '<img class="hoi-faction-portrait" src="' + p.portrait + '" alt="' + escape(p.leader) + '">'
+        : '<div class="hoi-faction-portrait" style="display:grid;place-items:center;font-size:28px;color:#e6cf9b;">' + p.emblem + '</div>';
+      return '<button type="button" class="hoi-faction-card' + (side === pickedSide ? ' is-active' : '') + '" data-hoi-side="' + side + '">'
+        + '<div class="hoi-faction-flag" style="background:' + p.flag + '">' + p.emblem + '</div>'
+        + img + '<strong>' + escape(sides[side]) + '</strong><small>' + escape(p.leader) + '</small></button>';
+    }).join('') + '</div>';
+    const body = showDialog('选择剧本与统帅阵营 · ' + scenario.title,
+      tabsHtml + factionCardsHtml + '<div id="hoi-dossier-slot">' + renderDossier(pickedSide) + '</div>'
+      + '<form id="start-form" style="margin-top:10px;"><div class="form-grid">'
       + '<label>剧本<select name="scenario">' + Data.scenarios.map((item) => option(item.id, item.title, scenario.id)).join('') + '</select></label>'
-      + '<label>开局日期<input required type="date" name="date" min="1945-08-15" max="1951-12-31" value="' + (checkpoint?.date || scenario.date) + '"></label>'
-      + '<label>接管阵营<select name="side">' + Object.entries(sides).map((item) => option(...item, state.player)).join('') + '</select></label>'
+      + '<label>开局日期<input required type="date" name="date" min="1945-08-15" max="1951-12-31" value="' + startDate + '"></label>'
+      + '<label>接管阵营<select name="side">' + Object.entries(sides).map((item) => option(...item, pickedSide)).join('') + '</select></label>'
       + '<label>指挥范围<select name="scope">' + option('theater', '当前战区', scenario.id === 'full' ? 'national' : 'theater') + option('national', '全国', scenario.id === 'full' ? 'national' : 'theater') + '</select></label>'
-      + '<label>事件<select name="historyMode">' + option('historical', '历史事件优先', state.historyMode) + option('dynamic', '随局势推演', state.historyMode) + '</select></label>'
+      + '<label>历史AI模式<select name="historyMode">' + option('historical', '历史事件优先', state.historyMode) + option('dynamic', '随局势推演', state.historyMode) + '</select></label>'
       + '<label>统一目标<select name="goal">' + option('mainland', '统一大陆', state.goal) + option('all', '统一大陆及台湾', state.goal) + '</select></label>'
-      + '</div><div class="dialog-actions"><button class="gold" type="submit">接管并开始</button><button type="button" id="back-scenarios">返回剧本列表</button></div></form>');
+      + '</div><div class="dialog-actions"><button class="gold" type="submit" style="min-width:150px;font-size:14px;padding:9px 20px;">⚔ 开始指挥</button>'
+      + '<button type="button" id="back-scenarios">返回剧本列表</button></div></form>');
     const form = body.querySelector('form');
+    const syncSide = (side) => {
+      pickedSide = side;
+      form.elements.side.value = side;
+      body.querySelectorAll('[data-hoi-side]').forEach((el) => el.classList.toggle('is-active', el.dataset.hoiSide === side));
+      const slot = body.querySelector('#hoi-dossier-slot');
+      if (slot) slot.innerHTML = renderDossier(side);
+    };
+    body.querySelectorAll('[data-hoi-side]').forEach((btn) => { btn.onclick = () => syncSide(btn.dataset.hoiSide); });
+    body.querySelectorAll('[data-hoi-scenario]').forEach((btn) => { btn.onclick = () => chooseScenario(btn.dataset.hoiScenario); });
+    form.elements.side.addEventListener('change', () => syncSide(form.elements.side.value));
     form.elements.scenario.addEventListener('change', () => chooseScenario(form.elements.scenario.value));
     $('back-scenarios').onclick = listScenarios;
     form.addEventListener('submit', (event) => {
@@ -1188,11 +1278,112 @@
         + '</th></tr></thead><tbody>' + nodes.join('') + '</tbody></table>' : '<p>当前归属和本局开局一致。</p>'));
   }
 
+  function openEventClipboard(eventId) {
+    const catalog = meta.interactiveEventsCatalog || [];
+    const ev = catalog.find((item) => item.id === eventId) || catalog[0];
+    if (!ev) return;
+    const alreadyResolved = (state.resolvedChoiceEvents || []).includes(ev.id);
+    const html = '<div class="hoi-clipboard-wrap"><div class="hoi-clip-metal" aria-hidden="true"></div>'
+      + '<article class="hoi-clipboard">'
+      + '<h3>' + escape(ev.title) + '</h3>'
+      + '<p class="hoi-clip-body">' + escape(ev.body) + '</p>'
+      + '<div class="hoi-clip-footer">'
+      + '<div class="hoi-clip-photo"><div class="hoi-clip-photo-art">📜 战地电报档案<br><small>' + escape(ev.date) + '</small></div>'
+      + '<span>' + escape(ev.photoCaption || '前线统帅部急电') + '</span></div>'
+      + '<div class="hoi-clip-choices">'
+      + ev.choices.map((ch, idx) => '<button type="button" class="hoi-clip-btn" data-event-id="' + escape(ev.id)
+        + '" data-event-choice="' + idx + '" title="' + escape(ch.effectText || '') + '"' + (alreadyResolved ? ' disabled' : '') + '>'
+        + '<span>' + escape(ch.label) + '</span>'
+        + '<small>' + escape(alreadyResolved ? '已颁布' : (ch.effectText || '')) + '</small></button>').join('')
+      + (alreadyResolved ? '<p class="subtext" style="color:#4a3c28;margin:4px 0 0;">（该历史抉择已在本局颁布，不可重复领取加成）</p>' : '')
+      + '</div></div></article></div>';
+    showDialog('战地密电与战略抉择', html);
+  }
+
+  function openBattleModal(cityId) {
+    const battle = state.battles?.[cityId];
+    if (!battle) { selectCity(cityId, false, true); return; }
+    const city = citiesById.get(cityId);
+    const isAttacker = battle.side === state.player;
+    const parents = new Set(state.units.map((u) => u.parent).filter(Boolean));
+    const fieldUnits = state.units.filter((u) => !parents.has(u.id) && u.strength > 0);
+    const attackers = fieldUnits.filter((u) => u.side === battle.side && u.order?.target === cityId
+      && ['advance', 'siege'].includes(u.order.type));
+    const defenders = fieldUnits.filter((u) => u.side === battle.defendingSide && u.city === cityId);
+    const engagedIds = new Set(battle.engagedUnitIds || []);
+    const reserveIds = new Set(battle.reserveUnitIds || []);
+    const ratio = Number(battle.lastRatio) || 1;
+    const rawBubble = Number.isFinite(battle.bubbleScore) ? battle.bubbleScore : Math.round(ratio / (1 + ratio) * 100);
+    const bubble = Math.max(1, Math.min(99, isAttacker ? rawBubble : 100 - rawBubble));
+    const leadOf = (list) => {
+      const u = list.find((item) => item.leader && leadersById.get(item.leader)) || list[0];
+      const l = u?.leader ? leadersById.get(u.leader) : null;
+      return {
+        name: l?.name || (u ? u.name : '前线指挥官'),
+        img: l && globalThis.CivilWarPortraits?.[l.id],
+        traits: (l?.traits || []).slice(0, 2).join(' · ') || '野战指挥',
+      };
+    };
+    const atkLead = leadOf(attackers);
+    const defLead = leadOf(defenders);
+    const divRow = (u) => {
+      const org = Math.round(valueOf(u, 'org', 100));
+      const hp = Math.round(Math.min(100, (u.strength / Math.max(1, u.maxStrength || u.strength)) * 100));
+      return '<div class="hoi-div-bar-row"><div class="hoi-dual-bars" title="绿条：组织度 ' + org + '% · 橙条：兵力 ' + hp + '%">'
+        + '<span class="org"><i style="width:' + org + '%"></i></span>'
+        + '<span class="hp"><i style="width:' + hp + '%"></i></span></div>'
+        + '<strong>' + escape(u.name) + '</strong>'
+        + '<small>' + format(u.strength) + '人 · 组' + org + '%</small></div>';
+    };
+    const renderSide = (title, lead, list, side) => {
+      const total = list.reduce((s, u) => s + u.strength, 0);
+      const engaged = list.filter((u) => !reserveIds.has(u.id) || engagedIds.has(u.id));
+      const reserves = list.filter((u) => reserveIds.has(u.id) && !engagedIds.has(u.id));
+      const avatar = lead.img ? '<img src="' + lead.img + '" alt="' + escape(lead.name) + '">'
+        : '<span class="gen-monogram">' + escape(lead.name.slice(0, 1)) + '</span>';
+      return '<section class="hoi-battle-side ' + side + '"><header class="hoi-battle-gen">' + avatar
+        + '<div><strong>' + escape(title + ' · ' + lead.name) + '</strong><small>'
+        + escape(lead.traits) + ' · 总兵力 ' + format(total) + ' 人</small></div></header>'
+        + '<div class="hoi-battle-list">' + (engaged.length ? engaged.map(divRow).join('') : '<p class="empty">暂无投入部队</p>') + '</div>'
+        + (reserves.length ? '<div class="hoi-battle-reserves"><b>预备队列（' + reserves.length + ' 支）：</b>'
+          + reserves.map((u) => escape(u.name)).join('、') + '</div>' : '')
+        + '</section>';
+    };
+    const terrainNames = { plain: '平原', hill: '丘陵', mountain: '山地', port: '港口', city: '城市', river: '河网', highland: '高原', plateau: '高原', marsh: '沼泽' };
+    const mods = battle.modifiers || {};
+    const modLine = [
+      city?.terrain ? '地形：' + (terrainNames[city.terrain] || city.terrain) : null,
+      battle.weather ? '天气：' + battle.weather : null,
+      '进攻方向：' + (battle.attackDirections || 1),
+      mods.fort ? '工事 +' + mods.fort + '%' : null,
+      mods.river ? '跨河 ' + mods.river + '%' : null,
+      mods.encircled ? '包饺子断补 ' + mods.encircled + '%' : null,
+    ].filter(Boolean).join(' · ');
+    const lowOrgDef = !isAttacker && defenders.find((u) => valueOf(u, 'org', 100) < 45);
+    const html = '<div class="hoi-battle-banner"><div><h3>⚔ ' + escape(cityName(cityId)) + ' 争夺战 · 第 ' + format(battle.days) + ' 天</h3>'
+      + '<small>' + escape(modLine) + '</small></div>'
+      + '<span class="hoi-bubble-pill ' + (bubble >= 50 ? 'win' : 'lose') + '" style="font-size:18px;padding:4px 12px;">' + bubble + '</span></div>'
+      + '<div class="hoi-battle-sides">'
+      + renderSide('攻方 · ' + short[battle.side], atkLead, attackers, battle.side)
+      + renderSide('守方 · ' + short[battle.defendingSide], defLead, defenders, battle.defendingSide)
+      + '</div>'
+      + '<div class="dialog-actions">'
+      + (lowOrgDef ? '<button type="button" class="gold" data-modal-cycle="' + escape(cityId) + '">🔄 车轮战换防（撤出低组织度部队）</button>' : '')
+      + '<button type="button" data-locate-city="' + escape(cityId) + '">定位到战场</button>'
+      + '<button type="button" data-politics-close>关闭战况窗口</button></div>';
+    showDialog('陆战态势 · ' + cityName(cityId), html);
+  }
+
   function historicalEvents() {
     const future = (Data.events || []).filter((event) => event.date >= state.date);
+    const clips = (meta.interactiveEventsCatalog || []).filter((e) => e.side === 'both' || e.side === state.player);
+    const clipHtml = clips.length ? '<div class="card"><h3>战地抉择电报（HOI4 夹纸板）</h3><p class="subtext">以下历史节点将在对应日期自动弹出暂停，也可在此随时调阅并下达方略：</p><div class="dialog-actions" style="flex-wrap:wrap;justify-content:flex-start;">'
+      + clips.map((e) => '<button type="button" data-open-event-clip="' + escape(e.id) + '">📋 ' + escape(e.title) + '</button>').join('')
+      + '</div></div>' : '';
     const body = showDialog('历史事件', '<div class="dialog-actions"><button type="button" data-history-setting="historical" aria-pressed="'
       + (state.historyMode === 'historical') + '">按历史节点</button><button type="button" data-history-setting="dynamic" aria-pressed="'
       + (state.historyMode === 'dynamic') + '">随战局推演</button></div>'
+      + clipHtml
       + '<div class="card"><h3>后续事件</h3><p>勾选的节点在历史模式中生效。你已改写的战果会优先保留。</p>'
       + '<label class="field">选择时段<select id="events-window"></select></label><div id="event-options"></div></div>');
     const selector = body.querySelector('#events-window');
@@ -1667,7 +1858,28 @@
       + escape(cityName(item.cities[0]) + ' — ' + cityName(item.cities[1])) + '</td><td>' + format(item.load)
       + '</td><td>' + format(item.capacity) + '</td><td>' + Math.round(item.severity * 100) + '%</td></tr>').join('')
       : '<tr><td colspan="4">当前没有运输瓶颈。</td></tr>';
-    showDialog('后勤补给', '<p>库存通过铁路干线和公路车队送到前线补给站，再分发给部队；不在铁路线上的驻军仍可沿陆路获得补给。'
+    const eqStock = state.stock?.[side] || {};
+    const prodLines = state.production?.[side]?.lines || {};
+    const eqList = [
+      { ico: '🔫', name: '步兵步枪', cur: Math.round(eqStock.infantry ?? 0), need: 220, daily: Math.round((prodLines.infantry || 30) * 0.45) },
+      { ico: '💣', name: '牵引火炮', cur: Math.round(eqStock.artillery ?? 0), need: 60, daily: Math.round((prodLines.artillery || 15) * 0.22) },
+      { ico: '🚜', name: '装甲坦克', cur: Math.round(eqStock.armor ?? 0), need: 20, daily: Math.round((prodLines.armor || 5) * 0.12) },
+      { ico: '✈️', name: '作战飞机', cur: Math.round(state.airWar?.[side]?.planes ?? eqStock.air ?? 0), need: 30, daily: Math.round((prodLines.air || 5) * 0.1) },
+      { ico: '🚢', name: '运输船队', cur: Math.round(state.navy?.[side]?.transports ?? 0), need: 15, daily: Math.round((prodLines.naval || 5) * 0.08) },
+      { ico: '⚓', name: '海军军舰', cur: Math.round(state.navy?.[side]?.warships ?? 0), need: 8, daily: Math.round((prodLines.naval || 5) * 0.04) },
+    ];
+    const eqHtml = '<h3 style="margin:6px 0 6px;">军械与装备库存（包饺子缴获实时入库）</h3><div class="hoi-logi-list">'
+      + eqList.map((item) => {
+        const diff = item.cur - item.need;
+        const pct = Math.max(8, Math.min(100, Math.round((item.cur / Math.max(1, item.need * 2)) * 100)));
+        const cls = diff >= 0 ? 'surplus' : 'deficit';
+        return '<div class="hoi-logi-row"><span class="hoi-logi-name">' + item.ico + ' ' + escape(item.name) + '</span>'
+          + '<div class="hoi-logi-bar"><i class="' + cls + '" style="width:' + pct + '%"></i></div>'
+          + '<span class="hoi-logi-badge ' + cls + '">' + format(item.cur) + ' (' + (diff >= 0 ? '+' : '') + format(diff) + ')</span>'
+          + '<small style="color:var(--dim);">日产 +' + item.daily + '</small></div>';
+      }).join('') + '</div>';
+    showDialog('后勤补给与装备库存', eqHtml
+      + '<p>库存通过铁路干线和公路车队送到前线补给站，再分发给部队；不在铁路线上的驻军仍可沿陆路获得补给。'
       + '覆盖越低、运输越紧张，部队的弹药、油料与医疗物资补充越慢。</p>'
       + (state.supplyReport?.[side]
         ? '<p class="subtext">最近一日：到货 ' + format(state.supplyReport[side].delivered)
@@ -2088,12 +2300,35 @@
           + (!isHired ? '<div class="unit-actions"><button type="button" data-hire-advisor="' + escape(adv.id) + '"'
             + (canHire ? '' : ' disabled') + '>任命参谋</button></div>' : '') + '</article>';
       }).join('') + '</div>';
-    showDialog('政治与内阁 · 民族精神', '<p>政治点随控制城镇每日增长；陆军经验在战斗与挖壕守线中积累，可用于消除「陆军派系与腐败」等负面状态。</p>'
+    const timedCatalog = (meta.timedDecisionsCatalog || []).filter((d) => d.side === 'both' || d.side === side);
+    const activeDecs = state.activeDecisions?.[side] || [];
+    const catDefs = [
+      ['mobilize', '🎖️ 军事动员'],
+      ['economy', '🏭 经济后勤'],
+      ['faction', '🤝 派系协调'],
+      ['campaign', '🚂 战役行动'],
+    ];
+    const timedHtml = '<h3 style="margin:10px 0 6px;">HOI4 分类限时决议（附倒计时进度）</h3>' + catDefs.map(([catKey, catTitle]) => {
+      const items = timedCatalog.filter((d) => d.category === catKey);
+      if (!items.length) return '';
+      return '<details open class="hoi-dec-group"><summary>' + catTitle + ' <span>' + items.length + ' 项</span></summary><div class="hoi-dec-body">'
+        + items.map((d) => {
+          const runningDec = activeDecs.find((a) => a.id === d.id);
+          const totalDays = runningDec ? (runningDec.total || runningDec.days || d.days || 1) : 1;
+          const pct = runningDec ? Math.max(5, Math.min(100, Math.round(((totalDays - runningDec.remaining) / totalDays) * 100))) : 0;
+          const canLaunch = !runningDec && politics.points >= d.cost;
+          return '<div class="hoi-dec-row"><div><strong>' + escape(d.name) + '</strong><small>' + escape(d.desc) + '</small>'
+            + (runningDec ? '<div class="hoi-dec-prog"><i style="width:' + pct + '%"></i><span>剩余 ' + runningDec.remaining + ' 天</span></div>' : '')
+            + '</div><button type="button" class="' + (canLaunch ? 'gold' : '') + '" data-timed-decision="' + escape(d.id) + '"'
+            + (canLaunch ? '' : ' disabled') + '>' + (runningDec ? '执行中 ' + runningDec.remaining + '天' : d.cost + ' 点 · ' + d.days + '天') + '</button></div>';
+        }).join('') + '</div></details>';
+    }).join('');
+    showDialog('政治与内阁 · 民族精神与限时决议', '<p>政治点随控制城镇每日增长；陆军经验在战斗与挖壕守线中积累，可用于消除「陆军派系与腐败」等负面状态。</p>'
       + '<div class="politics-head"><div><span>政治点</span><strong>' + format(politics.points) + '</strong></div>'
       + '<div><span>陆军经验</span><strong>' + format(xp) + '</strong></div>'
       + '<div><span>民心 / 战争支持</span><strong>' + format(support) + '</strong></div>'
       + '<div><span>首都</span><strong>' + escape(cityName(capital)) + '</strong></div></div>'
-      + spiritHtml + advisorHtml + '<h3 style="margin:10px 0 4px;">战时政治决议</h3>'
+      + timedHtml + spiritHtml + advisorHtml + '<h3 style="margin:10px 0 4px;">战时即时指令决议</h3>'
       + cards + '<div class="dialog-actions"><button type="button" class="gold" onclick="document.getElementById(\'groups\').click()">查看地方军阀与派系</button><button type="button" data-politics-close>关闭</button></div>');
   }
 
@@ -2425,6 +2660,8 @@
     const d = button.dataset;
     if (d.battleFocus) {
       selectCity(d.battleFocus, false, true);
+    } else if (d.battleModal) {
+      openBattleModal(d.battleModal);
     } else if (d.battlePosture) {
       const city = d.battleCity;
       if (action('setBattlePosture', [city, d.battlePosture])) {
@@ -2535,6 +2772,28 @@
       }
     }
     else if (d.politicsClose !== undefined) dialog.close();
+    else if (d.timedDecision) {
+      if (action('launchTimedDecision', [d.timedDecision])) {
+        saveAuto(true); render(); notify('限时决议已启动，正在按日推进倒计时。'); politicsPanel();
+      }
+    }
+    else if (d.eventChoice !== undefined && d.eventId) {
+      if (action('resolveEventChoice', [d.eventId, Number(d.eventChoice)])) {
+        saveAuto(true); dialog.close(); render(); notify('战略抉择已颁布并生效。');
+      }
+    }
+    else if (d.openEventClip) openEventClipboard(d.openEventClip);
+    else if (d.modalCycle) {
+      const city = d.modalCycle;
+      const low = Engine.activeUnits(state).find((u) => !u.parent && u.side === state.player && u.city === city && valueOf(u, 'org', 100) < 45);
+      const safe = (cityConnected.get(city) || []).find((cid) => state.owners[cid] === state.player);
+      if (low && safe && action('order', [low.id, 'move', safe])) {
+        saveAuto(true); render(); openBattleModal(city);
+        notify('车轮战换防：已将低组织度部队 ' + low.name + ' 撤往 ' + cityName(safe) + ' 休整。');
+      } else {
+        notify('暂无可安全撤出的后方友城或低组织度守军。');
+      }
+    }
     else if (d.reformSpirit) {
       if (action('reformSpirit', [d.reformSpirit])) {
         saveAuto(true); render(); notify('改革推进成功，负面民族精神已削弱。'); politicsPanel();

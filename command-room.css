@@ -187,6 +187,82 @@ dialog { background: rgba(22, 26, 24, 0.92); border: 1px solid #8c7853; backdrop
 .hoi-slot.arm { border-color: #5b93b8; background: #223340; color: #c4e8ff; }
 .hoi-slot.sup { border-color: #6ea36a; background: #243826; color: #c9f5c6; }
 @media (max-width: 1120px) { .hoi-hud-stats { display: none; } }
+
+/* ==================== 高仿 HOI4 五大核心界面样式 ==================== */
+/* 1. 开局剧本与阵营选择面板 (Country Selection) */
+.hoi-start-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.hoi-start-tabs button { padding: 4px 10px; font-size: 12px; border: 1px solid #6b5e43; background: #232a25; color: #d8d2be; }
+.hoi-start-tabs button[aria-pressed=true] { border-color: #e6c67e; background: #4a3f28; color: #fff4d1; font-weight: 700; }
+.hoi-faction-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.hoi-faction-card { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 6px; border: 2px solid #4d594e; background: linear-gradient(160deg, #27312b, #1a211d); color: #efe7d1; text-align: left; cursor: pointer; transition: .15s; }
+.hoi-faction-card:hover { border-color: #b59a62; }
+.hoi-faction-card.selected { border-color: #f0cc7a; box-shadow: 0 0 14px rgba(240, 204, 122, 0.35), inset 0 0 12px rgba(240, 204, 122, 0.12); background: linear-gradient(160deg, #3a3425, #22261f); }
+.hoi-faction-card img { width: 52px; height: 64px; object-fit: cover; object-position: top; border-radius: 4px; border: 1px solid #8c7853; flex-shrink: 0; }
+.hoi-faction-flag { display: inline-flex; align-items: center; justify-content: center; padding: 2px 7px; border-radius: 3px; font-size: 11px; font-weight: 700; margin-bottom: 3px; }
+.hoi-faction-flag.ccp { background: #9e2a24; color: #ffe08a; border: 1px solid #d45a4f; }
+.hoi-faction-flag.roc { background: #1d4a8a; color: #ffffff; border: 1px solid #5d8fd4; }
+.hoi-parchment-3col { display: grid; grid-template-columns: 1fr 1fr 1.15fr; gap: 8px; margin-bottom: 10px; }
+.hoi-parchment { padding: 10px 11px; border-radius: 5px; border: 1px solid #8c7853; background: linear-gradient(180deg, #dfd5b2, #cfc399); color: #2b2419; font-size: 12px; line-height: 1.5; box-shadow: inset 0 0 18px rgba(92, 72, 40, 0.25); }
+.hoi-parchment h4 { margin: 0 0 6px; font: 700 13px var(--serif); color: #3d2c18; border-bottom: 1px solid #a8966d; padding-bottom: 3px; }
+.hoi-parchment p { margin: 3px 0; color: #33291c; }
+.hoi-parchment-dark { padding: 10px 11px; border-radius: 5px; border: 1px solid #8c7853; background: rgba(20, 24, 22, 0.92); color: #efe6ce; }
+.hoi-parchment-dark h4 { margin: 0 0 6px; font: 700 13px var(--serif); color: #e8cb88; border-bottom: 1px solid #594e38; padding-bottom: 3px; }
+.hoi-emblem-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.hoi-emblem-item { padding: 6px; border-radius: 4px; border: 1px solid #6b5e43; background: #232b26; font-size: 11px; }
+.hoi-emblem-item.good { border-color: #4f9460; }
+.hoi-emblem-item.bad { border-color: #a64d42; }
+.hoi-emblem-item strong { display: block; color: #f6e7c1; font-size: 11px; margin-bottom: 2px; }
+.hoi-emblem-item small { color: #b9c2b4; font-size: 10px; line-height: 1.3; display: block; }
+
+/* 2. 分类政治决议抽屉 (Decisions) */
+.hoi-dec-group { margin: 8px 0; border: 1px solid #665b45; border-radius: 5px; background: rgba(22, 27, 24, 0.92); overflow: hidden; }
+.hoi-dec-group > summary { padding: 7px 10px; background: linear-gradient(180deg, #323c35, #242c27); color: #f0dfa8; font: 700 12px var(--sans); cursor: pointer; border-bottom: 1px solid #4c5649; }
+.hoi-dec-list { padding: 6px; display: grid; gap: 5px; }
+.hoi-dec-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 7px 9px; border-radius: 4px; border: 1px solid #455247; background: #222b25; }
+.hoi-dec-row.active { border-color: #c77b3c; background: #2f261e; }
+.hoi-dec-row h4 { margin: 0; font-size: 12px; color: #f4ebd3; }
+.hoi-dec-row p { margin: 2px 0 0; font-size: 11px; color: #b6bfb1; }
+.hoi-dec-cost { padding: 2px 7px; border-radius: 4px; border: 1px solid #8c7853; background: #1a211d; color: #f0cf80; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.hoi-dec-prog { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: #191d1a; overflow: hidden; margin-top: 3px; }
+.hoi-dec-prog i { display: block; height: 100%; background: linear-gradient(90deg, #c94c38, #e89e46); }
+
+/* 3. 金属铁夹历史事件公文板 (Event Clipboard) */
+.hoi-clipboard-wrap { position: relative; padding-top: 20px; }
+.hoi-clip-metal { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 108px; height: 28px; border-radius: 6px 6px 3px 3px; border: 1px solid #6e7570; background: linear-gradient(180deg, #525954, #2b302d 60%, #1d211f); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6); z-index: 2; }
+.hoi-clip-metal::after { content: ""; position: absolute; top: 5px; left: 50%; transform: translateX(-50%); width: 14px; height: 14px; border-radius: 50%; border: 2px solid #8c948e; background: #191d1b; }
+.hoi-clipboard { padding: 22px 20px 18px; border-radius: 5px; border: 3px solid #2b2924; background: linear-gradient(180deg, #e2d8b6, #d4c79c); color: #262017; box-shadow: inset 0 0 28px rgba(84, 62, 32, 0.28), 0 10px 28px rgba(0, 0, 0, 0.65); }
+.hoi-clipboard h3 { margin: 0 0 10px; text-align: center; font: 700 18px var(--serif); color: #2b1f12; letter-spacing: .04em; border-bottom: 1px solid #9e8c64; padding-bottom: 8px; }
+.hoi-clipboard-body { font: 13px/1.75 "FangSong", "KaiTi", Georgia, serif; color: #2c2317; margin: 0 0 14px; }
+.hoi-clipboard-foot { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 14px; align-items: end; }
+.hoi-clip-photo { padding: 8px; border: 1px solid #7d6d4d; background: linear-gradient(145deg, #4b4234, #2d271f); color: #e2d6b5; border-radius: 3px; text-align: center; font-size: 11px; min-height: 92px; display: flex; flex-direction: column; justify-content: center; gap: 4px; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35); }
+.hoi-clip-choices { display: grid; gap: 7px; }
+.hoi-clip-btn { width: 100%; padding: 9px 12px; border-radius: 4px; border: 1px solid #8c7853; background: linear-gradient(180deg, #353d37, #222824); color: #f6ecd4; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hoi-clip-btn:hover { border-color: #f0cc7a; background: linear-gradient(180deg, #474d3d, #2c3329); color: #fff8de; }
+.hoi-clip-btn small { color: #a7e8a9; font-weight: 500; font-size: 11px; white-space: nowrap; }
+
+/* 4. 陆战左右对阵详情窗 (Land Battle Modal) */
+.hoi-battle-banner { padding: 8px 12px; border-radius: 5px; border: 1px solid #8c7853; background: linear-gradient(90deg, #27372d, #3a4635, #27372d); display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: #f5e6bf; font-size: 12px; }
+.hoi-battle-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hoi-battle-col { padding: 8px; border-radius: 5px; border: 1px solid #596658; background: rgba(24, 30, 27, 0.92); }
+.hoi-battle-col.atk { border-top: 3px solid #d46b56; }
+.hoi-battle-col.def { border-top: 3px solid #63a4c4; }
+.hoi-battle-gen { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #414e44; }
+.hoi-battle-gen img { width: 38px; height: 46px; object-fit: cover; object-position: top; border-radius: 3px; border: 1px solid #8c7853; }
+.hoi-div-bar-row { padding: 5px 6px; margin-bottom: 4px; border-radius: 4px; background: #232d27; border: 1px solid #3c4a40; font-size: 11px; }
+.hoi-dual-bars { display: grid; gap: 2px; margin-top: 4px; }
+.hoi-dual-bars span { display: block; height: 4px; border-radius: 2px; background: #141916; overflow: hidden; }
+.hoi-dual-bars .org i { display: block; height: 100%; background: #4fd16c; }
+.hoi-dual-bars .hp i { display: block; height: 100%; background: #eb9c44; }
+
+/* 5. 装备后勤库存表 (Logistics Stockpile) */
+.hoi-logi-list { display: grid; gap: 5px; margin: 8px 0; }
+.hoi-logi-row { display: grid; grid-template-columns: 130px minmax(0, 1fr) 90px 92px; gap: 8px; align-items: center; padding: 6px 9px; border-radius: 4px; border: 1px solid #49564b; background: #202823; font-size: 12px; }
+.hoi-logi-bar { height: 7px; border-radius: 3px; background: #151b17; overflow: hidden; }
+.hoi-logi-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3c9c56, #7fe083); }
+.hoi-logi-bar.low i { background: linear-gradient(90deg, #b83c32, #e86b58); }
+.hoi-logi-badge { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.hoi-logi-badge.ok { color: #7be68d; }
+.hoi-logi-badge.low { color: #ff8273; }
 .command-deck { min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; gap: 4px 10px; background: #253028; border-top: 1px solid #465446; }
 .deck-selection { min-width: 0; display: grid; gap: 1px; max-width: 300px; }
 #deck-unit { font-size: 12px; color: #f1e2bb; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -378,3 +454,14 @@ dialog { background: rgba(22, 26, 24, 0.92); border: 1px solid #8c7853; backdrop
   .tutorial-card { width: min(260px, 73%); }
   .comparison-settings { grid-template-columns: 1fr; }
 }
+
+/* HOI4 v2 polish overrides */
+.hoi-clipboard p, .hoi-clip-body { color: #241d15 !important; }
+.hoi-clip-photo-art { font-size: 12.5px; color: #f0d79d; padding: 10px 4px; border-bottom: 1px dashed #695941; margin-bottom: 6px; }
+.hoi-logi-bar i.deficit { background: linear-gradient(90deg, #b83227, #ef6356) !important; }
+.hoi-logi-badge.surplus { color: #7fe678 !important; font-weight: 700; }
+.hoi-logi-badge.deficit { color: #ff7c6e !important; font-weight: 700; }
+.hoi-battle-gen { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.hoi-battle-gen img, .hoi-battle-gen .gen-monogram { width: 34px; height: 34px; border-radius: 4px; border: 1px solid #8c7853; flex-shrink: 0; object-fit: cover; display: grid; place-items: center; background: #263129; color: #f5dfb0; font-weight: 700; }
+.hoi-battle-gen div { display: grid; gap: 2px; }
+.hoi-battle-gen small { color: var(--dim); font-size: 11px; }

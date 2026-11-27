@@ -1753,8 +1753,19 @@
       const eventSequence = Number(next.eventSequence) || 0;
       if (initialized && eventSequence > lastMapEventSequence) {
         for (const entry of (next.log || [])) {
-          if (entry.seq <= lastMapEventSequence || entry.type !== 'battle-end' || entry.result !== 'capture') continue;
-          battleEffects.push({ target: entry.city, origins: entry.attackOrigins || [], startedAt: now, capture: true });
+          if (entry.seq <= lastMapEventSequence) continue;
+          if (entry.type === 'battle-end' && entry.result === 'capture') {
+            battleEffects.push({ target: entry.city, origins: entry.attackOrigins || [], startedAt: now, capture: true });
+          } else if (entry.type === 'encirclement' && entry.city) {
+            const rifles = Number(entry.capturedRifles) || 0;
+            const art = Number(entry.capturedArtillery) || 0;
+            commandEffects.push({
+              city: entry.city,
+              color: '#ffd86b',
+              label: '缴获成功！步枪+' + rifles + (art ? ' 火炮+' + art : ''),
+              startedAt: now,
+            });
+          }
         }
       }
       for (const [cityId, battle] of Object.entries(next.battles || {})) {
@@ -2015,7 +2026,10 @@
         if (target) handlers.quickOrder(target.id, old.unit.id);
         else draw();
       } else if (!old.moved) {
-        if (old.picked && old.toggle && !selection.command) {
+        const bubble = battleBubbles.find((b) => Math.hypot(xy[0] - b.bx, xy[1] - b.by) <= b.br);
+        if (bubble && !selection.command) {
+          handlers.openBattle?.(bubble.cityId);
+        } else if (old.picked && old.toggle && !selection.command) {
           handlers.toggleUnit?.(old.picked.id);
         } else if (old.picked && !selection.command) {
           if ((old.marker?.stack?.length > 1 || old.marker?.national) && old.picked.id !== selection.guideUnit) {

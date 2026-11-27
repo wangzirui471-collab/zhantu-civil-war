@@ -557,3 +557,25 @@ test('征兵政策会影响补充，停驻补给会消耗粮食储备', () => {
   assert.ok(api.stats(data, high).ccpStrength > api.stats(data, low).ccpStrength);
   assert.ok(high.economy.ccp.food < 8_000);
 });
+
+test('限时决议倒计时完成发放加成，互动历史抉择事件生效', () => {
+  const api = getEngine();
+  const state = create();
+  state.political.ccp.points = 100;
+  const mpBefore = state.economy.ccp.manpower;
+  const res = api.launchTimedDecision(state, 'land_reform_dec');
+  assert.equal(res.ok, true);
+  assert.equal(state.activeDecisions.ccp.length, 1);
+  api.step(data, state, 16);
+  assert.equal(state.activeDecisions.ccp.length, 0);
+  assert.ok(state.economy.ccp.manpower > mpBefore + 20_000);
+
+  state.pendingEvent = { id: 'evt_jinzhou_plan' };
+  const ppBefore = state.political.ccp.points;
+  const evRes = api.resolveEventChoice(state, 'evt_jinzhou_plan', 0);
+  assert.equal(evRes.ok, true);
+  assert.equal(state.pendingEvent, null);
+  assert.ok(state.political.ccp.points >= ppBefore + 15);
+  const dupRes = api.resolveEventChoice(state, 'evt_jinzhou_plan', 0);
+  assert.equal(dupRes.ok, false);
+});

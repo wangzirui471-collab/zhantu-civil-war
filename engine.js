@@ -3074,10 +3074,14 @@
             if (unit.strength > 0) { wiped += unit.strength; unit.strength = 0; clearOrder(unit); }
           }
           if (wiped > 0) {
-            state.stock[side].infantry = (state.stock[side].infantry ?? 0) + Math.round(wiped / 120);
-            state.stock[side].artillery = (state.stock[side].artillery ?? 0) + Math.round(wiped / 420);
-            addLog(state, '包饺子合围全歼！' + city.name + '被困守军无路可退，' + Math.round(wiped) + ' 人缴械，缴获大批步枪与火炮。',
-              'encirclement', { city: target, side, wiped });
+            const captureRate = 0.35 + ((hash(state.date + target) % 26) / 100); // 35%–60% 战场缴获
+            const capRifles = Math.max(15, Math.round((wiped / 25) * captureRate));
+            const capArt = Math.max(4, Math.round((wiped / 140) * captureRate));
+            state.stock[side].infantry = (state.stock[side].infantry ?? 0) + capRifles;
+            state.stock[side].artillery = (state.stock[side].artillery ?? 0) + capArt;
+            state.economy[side].arms = (state.economy[side].arms ?? 0) + Math.round(wiped * 0.25 * captureRate);
+            addLog(state, '包饺子合围全歼！' + city.name + '被困守军 ' + Math.round(wiped) + ' 人缴械，缴获步枪 ' + capRifles + '、火炮 ' + capArt + '！',
+              'encirclement', { city: target, side, wiped, capturedRifles: capRifles, capturedArtillery: capArt });
           }
         }
         battle.routed += Math.max(0, defenderBeforeCapture - defenders.reduce((sum, unit) => sum + unit.strength, 0));
@@ -3593,6 +3597,9 @@
       roc: { infantry: 0.58, artillery: 0.55, armor: 0.52, air: 0.56, naval: 0.56 },
     };
     state.advisors ??= { ccp: [], roc: [] };
+    state.activeDecisions ??= { ccp: [], roc: [] };
+    state.triggeredChoiceEvents ??= [];
+    state.pendingEvent ??= null;
     if (!state.spirits) {
       state.spirits = {
         ccp: [
@@ -4538,17 +4545,22 @@
     ids.forEach((id, idx) => {
       const unit = state.units.find(u => u.id === id);
       if (!unit) return;
+      const uCity = map.cities.get(unit.city);
       const sorted = ports.slice().sort((a, b) => {
-        const uCity = map.cities.get(unit.city);
+        const regA = a.region === uCity?.region ? 0 : 1;
+        const regB = b.region === uCity?.region ? 0 : 1;
+        if (regA !== regB) return regA - regB;
         const da = uCity ? Math.hypot(a.lon - uCity.lon, a.lat - uCity.lat) : 0;
         const db = uCity ? Math.hypot(b.lon - uCity.lon, b.lat - uCity.lat) : 0;
         return da - db;
       });
-      const pick = sorted[idx % sorted.length];
-      const res = order(data, state, id, 'entrench', pick.id);
-      if (res.ok) assigned += 1;
+      for (let attempt = 0; attempt < sorted.length; attempt += 1) {
+        const pick = sorted[(idx + attempt) % sorted.length];
+        const res = order(data, state, id, 'entrench', pick.id);
+        if (res.ok) { assigned += 1; break; }
+      }
     });
-    if (!assigned) return { ok: false, error: '所选部队无法抵达己方港口。' };
+    if (!assigned) return { ok: false, error: '所选部队当前陆路无法直达己方沿海港口。' };
     addLog(state, sideNames[side] + '下达「⚓ 死守港口」指令，' + assigned + ' 支部队分驻沿海港口构筑战壕。', 'plan', { side, action: 'port-garrison', assigned });
     return { ok: true, assigned };
   }
@@ -4557,22 +4569,124 @@
     const map = index(data);
     const side = state.player;
     const validLine = (Array.isArray(lineCities) ? lineCities : []).filter(id => state.owners[id] === side);
-    const fallbackCities = validLine.length ? validLine : data.cities.filter(city => state.owners[city.id] === side
-      && (city.river || /mountain|hill|高原|山/.test(city.terrain || ''))).slice(0, 8).map(c => c.id);
-    if (!fallbackCities.length) return { ok: false, error: '没有可用于依托河山构筑后撤线的己方城镇。' };
+    const fallbackPool = validLine.length ? validLine.map(id => map.cities.get(id)).filter(Boolean)
+      : data.cities.filter(city => state.owners[city.id] === side
+        && (city.river || /mountain|hill|高原|山/.test(city.terrain || '')));
+    if (!fallbackPool.length) return { ok: false, error: '没有可用于依托河山构筑后撤线的己方城镇。' };
     const ids = (Array.isArray(unitIds) && unitIds.length ? unitIds
       : activeUnits(state).filter(u => !u.parent && u.side === side && canCommand(state, u)).slice(0, 8).map(u => u.id));
     if (!ids.length) return { ok: false, error: '请先选择要撤入后撤线的部队。' };
     let assigned = 0;
+    const usedLine = [];
     ids.forEach((id, idx) => {
-      const target = fallbackCities[idx % fallbackCities.length];
-      const res = order(data, state, id, 'entrench', target);
-      if (res.ok) assigned += 1;
+      const unit = state.units.find(u => u.id === id);
+      if (!unit) return;
+      const uCity = map.cities.get(unit.city);
+      const sorted = fallbackPool.slice().sort((a, b) => {
+        const regA = a.region === uCity?.region ? 0 : 1;
+        const regB = b.region === uCity?.region ? 0 : 1;
+        if (regA !== regB) return regA - regB;
+        const da = uCity ? Math.hypot(a.lon - uCity.lon, a.lat - uCity.lat) : 0;
+        const db = uCity ? Math.hypot(b.lon - uCity.lon, b.lat - uCity.lat) : 0;
+        return da - db;
+      });
+      for (let attempt = 0; attempt < Math.min(12, sorted.length); attempt += 1) {
+        const target = sorted[(idx + attempt) % sorted.length];
+        const res = order(data, state, id, 'entrench', target.id);
+        if (res.ok) {
+          assigned += 1;
+          if (!usedLine.includes(target.id)) usedLine.push(target.id);
+          break;
+        }
+      }
     });
-    if (!assigned) return { ok: false, error: '所选部队无法撤往指定后撤线。' };
+    if (!assigned) return { ok: false, error: '所选部队当前陆路无法撤往河山后撤防线。' };
     addLog(state, sideNames[side] + '建立依托地形的「↩️ 后撤防线」，' + assigned + ' 支部队转入纵深挖壕固守。', 'plan',
-      { side, action: 'fallback-line', line: fallbackCities, assigned });
-    return { ok: true, assigned, line: fallbackCities };
+      { side, action: 'fallback-line', line: usedLine, assigned });
+    return { ok: true, assigned, line: usedLine };
+  }
+
+  const timedDecisionsCatalog = [
+    { id: 'land_reform_dec', side: 'ccp', category: 'mobilize', name: '深入开展土地改革', cost: 40, days: 15, desc: '发动解放区翻身农民参军支前：完成后兵员储备 +35,000、军心 +6、组织度恢复加快。' },
+    { id: 'suku_recruit', side: 'ccp', category: 'mobilize', name: '诉苦运动与俘虏补员', cost: 35, days: 10, desc: '开展新式整军运动，就地转化俘虏补充一线纵队：完成后兵员 +22,000、陆军经验 +25。' },
+    { id: 'faction_coord', side: 'roc', category: 'faction', name: '协调地方派系与行辕', cost: 45, days: 14, desc: '电令桂、川、滇、马家军协同防务：完成后稳定度 +6、前线补给 +10%、军心 +4。' },
+    { id: 'currency_stabilize', side: 'roc', category: 'economy', name: '紧急稳控法币与金圆券', cost: 50, days: 15, desc: '整顿后方金融与物价，缓解通胀对后勤的拖累：完成后财政 +40,000、稳定度 +5。' },
+    { id: 'emergency_conscript', side: 'both', category: 'mobilize', name: '战区紧急扩军动员', cost: 35, days: 12, desc: '抽调后方保安团充实野战主力：完成后兵员储备 +25,000、步枪库存 +120。' },
+    { id: 'rail_rush', side: 'both', category: 'campaign', name: '工兵昼夜抢修铁路干线', cost: 30, days: 8, desc: '打通前后方铁路大动脉：立即清除铁路改轨冷却，并补充前线粮弹库存。' },
+    { id: 'winter_supply', side: 'both', category: 'economy', name: '筹措前线粮秣被服', cost: 25, days: 10, desc: '向大后方征集粮秣与棉衣：完成后粮食 +30,000、补给系数回升。' },
+  ];
+
+  const interactiveEventsCatalog = [
+    {
+      id: 'evt_jinzhou_plan', side: 'ccp', date: '1948-09-18', scenario: 'liaoshen',
+      title: '急电：南下北宁线与锦州攻坚方略',
+      body: '中央军委连续来电指出：东北战局成败之关键全在于锦州一城。若我主力南下先取锦州，即可彻底切断关内外铁路大动脉，形成“关门打狗”之势；但亦须防范葫芦岛、沈阳两路重兵东西夹击。请统帅定夺主攻方略。',
+      photoCaption: '1948年秋 · 东北野战军前线指挥部地图研判',
+      choices: [
+        { label: '坚决执行「先打锦州，关门打狗」', effectText: '政治点 +15 · 陆军经验 +25 · 军心 +5', apply: (s) => { s.political[s.player].points += 15; s.armyXp[s.player] += 25; s.warSupport[s.player] = Math.min(100, s.warSupport[s.player] + 5); } },
+        { label: '加强塔山阻援工事，稳扎稳打', effectText: '步枪 +180 · 火炮 +40 · 稳定度 +4', apply: (s) => { s.stock[s.player].infantry += 180; s.stock[s.player].artillery += 40; s.stability[s.player] = Math.min(100, s.stability[s.player] + 4); } },
+      ],
+    },
+    {
+      id: 'evt_roc_jinzhou_relief', side: 'roc', date: '1948-09-20', scenario: 'liaoshen',
+      title: '密电：东进兵团与西进兵团会师锦州',
+      body: '林彪主力已大举南下直逼锦州，葫芦岛东进兵团受阻于塔山一线，沈阳廖耀湘第9兵团尚在徘徊。是否严令两路兵团不计代价东西对进、打通北宁线，还是收缩沈阳营口保留有生力量？',
+      photoCaption: '1948年秋 · 东北剿总联合作战会议纪要',
+      choices: [
+        { label: '严令东西对进，死保北宁大动脉', effectText: '步枪 +220 · 火炮 +50 · 陆军经验 +20', apply: (s) => { s.stock[s.player].infantry += 220; s.stock[s.player].artillery += 50; s.armyXp[s.player] += 20; } },
+        { label: '巩固沈阳营口海运退路，以待时变', effectText: '稳定度 +6 · 财政 +35,000 · 运输船 +4', apply: (s) => { s.stability[s.player] = Math.min(100, s.stability[s.player] + 6); s.economy[s.player].treasury += 35000; s.navy[s.player].transports += 4; } },
+      ],
+    },
+    {
+      id: 'evt_northwest_plan', side: 'both', date: '1949-07-15', scenario: 'northwest',
+      title: '战区特急：大西北钳马打胡部署',
+      body: '扶郿战役后，胡宗南主力退守秦岭汉中，青海马步芳与宁夏马鸿逵重兵集结兰州、银川一线。西北地域辽阔、补给线漫长，如何统筹兵力与地方派系将决定整个西北战局走向。',
+      photoCaption: '1949年夏 · 西北战场河西走廊与兰州态势',
+      choices: [
+        { label: '集中野战主力先歼青马于兰州城下', effectText: '陆军经验 +30 · 军心 +6 · 粮食 +20,000', apply: (s) => { s.armyXp[s.player] += 30; s.warSupport[s.player] = Math.min(100, s.warSupport[s.player] + 6); s.economy[s.player].food += 20000; } },
+        { label: '政治争取与军事威慑并行，瓦解后方', effectText: '政治点 +35 · 稳定度 +6 · 步枪 +140', apply: (s) => { s.political[s.player].points += 35; s.stability[s.player] = Math.min(100, s.stability[s.player] + 6); s.stock[s.player].infantry += 140; } },
+      ],
+    },
+    {
+      id: 'evt_huaihai_plan', side: 'both', date: '1948-11-10', scenario: 'huaihai',
+      title: '特急电报：徐蚌会战（淮海战役）决战方略',
+      body: '陇海、津浦两大铁路干线交汇于徐州，双方逾百万重兵云集中原。前线电询：是优先截断陇海东段围歼孤立兵团，还是重兵集结津浦线固守徐州枢纽？此役将直接决定长江以北归属。',
+      photoCaption: '1948年冬 · 淮海战场铁路枢纽与兵团态势',
+      choices: [
+        { label: '集中重炮与主力纵队，分割合围孤立兵团', effectText: '火炮 +55 · 陆军经验 +25 · 军心 +5', apply: (s) => { s.stock[s.player].artillery += 55; s.armyXp[s.player] += 25; s.warSupport[s.player] = Math.min(100, s.warSupport[s.player] + 5); } },
+        { label: '全力征调民工与粮弹，保障持久决战后勤', effectText: '粮食 +35,000 · 步枪 +200 · 稳定度 +5', apply: (s) => { s.economy[s.player].food += 35000; s.stock[s.player].infantry += 200; s.stability[s.player] = Math.min(100, s.stability[s.player] + 5); } },
+      ],
+    },
+  ];
+
+  function launchTimedDecision(state, decisionId) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    const side = state.player;
+    const def = timedDecisionsCatalog.find(d => d.id === decisionId && (d.side === 'both' || d.side === side));
+    if (!def) return { ok: false, error: '找不到该项决议。' };
+    if (state.activeDecisions[side].some(d => d.id === decisionId)) return { ok: false, error: '该项决议正在执行中。' };
+    if (state.political[side].points < def.cost) return { ok: false, error: '政治点不足（需要 ' + def.cost + ' 点）。' };
+    state.political[side].points -= def.cost;
+    state.activeDecisions[side].push({ id: def.id, name: def.name, category: def.category, days: def.days, remaining: def.days });
+    addLog(state, sideNames[side] + '颁布决议「' + def.name + '」，预计 ' + def.days + ' 天后生效。', 'decision', { side, decisionId });
+    return { ok: true };
+  }
+
+  function resolveEventChoice(state, eventId, choiceIdx = 0) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    state.resolvedChoiceEvents ||= [];
+    if (state.resolvedChoiceEvents.includes(eventId)) return { ok: false, error: '该历史抉择已颁布过，无法重复领取。' };
+    const evt = interactiveEventsCatalog.find(e => e.id === eventId);
+    if (!evt) return { ok: false, error: '找不到该历史事件。' };
+    const choice = evt.choices[Number(choiceIdx) || 0] || evt.choices[0];
+    choice.apply(state);
+    state.resolvedChoiceEvents.push(eventId);
+    if (!state.triggeredChoiceEvents.includes(eventId)) state.triggeredChoiceEvents.push(eventId);
+    if (state.pendingEvent?.id === eventId) state.pendingEvent = null;
+    addLog(state, '历史抉择《' + evt.title + '》：选定「' + choice.label + '」（' + choice.effectText + '）。', 'event-choice', { side: state.player, eventId });
+    return { ok: true, choice: choice.label };
   }
 
   function systemsStep(data, state) {
@@ -4583,6 +4697,45 @@
     for (const side of sides) {
       for (const key of ['infantry', 'artillery', 'armor', 'air', 'naval']) {
         state.prodEff[side][key] = Math.min(1, (state.prodEff[side][key] ?? 0.5) + 0.012);
+      }
+      // 定时决议倒计时结算
+      const nextActive = [];
+      for (const item of state.activeDecisions?.[side] ?? []) {
+        item.remaining -= 1;
+        if (item.remaining > 0) { nextActive.push(item); continue; }
+        if (item.id === 'land_reform_dec') {
+          state.economy[side].manpower += 35000;
+          state.warSupport[side] = Math.min(100, state.warSupport[side] + 6);
+        } else if (item.id === 'suku_recruit') {
+          state.economy[side].manpower += 22000;
+          state.armyXp[side] = Math.min(500, (state.armyXp[side] ?? 0) + 25);
+        } else if (item.id === 'faction_coord') {
+          state.stability[side] = Math.min(100, state.stability[side] + 6);
+          state.warSupport[side] = Math.min(100, state.warSupport[side] + 4);
+        } else if (item.id === 'currency_stabilize') {
+          state.economy[side].treasury += 40000;
+          state.stability[side] = Math.min(100, state.stability[side] + 5);
+        } else if (item.id === 'emergency_conscript') {
+          state.economy[side].manpower += 25000;
+          state.stock[side].infantry += 120;
+        } else if (item.id === 'rail_rush') {
+          state.railCooldown = {};
+          state.logistics[side].ammo += 120;
+        } else if (item.id === 'winter_supply') {
+          state.economy[side].food += 30000;
+        }
+        addLog(state, sideNames[side] + '决议「' + item.name + '」已圆满完成并生效！', 'decision', { side, decisionId: item.id });
+      }
+      if (state.activeDecisions) state.activeDecisions[side] = nextActive;
+    }
+    // 历史抉择事件按日期自动触发（仅在正式战役中触发）
+    if (map_has(data, 'jinzhou') && !state.pendingEvent) {
+      const due = interactiveEventsCatalog.find(e => (e.side === 'both' || e.side === state.player)
+        && state.date >= e.date && !state.triggeredChoiceEvents.includes(e.id)
+        && (!e.scenario || state.scenarioId === e.scenario));
+      if (due) {
+        state.triggeredChoiceEvents.push(due.id);
+        state.pendingEvent = { id: due.id };
       }
     }
     foreignStep(data, state);
@@ -4941,6 +5094,7 @@
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
     reformSpirit, hireAdvisor, applyDivisionPreset, portGarrisonOrder, fallbackLineOrder,
+    launchTimedDecision, resolveEventChoice,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,
@@ -4950,6 +5104,7 @@
       fortLevel, engineerSupport, unitSupport, supportFactor, power,
       techLines, airMissions, focusTrees, commandAbilities, designBattalions, designSupports,
       designDefaults, intelOps, diplomacyOps, lawNames, lawFactors, advisorCatalog, divisionPresets,
+      timedDecisionsCatalog, interactiveEventsCatalog,
       designStats: (state, side, design) => designStats(state, side, design),
       battlePeriod,
       canBarrage: (data, state, city, side = state.player) => artilleryAvailable(data, state, side, city),

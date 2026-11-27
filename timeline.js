@@ -4,6 +4,7 @@
   const actions = new Set(['order', 'setSide', 'setScope', 'setPolicy', 'setDelegated', 'releaseToAI', 'setGroup', 'setLeader',
     'setEquipment', 'setHistoryMode', 'setHistoricalEvent', 'setNightMode',
     'reformSpirit', 'hireAdvisor', 'applyDivisionPreset', 'portGarrisonOrder', 'fallbackLineOrder',
+    'launchTimedDecision', 'resolveEventChoice',
     'createPlan', 'updatePlan', 'executePlan', 'pausePlan', 'delegatePlan', 'removePlan',
     'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide',
     'createDesign', 'updateDesign', 'assignDesign', 'researchTech', 'setAirMission', 'startFocus',
