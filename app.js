@@ -920,6 +920,17 @@
   }
 
   function previewCity(city, _screen, draggedUnit) {
+    const battle = state.battles?.[city];
+    if (battle && !pendingOrder && !draggedUnit) {
+      const score = battle.side === state.player ? (battle.bubbleScore ?? 55) : (100 - (battle.bubbleScore ?? 55));
+      const m = battle.modifiers || {};
+      const parts = [cityName(city) + ' 激战 · 胜率 ' + score + '%'];
+      if (m.terrain) parts.push('地形 +' + m.terrain + '%');
+      if (m.river) parts.push('跨河 ' + m.river + '%');
+      if (m.fort) parts.push('工事 +' + m.fort + '%');
+      if (m.encircled) parts.push('包饺子 ' + m.encircled + '%');
+      return parts.join(' · ');
+    }
     const unit = draggedUnit ? state.units.find((item) => item.id === draggedUnit) : inspectUnit();
     if (!permitted(unit)) return '';
     const type = pendingOrder || (state.owners[city] === state.player ? 'move' : 'advance');
@@ -1233,8 +1244,13 @@
       if (gearCanvas && preview3DRenderer) {
         const gctx = gearCanvas.getContext('2d');
         const kind = profile === 'artillery' ? 'artillery' : profile === 'mobile' ? 'tank' : 'human';
-        gctx.clearRect(0, 0, gearCanvas.width, gearCanvas.height);
-        gctx.drawImage(preview3DRenderer.frame(unit.side, true, performance.now(), kind, 'idle', unit.group || ''), 0, 0, gearCanvas.width, gearCanvas.height);
+        const drawSpin = (t) => {
+          if (!document.body.contains(gearCanvas) || !dialog.open) return;
+          gctx.clearRect(0, 0, gearCanvas.width, gearCanvas.height);
+          gctx.drawImage(preview3DRenderer.frame(unit.side, true, t, kind, kind === 'human' ? 'march' : 'march', unit.group || ''), 0, 0, gearCanvas.width, gearCanvas.height);
+          requestAnimationFrame(drawSpin);
+        };
+        requestAnimationFrame(drawSpin);
       }
     };
     form.elements.unit.onchange = update;
@@ -2753,6 +2769,9 @@
     else if (btn.dataset.openPanel === 'production') defensePanel('production');
     else if (btn.dataset.openPanel === 'economy') economy();
     else if (btn.dataset.openPanel === 'supply') logisticsPanel();
+  });
+  document.querySelector('.workbar-more')?.addEventListener('click', (event) => {
+    if (event.target.closest('button')) event.currentTarget.open = false;
   });
   $('general-dock')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-gen-group]');

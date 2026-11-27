@@ -40,21 +40,26 @@
     <nav class="workbar" aria-label="主界面功能">
       <div class="workbar-tools">
         <button type="button" id="mobile-scenarios">剧本</button>
-        <button type="button" id="economy">经济后勤</button>
-        <button type="button" id="plans">作战计划</button>
-        <button type="button" id="supply">后勤补给</button>
-        <button type="button" id="politics">政治决议</button>
-        <button type="button" id="defense">国防建设</button>
-        <button type="button" id="gear">兵种军械</button>
-        <button type="button" id="history-mode">历史事件</button>
-        <button type="button" id="forecast">局势预测</button>
-        <button type="button" id="groups">地方派系</button>
-        <button type="button" id="archive">战史档案</button>
-        <button type="button" id="help">操作说明</button>
-        <button type="button" id="tutorial-open">锦州引导</button>
+        <button type="button" id="politics" class="hoi-core-btn">🏛️ 政局派系</button>
+        <button type="button" id="economy" class="hoi-core-btn">🏭 经济建设</button>
+        <button type="button" id="gear" class="hoi-core-btn">🎖️ 兵种军械</button>
+        <button type="button" id="supply" class="hoi-core-btn">🚂 后勤补给</button>
+        <button type="button" id="history-mode" class="hoi-core-btn">📜 历史事件</button>
+        <button type="button" id="defense" class="hoi-core-btn">⚔️ 国防编成</button>
+        <details class="workbar-more">
+          <summary>更多 ▾</summary>
+          <div class="workbar-more-menu">
+            <button type="button" id="plans">作战计划</button>
+            <button type="button" id="groups">地方派系</button>
+            <button type="button" id="forecast">局势预测</button>
+            <button type="button" id="archive">战史档案</button>
+            <button type="button" id="help">操作说明</button>
+            <button type="button" id="tutorial-open">锦州引导</button>
+          </div>
+        </details>
       </div>
       <div class="workbar-region">
-        <label for="sector-select">指挥范围</label><select id="sector-select" aria-label="选择指挥范围"></select>
+        <label for="sector-select">战区</label><select id="sector-select" aria-label="选择指挥范围"></select>
         <button type="button" id="mobile-inspector" aria-controls="inspector-body" aria-expanded="false">部队</button>
       </div>
     </nav>
