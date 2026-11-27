@@ -1087,6 +1087,39 @@
     {id:'hainan',title:'海南岛战役',date:'1950-04-16',focus:'haikou',area:'south',summary:'以主力部队渡海进攻开始为入口，海南岛上有琼崖纵队接应，国民党守军由薛岳指挥。历史上战役持续至5月1日。',source:src('y1950')},
   ];
 
+  // 战役入口的日期与史料已核对；当前地图及部队由全国数据近似生成，并非逐部队史实重建。
+  scenarios.push(
+    {id:'handan1945',title:'邯郸战役（近似）',date:'1945-10-24',focus:'handan',area:'north',summary:'1945年10月24日至11月2日，双方在邯郸以南平汉铁路地区作战。使用现有全国初始部队和地图近似推演，非逐部队历史复原。',source:'https://www.81.mil.cn/js_208592/16269820.html'},
+    {id:'linjiang1946',title:'四保临江（近似）',date:'1946-12-17',focus:'tonghua',area:'northeast',summary:'1946年12月至1947年4月，南满方向经历多次攻防。当前地图以通化作为附近入口，部队和地理位置为近似设定。',source:'https://www.81.mil.cn/2018zt/2018-07/09/content_8084221_4.htm'},
+    {id:'lunan1947',title:'鲁南战役（近似）',date:'1947-01-04',focus:'zaozhuang',area:'east',summary:'1947年1月鲁南地区展开作战。以枣庄方向为入口，现有城市及部队部署属于近似推演。',source:'https://www.81.mil.cn/yljnt_208627/lsda_208656/16444442.html'},
+    {id:'qingfengdian1947',title:'清风店战役（近似）',date:'1947-10-22',focus:'baoding',area:'north',summary:'1947年10月22日清风店地区爆发决战。地图使用附近保定作为入口，战场及各方编制为近似推演。',source:'https://www.81.mil.cn/js_208592/16284443.html'},
+    {id:'laiwu',title:'莱芜战役（近似）',date:'1947-02-20',focus:'taian',area:'east',summary:'1947年2月20日至23日，华东野战军在莱芜地区作战。当前地图以附近泰安为入口；城镇控制和兵力沿用全国推演数据，并非战役逐部队复原。',source:'https://www.81.mil.cn/js_208592/jdt_208593/16201832.html'},
+    {id:'menglianggu',title:'孟良崮战役（近似）',date:'1947-05-13',focus:'mengyin',area:'east',summary:'1947年5月13日至16日，华东野战军在蒙阴一带作战。以蒙阴为附近地图入口；开局部署与具体兵力为近似推演。',source:'https://www.81.mil.cn/2018zt/2018-10/13/content_9311343.htm'},
+    {id:'shajiadian',title:'沙家店战役（近似）',date:'1947-08-18',focus:'mizhi',area:'northwest',summary:'1947年8月18日至20日，西北野战军在陕西米脂县沙家店地区作战。以米脂为入口，具体部署为近似推演。',source:'https://www.mod.gov.cn/gfbw/gfjy_index/js_214151/4859547.html'},
+    {id:'yudong',title:'豫东战役（近似）',date:'1948-06-17',focus:'kaifeng',area:'central',summary:'1948年6月17日开始的豫东战役涉及开封、睢杞等地。开局使用现有全国部队与城镇资料，具体部署为近似推演。',source:'https://www.yantian.gov.cn/ytdayszxxw/lsjt/content/post_11736637.html'},
+    {id:'shanghai',title:'上海战役（近似）',date:'1949-05-12',focus:'shanghai',area:'east',summary:'1949年5月12日至27日的上海战役涉及上海及周边地区。当前使用全国地图与现有部队资料，并非完整的逐部队攻防复原。',source:'https://www.81.mil.cn/js_208592/jdt_208593/10160093.html'},
+    {id:'fumei',title:'扶眉战役（近似）',date:'1949-07-10',focus:'meixian',area:'northwest',summary:'1949年7月10日至14日，第一野战军在扶风、眉县地区作战。以眉县为入口，兵力与城镇归属为现有全国资料近似推演。',source:'https://www.81.mil.cn/js_208592/16200693.html'},
+    {id:'lanzhou-battle',title:'兰州战役（近似）',date:'1949-08-21',focus:'lanzhou',area:'northwest',summary:'1949年8月21日至26日，第一野战军与兰州守军作战。开局采用现有全国资料，具体部队与工事不是逐项史实复原。',source:'https://cpc.people.com.cn/GB/67481/71472/4844881.html'},
+    {id:'hengbao-battle',title:'衡宝战役（近似）',date:'1949-09-13',focus:'hengyang',area:'central',summary:'1949年9月至10月，第二、第四野战军在衡阳、宝庆地区作战。以衡阳为入口，战局及部署为近似推演。',source:'https://www.81.mil.cn/js_208592/16345016.html'},
+    {id:'gunningtou',title:'金门古宁头战役（近似）',date:'1949-10-25',focus:'kinmen',area:'taiwan',summary:'1949年10月25日凌晨开始金门登陆与古宁头作战。该入口使用现有岛屿地图与船运机制，潮汐、登陆点及部队编制尚未逐项复原。',source:'https://art.archives.gov.tw/tw/art/2062.html'}
+  );
+
+  // 占位驻军用于补足目前资料缺失的可玩开局，不代表具体历史部队或核实兵力。
+  const provisionalForces = {
+    dujiang: [{id:'sim-dujiang-roc',name:'南京守备部队（模拟）',side:'roc',city:'nanjing',strength:24000}],
+    shanghai: [{id:'sim-shanghai-roc',name:'上海守备部队（模拟）',side:'roc',city:'shanghai',strength:30000},
+      {id:'sim-shanghai-ccp',name:'上海方向进攻部队（模拟）',side:'ccp',city:'suzhou',strength:30000}],
+    gunningtou: [{id:'sim-kinmen-ccp',name:'厦门登陆集结部队（模拟）',side:'ccp',city:'xiamen',strength:18000}],
+  };
+  for (const scenario of scenarios) {
+    if (provisionalForces[scenario.id]) {
+      scenario.provisionalForces = provisionalForces[scenario.id];
+      scenario.summary += ' 为保证可玩性，补入标有“模拟”的占位部队，人数并非史实核验数据。';
+    }
+    if (scenario.id === 'gunningtou') scenario.defaultScope = 'national';
+    if (scenario.id === 'hainan' || scenario.id === 'gunningtou') scenario.defaultGoal = 'all';
+  }
+
   // 剧本物资参数：数值为后方产能系数（1 为正常）。国民党军后期多为补给线被切断，
   // 长春、淮海两处尤其明显；渡海与海南作战则受运输能力限制。空中支援为 0—100 的游戏参数。
   const scenarioSupply = {

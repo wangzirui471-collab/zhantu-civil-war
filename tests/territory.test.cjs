@@ -30,3 +30,21 @@ test('全面内战开局为1946年6月26日，旧1945和辽沈剧本仍可进入
   assert.ok(data.scenarios.some(item => item.id === 'full' && item.date === '1945-08-15'));
   assert.ok(data.scenarios.some(item => item.id === 'liaoshen' && item.date === '1948-09-12'));
 });
+
+test('渡江和上海剧本在主要目标城市有可指挥的守军', () => {
+  const data = globalThis.CivilWarData;
+  for (const [scenarioId, city] of [['dujiang','nanjing'], ['shanghai','shanghai']]) {
+    const state = globalThis.CivilWarEngine.createGame(data, { scenarioId, side:'roc' });
+    assert(state.units.some(u => !u.parent && u.side === 'roc' && u.city === city && u.strength > 0), scenarioId + ' 缺少目标守军');
+  }
+});
+
+test('海南战役默认包含台湾目标，开局不会在第一天自动结束', () => {
+  const data=globalThis.CivilWarData, api=globalThis.CivilWarEngine;
+  for (const side of ['ccp','roc']) {
+    const state=api.createGame(data,{scenarioId:'hainan',side});
+    assert.equal(state.goal,'all');
+    api.step(data,state,1);
+    assert.equal(state.winner,null);
+  }
+});

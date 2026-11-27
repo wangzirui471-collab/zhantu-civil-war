@@ -1147,9 +1147,10 @@
       + '<label>剧本<select name="scenario">' + Data.scenarios.map((item) => option(item.id, item.title, scenario.id)).join('') + '</select></label>'
       + '<label>开局日期<input required type="date" name="date" min="1945-08-15" max="1951-12-31" value="' + startDate + '"></label>'
       + '<label>接管阵营<select name="side">' + Object.entries(sides).map((item) => option(...item, pickedSide)).join('') + '</select></label>'
-      + '<label>指挥范围<select name="scope">' + option('theater', '当前战区', ['full', 'war1946'].includes(scenario.id) ? 'national' : 'theater') + option('national', '全国', ['full', 'war1946'].includes(scenario.id) ? 'national' : 'theater') + '</select></label>'
+      + '<label>指挥范围<select name="scope">' + option('theater', '当前战区', (['full', 'war1946'].includes(scenario.id) || scenario.defaultScope === 'national') ? 'national' : 'theater') + option('national', '全国', (['full', 'war1946'].includes(scenario.id) || scenario.defaultScope === 'national') ? 'national' : 'theater') + '</select></label>'
+      + '<label>游戏难度<select name="difficulty">' + option('normal', '普通 · 双方战力正常', state.difficulty || 'normal') + option('hard', '困难 · 对手战力 +15%', state.difficulty || 'normal') + option('devil', '魔鬼 · 对手战力 +35%', state.difficulty || 'normal') + '</select></label>'
       + '<label>历史AI模式<select name="historyMode">' + option('historical', '历史事件优先', state.historyMode) + option('dynamic', '随局势推演', state.historyMode) + '</select></label>'
-      + '<label>统一目标<select name="goal">' + option('mainland', '统一大陆', state.goal) + option('all', '统一大陆及台湾', state.goal) + '</select></label>'
+      + '<label>统一目标<select name="goal">' + option('mainland', '统一大陆', scenario.defaultGoal || state.goal) + option('all', '统一大陆及台湾', scenario.defaultGoal || state.goal) + '</select></label>'
       + '</div><div class="dialog-actions"><button class="gold" type="submit" style="min-width:150px;font-size:14px;padding:9px 20px;">⚔ 开始指挥</button>'
       + '<button type="button" id="back-scenarios">返回剧本列表</button></div></form>');
     const form = body.querySelector('form');
@@ -1492,15 +1493,17 @@
       + '战报会列出伤亡、伤员、俘虏和缴获，左侧的「变化」会显示两方从开局至今的城镇归属变化。</p></div></div>');
   }
 
-  function startTutorial() {
-    showDialog('锦州第一局', '<p>练习选中第三纵队、下达命令、推进到锦州战报，再从同一局转到塔山。引导可随时跳过。</p>'
+  function startTutorial(required = false) {
+    $('dialog-close').disabled = required;
+    showDialog('锦州第一局 · 新手必修', '<p>先学习选部队、进攻和查看战报。教程完成后，可从左侧选择1946年全面内战或其他剧本。当前版本不保存进度，刷新后需要重新学习。</p>'
       + '<button type="button" id="tutorial-start" class="gold">开始锦州引导</button>');
     $('tutorial-start').onclick = () => {
       if (state.date > timeline.origin.date || timeline.commands.length) saveSlot();
+      $('dialog-close').disabled = false;
       const fresh = Engine.createGame(Data, { scenarioId: 'jinzhou', side: 'ccp',
         scope: 'theater', historyMode: 'dynamic', goal: 'mainland' });
       setActive(fresh, Timeline.create(fresh, Engine));
-      tutorial = { step: 0 };
+      tutorial = { step: 0, required };
       render();
     };
   }
@@ -1511,7 +1514,7 @@
     if (!tutorial) { card.replaceChildren(); return; }
     const [title, guidance, button] = tutorialSteps[tutorial.step];
     card.innerHTML = '<header><span class="tutorial-step">锦州第一局 · ' + (tutorial.step + 1) + ' / '
-      + tutorialSteps.length + '</span><button type="button" class="link-button" data-tutorial-skip>跳过</button></header>'
+      + tutorialSteps.length + '</span>' + (tutorial.required ? '' : '<button type="button" class="link-button" data-tutorial-skip>跳过</button>') + '</header>'
       + '<h3>' + title + '</h3><p>' + guidance + '</p><button type="button" class="gold" data-tutorial-next>'
       + button + '</button>';
   }
@@ -2086,7 +2089,7 @@
     const force = state.airWar?.[side] ?? {};
     const bases = Data.cities.filter((city) => state.owners[city.id] === side
       && (Number(city.value) || 0) >= 5).length;
-    return '<p class="subtext">机场来自价值 5 以上的城镇，共 ' + bases + ' 处。机队每日补充，也会因敌方制空而损失。</p>'
+    return '<p class="subtext">选择一种任务并点击选择即可指挥全国机队；当前按全国汇总，暂不支持逐架或独立战区指挥。</p><p class="subtext">机场来自价值 5 以上的城镇，共 ' + bases + ' 处。机队每日补充，也会因敌方制空而损失。</p>'
       + '<div class="stat-line">' + statChips({
         '机队': Math.round(force.planes ?? 0), '机场容量': 24 + bases * 18,
         '空中支援': state.air?.[side] ?? 0, '累计损失': Math.round(force.losses ?? 0),
@@ -2099,6 +2102,21 @@
         + (force.mission === id ? ' disabled' : '') + '>选择</button></div></article>').join('') + '</div>';
   }
 
+  function navalMissionRows(side) {
+    const seaZones = ['东北外海', '黄海', '东海', '台湾海峡', '珠江口'];
+    const seaRows = seaZones.map(zone => {
+      const own = state.seaZones?.[zone]?.[side]?.mission ?? '';
+      return '<label>' + zone + '<select data-sea-zone="' + zone + '">'
+        + option('', '未部署', own)
+        + option('patrol', '巡逻/制海', own)
+        + option('escort', '护航', own)
+        + option('raid', '破交', own)
+        + option('invasion', '登陆准备', own)
+        + '</select></label>';
+    }).join('');
+    return seaRows;
+  }
+
   function navyBody() {
     const side = state.player;
     const navy = state.navy?.[side] ?? {};
@@ -2106,7 +2124,8 @@
       + '<div class="stat-line">' + statChips({
         '运输船': Math.floor(navy.transports ?? 0), '军舰': Math.floor(navy.warships ?? 0),
         '单次投送上限': format(Math.floor((navy.transports ?? 0) * 1500)) + ' 人',
-      }) + '</div><p class="subtext">用法：在海岸城镇集结部队，选中后右键隔海敌城。登陆会承受滩头惩罚并消耗运输船；运输船不足时命令会被拒绝。</p>';
+      }) + '</div><div class="card"><h3>选择海域任务</h3><p class="subtext">巡逻 8、护航 6、破交 6、登陆准备 12 舰队点；运输船按半点计算。先选任务再点执行，撤销选择未部署。</p><div class="sea-zone-grid">' + navalMissionRows(side) + '</div><button type="button" data-naval-save>执行海军部署</button></div>'
+      + '<p class="subtext">用法：在海岸城镇集结部队，选中后右键隔海敌城。登陆会承受滩头惩罚并消耗运输船；运输船不足时命令会被拒绝。</p>';
   }
 
   function commandBody() {
@@ -2161,26 +2180,12 @@
             : '战败后留下的武器装备，仅限战后初期影响。')
         + '</p>' + actions + '</article>';
     }).join('');
-    const seaZones = ['东北外海', '黄海', '东海', '台湾海峡', '珠江口'];
-    const seaRows = seaZones.map(zone => {
-      const own = state.seaZones?.[zone]?.[side]?.mission ?? '';
-      return '<label>' + zone + '<select data-sea-zone="' + zone + '">'
-        + option('', '未部署', own)
-        + option('patrol', '巡逻/制海', own)
-        + option('escort', '护航', own)
-        + option('raid', '破交', own)
-        + option('invasion', '登陆准备', own)
-        + '</select></label>';
-    }).join('');
     return '<div class="stat-line">' + statChips({
       '情报水平': Math.round(intel.level), '情报点': Math.round(intel.points),
       '稳定度': stability, '我方沦陷城镇': occupied, '抵抗较高': resistance,
       '战争支持': Math.round(state.warSupport?.[side] ?? 0),
     }) + '</div><div class="foreign-grid">' + foreignStatus + '</div><div class="card"><h3>外部势力影响（简化推演）</h3>'
       + '<p class="subtext">美国援助/禁运与外交压力；苏联 1945—46 年东北影响、装备援助；日本仅模拟投降后遗留武器，非日本参战。</p></div>'
-      + '<div class="card"><h3>海域任务</h3><div class="sea-zone-grid">' + seaRows + '</div>'
-      + '<button type="button" data-naval-save>执行海军部署</button>'
-      + '<p class="subtext">巡逻提高制海，护航降低海运补给成本，破交压低对方运输，登陆准备积累滩头优势。</p></div>'
       + '<div class="defense-cards">' + Object.entries(intelOpInfo).map(([id, op]) =>
         '<article class="card defense-card"><header><h3>' + escape(op.name) + '</h3><span class="plan-status is-draft">'
         + op.cost + ' 点</span></header><p class="subtext">' + escape(op.hint) + '</p>'
@@ -2879,22 +2884,23 @@
       const selectors = [...document.querySelectorAll('[data-sea-zone]')];
       const before = { state: Engine.snapshot(state), timeline: structuredClone(timeline) };
       let changed = 0;
+      const failures = [];
       for (const selector of selectors) {
         const zone = selector.dataset.seaZone;
         const current = state.seaZones?.[zone]?.[state.player]?.mission ?? '';
         if (selector.value === current) continue;
         const result = Timeline.apply(timeline, Engine, Data, state, 'setNavalMission', [zone, selector.value]);
         if (result.ok) changed += 1;
-        else notify(result.error);
+        else failures.push(zone + '：' + result.error);
       }
       if (changed) {
         undoStack.push(before);
         if (undoStack.length > undoLimit) undoStack.shift();
         saveAuto(true);
         render();
-        notify('海军海域任务已更新。');
         defensePanel('navy');
       }
+      notify(failures.length ? (changed ? '部分部署成功；' : '') + failures.join('；') : changed ? '海军海域任务已更新。' : '海域任务没有变化。');
     }
     else if (d.groupRoster || d.groupControl) {
       const group = groupsById.get(d.groupRoster || d.groupControl);
@@ -2933,10 +2939,21 @@
   $('supply').onclick = logisticsPanel;
   $('politics').onclick = politicsPanel;
   $('defense').onclick = () => defensePanel('focus');
+  $('air-command').onclick = () => defensePanel('air');
+  $('navy-command').onclick = () => defensePanel('navy');
   $('gear').onclick = gear;
   $('history-mode').onclick = historicalEvents;
   $('help').onclick = guide;
-  $('tutorial-open').onclick = startTutorial;
+  $('tutorial-open').onclick = () => startTutorial(false);
+  dialog.addEventListener('cancel', (event) => { if ($('dialog-close').disabled) event.preventDefault(); });
+  // 必修教学期间只开放地图、教学卡片与战报操作，完成后恢复全部菜单。
+  document.addEventListener('click', (event) => {
+    if (!tutorial?.required) return;
+    if (event.target.closest('#tutorial-card, #dialog, #map, #command-bar, #pause, #step')) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    notify('请先完成当前新手教程。');
+  }, true);
   $('tutorial-card').onclick = (event) => {
     const button = event.target.closest('button');
     if (!button || !tutorial) return;
@@ -3114,7 +3131,7 @@
       scenarioId: 'war1946', scope: 'national', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
     });
     setActive(initial, Timeline.create(initial, Engine), false);
-  });
+  }).then(() => startTutorial(true));
 })();
 
 

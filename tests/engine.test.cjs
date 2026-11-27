@@ -593,3 +593,41 @@ test('限时决议倒计时完成发放加成，互动历史抉择事件生效',
   const dupRes = api.resolveEventChoice(state, 'evt_jinzhou_plan', 0);
   assert.equal(dupRes.ok, false);
 });
+
+test('难度按玩家对手应用战斗加成，换边后也不偏袒固定阵营', () => {
+  for (const side of ['ccp', 'roc']) {
+    const normal = create({ side, difficulty: 'normal' });
+    const hard = create({ side, difficulty: 'hard' });
+    const devil = create({ side, difficulty: 'devil' });
+    assert.equal(normal.difficulty, 'normal');
+    const ownId = normal.units.find(u => u.side === side && !u.parent).id;
+    const enemyId = normal.units.find(u => u.side !== side && !u.parent).id;
+    const p = (s,id) => engine.metadata.power([s.units.find(u => u.id === id)], false, s);
+    assert.equal(p(normal, ownId), p(hard, ownId));
+    assert(p(hard, enemyId) > p(normal, enemyId));
+    assert(p(devil, enemyId) > p(hard, enemyId));
+    engine.setSide(devil, side === 'ccp' ? 'roc' : 'ccp');
+    assert(p(devil, ownId) > p(normal, ownId));
+  }
+});
+
+test('海峡护航只改善所属海域的海上补给', () => {
+  const board = {
+    cities: [
+      {id:'port',name:'厦门',lon:118.09,lat:24.48,region:'east',terrain:'port',value:8},
+      {id:'island',name:'金门',lon:118.32,lat:24.44,region:'taiwan',terrain:'plain',value:1},
+    ], links:[['port','island']], routeTypes:{'island|port':'maritime'},
+    units:[{id:'guard',name:'守备',side:'ccp',city:'island',strength:1000}],
+    anchors:[{date:'1947-01-01',ccp:['port','island'],roc:[]}], events:[],
+    scenarios:[{id:'s',date:'1947-01-01',focus:'island',area:'taiwan'}],
+  };
+  const state=engine.createGame(board,{scenarioId:'s',side:'ccp'});
+  state.navy.ccp.warships=30;
+  state.convoy.ccp=0.9;
+  const baseline=engine.supplyReading(board,state).cities.island.ccp;
+  assert(engine.setNavalMission(state,'黄海','escort').ok);
+  assert.equal(engine.supplyReading(board,state).cities.island.ccp,baseline);
+  assert(engine.setNavalMission(state,'黄海','').ok);
+  assert(engine.setNavalMission(state,'台湾海峡','escort').ok);
+  assert(engine.supplyReading(board,state).cities.island.ccp>baseline);
+});

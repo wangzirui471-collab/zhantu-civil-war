@@ -295,11 +295,12 @@
 
     const state = {
       date, player, scenarioId: chosenScenario?.id ?? null, group: null,
+      difficulty: ['normal', 'hard', 'devil'].includes(options.difficulty) ? options.difficulty : 'normal',
       scope: options.scope === 'theater' ? 'theater' : 'national',
       area: options.area ?? chosenScenario?.area ?? map.cities.get(chosenScenario?.focus)?.region
         ?? data.cities[0]?.region ?? null,
       historyMode: options.historyMode === 'dynamic' ? 'dynamic' : 'historical',
-      goal: options.goal === 'all' ? 'all' : 'mainland',
+      goal: options.goal === 'all' || (!options.goal && chosenScenario?.defaultGoal === 'all') ? 'all' : 'mainland',
       owners, units: [], economy: {},
       buildings: Object.fromEntries(data.cities.map(city => [city.id, {
         militaryFactory: (Number(city.value) || 0) >= 7 ? 1 : 0,
@@ -348,6 +349,9 @@
       for (const item of priorIntegrations) integrateHistoricalForce(map, state, currentTree, item, data.leaders ?? []);
     }
     applyHistory(data, map, state, unitTree(state));
+    if (date === chosenScenario?.date) {
+      for (const seed of chosenScenario.provisionalForces ?? []) createArmy(state, map, seed);
+    }
     for (const side of sides) state.economy[side] = startingEconomy(map, data, state, side);
     for (const side of sides) {
       const preferred = data.capitals?.[side];
@@ -1086,6 +1090,17 @@
     return map.routeTypes[[a, b].sort().join('|')] ?? 'land';
   }
 
+  // 以海路中点粗分任务海域；这是游戏用分区，不是精确海界。
+  function maritimeZone(map, a, b) {
+    const first = map.cities.get(a), second = map.cities.get(b);
+    if (![first?.lat, first?.lon, second?.lat, second?.lon].every(Number.isFinite)) return first?.region;
+    const lat = (first.lat + second.lat) / 2, lon = (first.lon + second.lon) / 2;
+    if (lat >= 39) return '东北外海';
+    if (lat >= 34) return '黄海';
+    if (lat >= 27) return '东海';
+    return lon < 115 ? '珠江口' : '台湾海峡';
+  }
+
   function supplyNetwork(map, state, side) {
     const cost = new Map();
     const parent = new Map();
@@ -1124,17 +1139,15 @@
         if (state.owners[neighbor] !== side || done.has(neighbor)) continue;
         const type = linkType(map, city, neighbor);
         const sea = state.seaZones?.[[city, neighbor].sort().join('|')];
-        const zone = map.cities.get(city)?.region;
+        const zone = type === 'maritime' ? maritimeZone(map, city, neighbor) : map.cities.get(city)?.region;
         const ownMission = state.navy?.[side]?.zones?.[zone]?.mission;
         const enemySide = side === 'ccp' ? 'roc' : 'ccp';
         const enemyMission = state.navy?.[enemySide]?.zones?.[zone]?.mission;
         const escort = (sea?.[side]?.mission === 'escort' || ownMission === 'escort') ? 0.7 : 1;
         const raided = (sea?.[enemySide]?.mission === 'raid' || enemyMission === 'raid') ? 1.8 : 1;
         const convoy = clampValue(1.2 - (1 - (state.convoy?.[side] ?? 1)) * 1.4, 0.25, 1.25);
-        const ownPatrol = num(state.navy?.[side]?.patrol, 0) > 0;
-        const enemyPatrol = num(state.navy?.[enemySide]?.patrol, 0) > 0;
-        const patrolControl = ownMission === 'patrol' || ownPatrol ? 0.8
-          : enemyMission === 'patrol' || enemyPatrol ? 1.25 : 1;
+        const patrolControl = ownMission === 'patrol' ? 0.8
+          : enemyMission === 'patrol' ? 1.25 : 1;
         const weight = (type === 'rail' ? 1 : type === 'maritime' ? 6 * escort * raided * convoy * patrolControl : 3);
         const next = (cost.get(city) ?? Infinity) + weight;
         if (next < (cost.get(neighbor) ?? Infinity)) {
@@ -2411,7 +2424,8 @@
       }
       return sum + unit.strength * readiness * preparedness * multiplier
         * ammo * morale * veteran * org * designOrg * designMultiplier * trait * (1 + buff)
-        * supportFactor(unit, defend);
+        * supportFactor(unit, defend)
+        * (state && unit.side !== state.player ? ({ normal: 1, hard: 1.15, devil: 1.35 }[state.difficulty] ?? 1) : 1);
     }, 0);
   }
 
@@ -4933,7 +4947,7 @@
       const owned = data.cities.filter(city => state.owners[city.id] === side).length;
       const share = owned / data.cities.length;
       const collapse = (capitalLost && support < 25) || support < 8
-        || (data.cities.length > 40 && share < 0.1);
+        || (data.cities.length > 40 && share < 0.1 && support < 25);
       if (!collapse) continue;
       state.winner = other;
       state.endReason = 'capitulation';
