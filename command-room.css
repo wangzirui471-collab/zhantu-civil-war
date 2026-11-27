@@ -118,6 +118,57 @@ body { overflow: hidden; }
 .commander-chip strong { display: block; color: #e4cea0; font-size: 12px; }
 .roster-pages { display: flex; gap: 4px; align-items: center; justify-content: space-between; font-size: 10px; margin-top: 5px; color: var(--dim); }
 .roster-pages button { min-height: 25px; padding-inline: 5px; }
+
+/* 钢铁雄心4风格：顶部指标条、将领底座、战斗泡泡、民族精神、国策树、科技树、5×5师编制网格 */
+.hoi-hud-stats { display: flex; align-items: center; gap: 5px; margin-left: 8px; flex-wrap: nowrap; overflow: hidden; }
+.hoi-stat-pill { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 4px; border: 1px solid #495a4e; background: #222d27; color: #f0e8cf; font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; white-space: nowrap; }
+.hoi-stat-pill:hover { border-color: var(--gold); color: #fff4d1; }
+.hoi-stat-pill b { color: #e6c67e; font-weight: 600; }
+.hoi-stat-pill.warn b { color: #ff8e7a; }
+.general-dock { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 5; display: flex; gap: 5px; max-width: calc(100% - 310px); overflow-x: auto; padding: 4px 6px; border-radius: 7px; border: 1px solid #596959; background: linear-gradient(180deg, #212b25e8, #151d19f2); box-shadow: 0 6px 20px #0d1410b0; backdrop-filter: blur(5px); scrollbar-width: none; }
+.general-dock:empty { display: none; }
+.gen-card { display: flex; align-items: center; gap: 5px; min-width: 106px; max-width: 138px; padding: 3px 6px 3px 4px; border-radius: 5px; border: 1px solid #4d5d50; background: #27342cf0; color: #f1ecd8; text-align: left; cursor: pointer; transition: .12s; }
+.gen-card:hover { border-color: var(--gold); background: #344339; }
+.gen-card[aria-pressed=true] { border-color: #f3cf80; background: #463f2c; box-shadow: 0 0 0 1px #f3cf8066; }
+.gen-card img { width: 28px; height: 34px; object-fit: cover; object-position: top; border-radius: 3px; border: 1px solid #6c7c69; flex-shrink: 0; }
+.gen-card .gen-monogram { width: 28px; height: 34px; display: grid; place-items: center; border-radius: 3px; background: #36453b; color: #f0d598; font: 700 13px var(--serif); flex-shrink: 0; }
+.gen-card strong { display: block; font-size: 11px; color: #fff1cc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gen-card small { display: block; font-size: 9px; color: #c3ccb9; white-space: nowrap; }
+.hoi-bubble-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 24px; padding: 0 6px; border-radius: 12px; font: 700 12px var(--sans); color: #fff; }
+.hoi-bubble-pill.win { background: #278e46; border: 1px solid #9ef7b0; }
+.hoi-bubble-pill.lose { background: #c6352e; border: 1px solid #ffb0a0; }
+.hoi-mod-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.hoi-mod-chip { padding: 1px 5px; border-radius: 3px; font-size: 10px; background: #2b3830; border: 1px solid #4e5f52; color: #dde6d5; }
+.hoi-mod-chip.neg { border-color: #b85346; color: #ffb3a6; background: #3f2422; }
+.hoi-mod-chip.pos { border-color: #4f9e66; color: #aef0bf; background: #203828; }
+.hoi-spirit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 7px; margin: 8px 0; }
+.hoi-spirit-card { padding: 8px; border-radius: 6px; border: 1px solid #526152; background: #232d27; }
+.hoi-spirit-card.debuff { border-color: #a64d42; background: linear-gradient(145deg, #332220, #231b1a); }
+.hoi-spirit-card.buff { border-color: #4c8c5e; background: linear-gradient(145deg, #213227, #1c2620); }
+.hoi-spirit-card header { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; }
+.hoi-spirit-card h4 { margin: 0; font-size: 13px; color: #f6e7c1; }
+.hoi-focus-tree { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 8px; }
+.hoi-focus-col { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.hoi-focus-node { position: relative; padding: 9px; border-radius: 6px; border: 1px solid #4e5f52; background: #243028; }
+.hoi-focus-node.done { border-color: #d6b267; background: linear-gradient(150deg, #3a3423, #27251b); }
+.hoi-focus-node.active { border-color: #54c96b; background: linear-gradient(150deg, #213827, #1d2b22); }
+.hoi-focus-node.locked { opacity: .62; }
+.hoi-focus-node::before { content: ""; position: absolute; top: -11px; left: 50%; width: 2px; height: 10px; background: #647566; }
+.hoi-focus-col > .hoi-focus-node:first-child::before { display: none; }
+.hoi-eff-bar { height: 6px; border-radius: 4px; background: #18211c; overflow: hidden; margin-top: 4px; }
+.hoi-eff-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3e9c56, #8de67a); }
+.hoi-preset-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 7px 0; }
+.hoi-preset-row button { font-size: 11px; padding: 4px 8px; border-color: #7c6d48; background: #322f22; color: #f5dfb0; }
+.hoi-div-visual { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; padding: 8px; margin: 8px 0; border-radius: 6px; border: 1px solid #516152; background: #1b241f; }
+.hoi-div-col-label { font-size: 10px; color: var(--dim); margin-bottom: 4px; }
+.hoi-div-slots { display: grid; gap: 4px; }
+.hoi-div-battalions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+.hoi-slot { padding: 4px 3px; border-radius: 4px; border: 1px solid #445448; background: #28342d; text-align: center; font-size: 10px; color: #efe7d0; }
+.hoi-slot.empty { opacity: .38; border-style: dashed; background: #1d2621; color: #8b988d; }
+.hoi-slot.art { border-color: #c28848; background: #3b2d20; color: #ffd9a6; }
+.hoi-slot.arm { border-color: #5b93b8; background: #223340; color: #c4e8ff; }
+.hoi-slot.sup { border-color: #6ea36a; background: #243826; color: #c9f5c6; }
+@media (max-width: 1120px) { .hoi-hud-stats { display: none; } }
 .command-deck { min-width: 0; display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; gap: 4px 10px; background: #253028; border-top: 1px solid #465446; }
 .deck-selection { min-width: 0; display: grid; gap: 1px; max-width: 300px; }
 #deck-unit { font-size: 12px; color: #f1e2bb; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

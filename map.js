@@ -100,7 +100,7 @@
       outlets.set(b, (outlets.get(b) || 0) + 1);
     }
     const options = { mode: 'terrain', rail: true, province: true, battle: true, maritime: false,
-      supply: false, fort: true };
+      supply: false, fort: true, models3d: true };
     let width = 1;
     let height = 1;
     let camera = { lon: 105, lat: 35, zoom: 12 };
@@ -558,26 +558,45 @@
         if (!city) continue;
         const [x, y] = project(city.lon, city.lat);
         if (!inMap(x, y)) continue;
-        const color = battle.side === 'ccp' ? '#e59a80' : '#8fc3da';
+        const rawScore = Number.isFinite(battle.bubbleScore) ? battle.bubbleScore : 52;
+        const score = Math.max(1, Math.min(99, battle.side === state.player ? rawScore : 100 - rawScore));
+        const winning = score >= 50;
+        const bx = x + 15, by = y - 13, br = 12;
+        if (battle.encircled) {
+          brush.save();
+          brush.beginPath();
+          brush.arc(x, y, 22, 0, Math.PI * 2);
+          brush.strokeStyle = '#ff4b3ee8';
+          brush.lineWidth = 2.4;
+          brush.setLineDash([5, 4]);
+          brush.stroke();
+          brush.restore();
+        }
+        brush.save();
         brush.beginPath();
-        brush.arc(x + 13, y - 12, 8, 0, Math.PI * 2);
-        brush.fillStyle = '#6f2b21e8';
+        brush.arc(bx, by, br + 2, 0, Math.PI * 2);
+        brush.fillStyle = '#151c18e6';
         brush.fill();
-        brush.strokeStyle = color;
-        brush.lineWidth = 1.1;
+        brush.beginPath();
+        brush.arc(bx, by, br, 0, Math.PI * 2);
+        brush.fillStyle = winning ? '#278e46f2' : '#c6352ef2';
+        brush.fill();
+        brush.beginPath();
+        brush.arc(bx, by, br, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (score / 100));
+        brush.strokeStyle = winning ? '#9ef7b0' : '#ffb0a0';
+        brush.lineWidth = 2.4;
         brush.stroke();
-        brush.fillStyle = '#ffe9c6';
-        brush.font = '700 8px "Microsoft YaHei UI", sans-serif';
+        brush.fillStyle = '#ffffff';
+        brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
         brush.textAlign = 'center';
         brush.textBaseline = 'middle';
-        brush.fillText('攻', x + 13, y - 11.5);
+        brush.fillText(String(score), bx, by + 0.5);
         if (battle.days > 1) {
           brush.font = '600 8px "Microsoft YaHei UI", sans-serif';
-          brush.fillStyle = '#ffd9a6';
-          brush.fillText(battle.days + '日', x + 13, y + 1);
+          brush.fillStyle = '#ffe5b0';
+          brush.fillText((battle.encircled ? '饺·' : '') + battle.days + '日', bx, by + br + 7);
         }
-        brush.textAlign = 'start';
-        brush.textBaseline = 'alphabetic';
+        brush.restore();
       }
     }
 
@@ -586,21 +605,23 @@
       for (const plan of selection.plans) {
         const target = places.get(plan.target);
         if (!target) continue;
-        const color = plan.side === 'ccp' ? '#f6bb9c' : '#abd8ec';
+        const isFallback = plan.stance === 'fallback' || plan.stance === 'hold';
+        const color = isFallback ? '#6fc0f0' : (plan.side === 'ccp' ? '#f69e7a' : '#8fd2f0');
+        const fillArrow = isFallback ? 'rgba(111,192,240,0.30)' : (plan.side === 'ccp' ? 'rgba(246,142,102,0.34)' : 'rgba(122,198,238,0.34)');
         const segments = (plan.resolvedLine ?? plan.line ?? []).map((id) => places.get(id)).filter(Boolean);
         if (segments.length > 1) {
           const points = segments.map((city) => [city.lon, city.lat]);
-          line(points, '#3a2a1a9c', 4.4);
-          line(points, '#f4d49a', 2, [6, 4]);
+          line(points, '#1b2622cc', 6.2);
+          line(points, isFallback ? '#6fc0f0' : '#f4d49a', 2.8, isFallback ? [8, 4] : [6, 3]);
           for (const city of segments) {
             const [x, y] = project(city.lon, city.lat);
             if (!inMap(x, y)) continue;
             brush.beginPath();
-            brush.rect(x - 3.2, y - 3.2, 6.4, 6.4);
-            brush.fillStyle = '#f7e3b4';
+            brush.rect(x - 3.6, y - 3.6, 7.2, 7.2);
+            brush.fillStyle = isFallback ? '#bce8ff' : '#f7e3b4';
             brush.fill();
-            brush.strokeStyle = '#4a3320';
-            brush.lineWidth = 1;
+            brush.strokeStyle = '#24312a';
+            brush.lineWidth = 1.1;
             brush.stroke();
           }
         }
@@ -611,19 +632,38 @@
           if (city && city.id !== plan.target) origins.add(city);
         }
         const staging = plan.front ? places.get(plan.front) : null;
-        const hop = (from, to) => {
-          line([[from.lon, from.lat], [to.lon, to.lat]], '#37251a99', 4.2);
-          line([[from.lon, from.lat], [to.lon, to.lat]], color, 1.5, plan.status === 'paused' ? [2, 6] : [9, 5]);
+        const drawBroadArrow = (from, to) => {
+          const a = project(from.lon, from.lat), b = project(to.lon, to.lat);
+          const angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+          const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (dist < 16) return;
+          const headLen = Math.min(20, dist * 0.35), shaftW = 5.5;
+          const nx = -Math.sin(angle), ny = Math.cos(angle);
+          const endX = b[0] - Math.cos(angle) * headLen, endY = b[1] - Math.sin(angle) * headLen;
+          brush.save();
+          brush.beginPath();
+          brush.moveTo(a[0] + nx * shaftW, a[1] + ny * shaftW);
+          brush.lineTo(endX + nx * shaftW, endY + ny * shaftW);
+          brush.lineTo(endX + nx * (shaftW * 2.1), endY + ny * (shaftW * 2.1));
+          brush.lineTo(b[0], b[1]);
+          brush.lineTo(endX - nx * (shaftW * 2.1), endY - ny * (shaftW * 2.1));
+          brush.lineTo(endX - nx * shaftW, endY - ny * shaftW);
+          brush.lineTo(a[0] - nx * shaftW, a[1] - ny * shaftW);
+          brush.closePath();
+          brush.fillStyle = fillArrow;
+          brush.fill();
+          brush.strokeStyle = color;
+          brush.lineWidth = 1.6;
+          if (plan.status === 'paused') brush.setLineDash([4, 4]);
+          brush.stroke();
+          brush.restore();
         };
         for (const city of origins) {
           if (staging && staging.id !== city.id && staging.id !== plan.target) {
-            hop(city, staging);
-            arrowHead(project(city.lon, city.lat), project(staging.lon, staging.lat), color, 6);
-            hop(staging, target);
-            arrowHead(project(staging.lon, staging.lat), project(target.lon, target.lat), color, 7);
+            drawBroadArrow(city, staging);
+            drawBroadArrow(staging, target);
           } else {
-            hop(city, target);
-            arrowHead(project(city.lon, city.lat), project(target.lon, target.lat), color, 7);
+            drawBroadArrow(city, target);
           }
         }
         const [x, y] = project(target.lon, target.lat);
@@ -654,22 +694,87 @@
 
     function inMap(x, y) { return x >= -10 && x <= width + 10 && y >= -10 && y <= height + 10; }
 
+    const factionZoneColors = {
+      ccp: '#9e3c38', roc: '#8c8349', qingma: '#61557a', ningma: '#6e5e87',
+      xinjiang: '#3f7366', xizang: '#5b6b59', dianxi: '#466b43', chuanxi: '#6c754b',
+      guixi: '#395e54', yuejun: '#51705a', jinsui: '#5d493f', suiyuan: '#6e5745',
+    };
+
     function drawControl() {
       const national = zoomLevel() === 'national';
-      if (options.mode !== 'situation' && !national) return;
+      const supplyHeat = Boolean(options.supply);
+      const factionMode = options.mode === 'faction';
+      const situationMode = options.mode === 'situation';
+      const showFill = situationMode || factionMode || supplyHeat || national;
+      const radius = national ? clamp(camera.zoom * 1.9, 16, 42) : clamp(camera.zoom * 1.05, 16, 54);
+      const groupByCity = factionMode ? new Map() : null;
+      if (groupByCity) {
+        for (const u of state.units) {
+          if (!u.parent && u.strength > 0 && !u.inactive && u.group && !groupByCity.has(u.city)) groupByCity.set(u.city, u.group);
+        }
+      }
+      if (showFill) {
+        brush.save();
+        shape(brush, land);
+        brush.clip();
+        for (const city of data.cities) {
+          const [x, y] = project(city.lon, city.lat);
+          if (!inMap(x, y)) continue;
+          let color = state.owners[city.id] === 'ccp' ? '#9e3c38' : '#3c5e78';
+          let alpha = situationMode || factionMode ? '56' : supplyHeat ? '5a' : '2c';
+          if (supplyHeat && selection.supply?.coverage) {
+            const cov = selection.supply.coverage[state.player]?.[city.id];
+            if (cov !== undefined) color = cov >= 0.85 ? '#2b82cc' : cov >= 0.45 ? '#cc8824' : '#c4322b';
+            else color = '#46544e';
+          } else if (factionMode) {
+            const owner = state.owners[city.id];
+            const grp = groupByCity.get(city.id);
+            color = owner === 'ccp' ? factionZoneColors.ccp
+              : (factionZoneColors[grp] || (city.region === 'northwest' ? '#6b5c7c' : city.region === 'southwest' ? '#4d6f49' : factionZoneColors.roc));
+          }
+          const halo = brush.createRadialGradient(x, y, 2, x, y, radius);
+          halo.addColorStop(0, color + alpha);
+          halo.addColorStop(0.65, color + (situationMode || factionMode || supplyHeat ? '2c' : '10'));
+          halo.addColorStop(1, color + '00');
+          brush.fillStyle = halo;
+          brush.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+        }
+        brush.restore();
+      }
+      // 补给模式下高亮加粗铁路干线，一眼看清截断铁路包饺子路线
+      if (supplyHeat) {
+        brush.save();
+        brush.lineWidth = national ? 2.4 : 3.6;
+        brush.strokeStyle = '#7ad4ffcc';
+        for (const link of data.links) {
+          if (data.routeTypes?.[linkKey(link[0], link[1])] !== 'rail') continue;
+          const a = places.get(link[0]), b = places.get(link[1]);
+          if (!a || !b) continue;
+          const pa = project(a.lon, a.lat), pb = project(b.lon, b.lat);
+          if (!inMap(pa[0], pa[1]) && !inMap(pb[0], pb[1])) continue;
+          brush.beginPath(); brush.moveTo(pa[0], pa[1]); brush.lineTo(pb[0], pb[1]); brush.stroke();
+        }
+        brush.restore();
+      }
+      // 绘制国共对峙前线交界虚线（钢4红蓝战线视觉）
       brush.save();
-      shape(brush, land);
-      brush.clip();
-      const radius = national ? clamp(camera.zoom * 1.5, 12, 31) : clamp(camera.zoom * .78, 11, 39);
-      for (const city of data.cities) {
-        const [x, y] = project(city.lon, city.lat);
-        if (!inMap(x, y)) continue;
-        const color = sideColors[state.owners[city.id]] || '#777052';
-        const halo = brush.createRadialGradient(x, y, 1, x, y, radius);
-        halo.addColorStop(0, color + (options.mode === 'situation' ? '58' : '27'));
-        halo.addColorStop(1, color + '00');
-        brush.fillStyle = halo;
-        brush.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+      brush.lineWidth = national ? 1.8 : 2.6;
+      brush.strokeStyle = '#ff6b52cc';
+      brush.setLineDash([4, 3]);
+      for (const link of data.links) {
+        const aId = link[0], bId = link[1];
+        if (state.owners[aId] === state.owners[bId]) continue;
+        const a = places.get(aId), b = places.get(bId);
+        if (!a || !b) continue;
+        const pa = project(a.lon, a.lat), pb = project(b.lon, b.lat);
+        if (!inMap(pa[0], pa[1]) && !inMap(pb[0], pb[1])) continue;
+        const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;
+        const dx = pb[0] - pa[0], dy = pb[1] - pa[1], len = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / len) * 9, ny = (dx / len) * 9;
+        brush.beginPath();
+        brush.moveTo(mx - nx, my - ny);
+        brush.lineTo(mx + nx, my + ny);
+        brush.stroke();
       }
       brush.restore();
     }
@@ -739,6 +844,34 @@
         brush.lineWidth = .8;
         brush.fill();
         brush.stroke();
+        if (city.terrain === 'port' && level !== 'national') {
+          brush.save();
+          brush.font = '700 9px "Microsoft YaHei UI", sans-serif';
+          brush.fillStyle = '#9be0ff';
+          brush.strokeStyle = '#14232be6';
+          brush.lineWidth = 2.4;
+          brush.strokeText('⚓', x - 11, y - 5);
+          brush.fillText('⚓', x - 11, y - 5);
+          brush.restore();
+        }
+        if (options.supply && (Number(city.value) || 0) >= 5 && level !== 'national') {
+          brush.save();
+          brush.font = '700 9px "Microsoft YaHei UI", sans-serif';
+          brush.fillStyle = '#ffe599';
+          brush.fillText('🏠', x + 5, y - 6);
+          brush.restore();
+        }
+        if (state.railCooldown?.[city.id] > 0 && level !== 'national') {
+          brush.save();
+          brush.font = '700 8px "Microsoft YaHei UI", sans-serif';
+          brush.fillStyle = '#ffae66';
+          brush.strokeStyle = '#241810e6';
+          brush.lineWidth = 2.2;
+          const cool = '修路' + state.railCooldown[city.id] + '日';
+          brush.strokeText(cool, x - 14, y - 13);
+          brush.fillText(cool, x - 14, y - 13);
+          brush.restore();
+        }
         if (selected || major || highlight && level !== 'national' || focused || valid && selection.command
           || level === 'detail' || level === 'theater' && station && camera.zoom > 45) {
           const name = city.name.split('（')[0];
@@ -792,6 +925,18 @@
     }
 
     function drawHuman(x, y, side, scale, moving, now, bayonet = false, action = moving ? 'march' : 'idle', variant = '') {
+      if (pointer?.marquee && pointer.moved && pointer.end) {
+        const x0 = Math.min(pointer.where[0], pointer.end[0]), y0 = Math.min(pointer.where[1], pointer.end[1]);
+        const bw = Math.abs(pointer.end[0] - pointer.where[0]), bh = Math.abs(pointer.end[1] - pointer.where[1]);
+        brush.save();
+        brush.fillStyle = 'rgba(224, 193, 138, 0.16)';
+        brush.strokeStyle = '#f3d48c';
+        brush.lineWidth = 1.6;
+        brush.setLineDash([5, 3]);
+        brush.fillRect(x0, y0, bw, bh);
+        brush.strokeRect(x0, y0, bw, bh);
+        brush.restore();
+      }
       if (!humanRenderer) {
         drawSoldier(x, y, side === 'ccp' ? '#e6a38d' : '#acd0dc', scale,
           moving ? Math.sin(now / 115) * 1.6 : 0, bayonet);
@@ -951,74 +1096,41 @@
         const [cx, cy] = project(anchorCity.lon, anchorCity.lat);
         if (!inMap(cx, cy)) continue;
 
+        // 1. 缩放自适应 + 3D兵模一键开关：战略视角自动隐藏3D模型保持清爽，战术拉近时平滑淡入！
+        // 2. 同格只显示 1 个最高阶代表模型（坦克 > 炮兵 > 步兵），缩小至约 45% 偏上占位，且完全不占鼠标点击热区！
+        const show3D = Boolean(options.models3d) && camera.zoom >= 52 && !national && Boolean(humanRenderer);
+        if (show3D && members.length) {
+          const rep = members.find((u) => (globalThis.CivilWarHuman3D?.unitTanks(u) || 0) >= 5 || u.branch === 'armor' || u.profile === 'mobile')
+            || members.find((u) => (globalThis.CivilWarHuman3D?.unitArtillery(u) || 0) >= 12 || u.branch === 'artillery' || u.profile === 'artillery')
+            || members[0];
+          const repKind = ((globalThis.CivilWarHuman3D?.unitTanks(rep) || 0) >= 5 || rep.branch === 'armor' || rep.profile === 'mobile') ? 'tank'
+            : ((globalThis.CivilWarHuman3D?.unitArtillery(rep) || 0) >= 12 || rep.branch === 'artillery' || rep.profile === 'artillery') ? 'artillery' : 'human';
+          const repBattle = state.battles?.[rep.order?.target] || state.battles?.[rep.city];
+          const repRawAct = globalThis.CivilWarHuman3D?.orderAction(rep, Boolean(repBattle), nightMode) || 'idle';
+          const repAct = repRawAct === 'bombard' ? 'hold' : repRawAct;
+          const repAnim = !['idle', 'hold'].includes(repAct);
+          const repSize = clamp(32 * Math.sqrt(camera.zoom / 56), 30, 54);
+          const fadeAlpha = clamp((camera.zoom - 52) / 22, 0.35, 1);
+          const rx = cx, ry = cy - repSize * 0.92 - 8;
+          brush.save();
+          brush.globalAlpha = fadeAlpha;
+          brush.beginPath();
+          brush.ellipse(rx, ry + repSize - 3, repSize * 0.19, repSize * 0.06, 0, 0, Math.PI * 2);
+          brush.fillStyle = rep.side === 'ccp' ? '#a54f40cc' : '#406e82cc';
+          brush.fill();
+          brush.drawImage(humanRenderer.frame(rep.side, repAnim, now, repKind, repKind === 'human' ? repAct : (repAct === 'march' ? 'march' : 'idle'), rep.group || ''),
+            rx - repSize / 2, ry, repSize, repSize);
+          brush.restore();
+        }
+
         members.forEach((unit, idx) => {
           const totalInSide = members.length;
           const ringSlot = idx === 0 ? 0 : (idx % 2 === 1 ? Math.ceil(idx / 2) : -Math.ceil(idx / 2));
           let ux = cx, uy = cy;
           if (ringSlot !== 0) {
-            const spread = national ? 48 : zoomLevel() === 'detail' ? 90 : 70;
+            const spread = national ? 48 : zoomLevel() === 'detail' ? 86 : 68;
             ux = cx + ringSlot * spread;
             uy = cy + (unit.side === 'ccp' ? -Math.abs(ringSlot) * 7 : Math.abs(ringSlot) * 7);
-          }
-
-          const battle = state.battles?.[unit.order?.target] || state.battles?.[unit.city];
-          const rawAction = globalThis.CivilWarHuman3D?.orderAction(unit, Boolean(battle), nightMode) || 'idle';
-          const spriteAction = rawAction === 'bombard' ? 'hold' : rawAction;
-          const animated = !['idle', 'hold'].includes(spriteAction);
-          const variant = unit.group || '';
-          const figures = globalThis.CivilWarHuman3D?.iconCount(unit.strength) || 1;
-          const unitTanks = globalThis.CivilWarHuman3D?.unitTanks(unit) || 0;
-          const tankCount = globalThis.CivilWarHuman3D?.tankIcons(unitTanks) || 0;
-          const unitGuns = globalThis.CivilWarHuman3D?.unitArtillery(unit) || 0;
-          const gunCount = globalThis.CivilWarHuman3D?.artilleryIcons(unitGuns) || 0;
-
-          const size = national ? 30 : zoomLevel() === 'detail' ? clamp(58 * Math.sqrt(camera.zoom / detailZoom), 58, 128) : 42;
-          const maxDrawFigures = national ? Math.min(2, figures) : Math.min(8, figures);
-          const columns = Math.min(national ? 2 : 4, maxDrawFigures);
-          let figMinX = ux - 14, figMaxX = ux + 14, figMinY = uy - size, figMaxY = uy;
-
-          if (humanRenderer && maxDrawFigures > 0) {
-            const model = humanRenderer.frame(unit.side, animated, now + idx * 90, 'human', spriteAction, variant);
-            for (let i = 0; i < maxDrawFigures; i++) {
-              const col = i % columns, row = Math.floor(i / columns);
-              const left = ux + (col - (columns - 1) / 2) * size * .36 - size / 2;
-              const top = uy - size - 6 - row * size * .30;
-              figMinX = Math.min(figMinX, left + 4);
-              figMaxX = Math.max(figMaxX, left + size - 4);
-              figMinY = Math.min(figMinY, top + 4);
-              brush.beginPath();
-              brush.ellipse(left + size / 2, top + size - 3, size * .13, size * .05, 0, 0, Math.PI * 2);
-              brush.fillStyle = unit.side === 'ccp' ? '#a54f40cc' : '#406e82cc';
-              brush.fill();
-              brush.drawImage(model, left, top, size, size);
-            }
-            if (figures > maxDrawFigures && !national) {
-              brush.save();
-              brush.font = '700 9px "Microsoft YaHei UI", sans-serif';
-              brush.fillStyle = '#ffe9b5';
-              brush.strokeStyle = '#18221ee8';
-              brush.lineWidth = 2.4;
-              const countTag = '×' + figures + '兵';
-              brush.strokeText(countTag, figMaxX - 2, uy - size * .62);
-              brush.fillText(countTag, figMaxX - 2, uy - size * .62);
-              brush.restore();
-            }
-          } else {
-            drawUnitSprite(unit, ux, uy, 0, 1, animated, now);
-          }
-
-          // 按 5 辆坦克 = 1 坦克图标、12 门火炮 = 1 火炮图标独立绘制在本纵队旁
-          if (humanRenderer && !national && (tankCount > 0 || gunCount > 0)) {
-            let slot = 0;
-            for (const [kind, icons] of [['tank', Math.min(4, tankCount)], ['artillery', Math.min(3, gunCount)]]) {
-              for (let i = 0; i < icons; i++, slot++) {
-                const px = ux + columns * size * .19 + 14 + (slot % 3) * 18;
-                const py = uy - 22 - Math.floor(slot / 3) * 16;
-                brush.drawImage(humanRenderer.frame(unit.side, animated, now, kind, spriteAction === 'march' ? 'march' : 'idle', variant),
-                  px - 19, py - 19, 38, 38);
-                figMaxX = Math.max(figMaxX, px + 14);
-              }
-            }
           }
 
           const label = shortUnitName(unit);
@@ -1073,17 +1185,25 @@
             brush.fillStyle = '#e6e0c8';
             brush.fillText((status || badge) + ' · ' + (unit.side === state.player ? '' : '约') + round.format(believed), left + 5, top + 20.5, cardWidth - 10);
             const org = Number.isFinite(unit.org) ? Math.max(0, Math.min(100, unit.org)) : 100;
-            brush.fillStyle = '#0000005c';
-            brush.fillRect(left + 4, top + cardHeight - 3.4, cardWidth - 8, 2);
-            brush.fillStyle = org > 70 ? '#7cc48f' : org > 40 ? '#d8b45c' : '#d4705a';
-            brush.fillRect(left + 4, top + cardHeight - 3.4, (cardWidth - 8) * org / 100, 2);
+            const hpRatio = unit.maxStrength ? Math.max(0, Math.min(1, unit.strength / unit.maxStrength)) : 1;
+            brush.fillStyle = '#00000070';
+            brush.fillRect(left + 4, top + cardHeight - 5.4, cardWidth - 8, 2);
+            brush.fillStyle = org > 60 ? '#4fd16c' : org > 30 ? '#e3b84b' : '#e05848';
+            brush.fillRect(left + 4, top + cardHeight - 5.4, (cardWidth - 8) * org / 100, 2);
+            brush.fillStyle = '#00000070';
+            brush.fillRect(left + 4, top + cardHeight - 2.6, cardWidth - 8, 1.8);
+            brush.fillStyle = '#eb9c44';
+            brush.fillRect(left + 4, top + cardHeight - 2.6, (cardWidth - 8) * hpRatio, 1.8);
+            const lowSupply = unit.encircled || (selection.supply?.coverage?.[unit.side]?.[unit.city] ?? 1) < 0.45;
+            if (lowSupply) {
+              brush.font = '700 9px "Microsoft YaHei UI", sans-serif';
+              brush.fillStyle = '#ff5c4d';
+              brush.fillText('💀', left + cardWidth - 13, top + 8.5);
+            }
           }
 
-          // 标牌与三维士兵本人均可直接点击选中该纵队！
+          // 仅保留 2D 部队牌与城镇锚点的点击判定（彻底关闭 3D 兵模点击抢焦点！）
           hitCards.push({ unit, stack: [unit.id], anchorX: ux, anchorY: uy + 16, primary: idx === 0, left, top, width: cardWidth, height: cardHeight });
-          if (figMaxX > figMinX && figMaxY > figMinY) {
-            hitCards.push({ unit, stack: [unit.id], anchorX: ux, anchorY: uy - 12, figureHit: true, left: figMinX, top: figMinY, width: figMaxX - figMinX, height: figMaxY - figMinY });
-          }
           if (idx === 0 && !national) {
             hitCards.push({ unit, stack: [unit.id], anchorX: cx, anchorY: cy + 16, primaryPin: true, figureHit: true, left: cx - 14, top: cy + 8, width: 28, height: 18 });
           }
@@ -1707,6 +1827,18 @@
       drawFieldActions(performance.now());
       drawBattleEffects(performance.now());
       drawCommandEffects(performance.now());
+      if (pointer?.marquee && pointer.moved && pointer.end) {
+        const x0 = Math.min(pointer.where[0], pointer.end[0]), y0 = Math.min(pointer.where[1], pointer.end[1]);
+        const bw = Math.abs(pointer.end[0] - pointer.where[0]), bh = Math.abs(pointer.end[1] - pointer.where[1]);
+        brush.save();
+        brush.fillStyle = 'rgba(224, 193, 138, 0.16)';
+        brush.strokeStyle = '#f3d48c';
+        brush.lineWidth = 1.6;
+        brush.setLineDash([5, 3]);
+        brush.fillRect(x0, y0, bw, bh);
+        brush.strokeRect(x0, y0, bw, bh);
+        brush.restore();
+      }
       if (!humanRenderer) {
         brush.save(); brush.font = '12px "Microsoft YaHei UI", sans-serif';
         brush.fillStyle = '#402c20e8'; brush.fillRect(10, 10, 284, 24);
@@ -1811,8 +1943,9 @@
       const where = coordinates(event);
       const marker = markerAt(...where);
       const unit = marker?.unit;
+      const marquee = Boolean(event.shiftKey && !unit && !selection.command);
       pointer = { where, unit: unit && !marker.national && !selection.command && handlers.canOrder(unit) ? unit : null,
-        picked: unit, marker, lon: camera.lon, lat: camera.lat, moved: false,
+        picked: unit, marker, marquee, lon: camera.lon, lat: camera.lat, moved: false,
         toggle: Boolean(event.ctrlKey || event.metaKey || event.shiftKey) };
       canvas.setPointerCapture(event.pointerId);
     });
@@ -1822,6 +1955,11 @@
         const dx = xy[0] - pointer.where[0], dy = xy[1] - pointer.where[1];
         if (Math.hypot(dx, dy) > 5) pointer.moved = true;
         if (!pointer.moved) return;
+        if (pointer.marquee) {
+          pointer.end = xy;
+          draw();
+          return;
+        }
         if (pointer.unit) {
           pointer.end = xy;
           hoverPoint = xy;
@@ -1847,7 +1985,15 @@
       const old = pointer;
       pointer = undefined;
       canvas.classList.remove('dragging');
-      if (old.moved && old.unit) {
+      if (old.moved && old.marquee && old.end) {
+        const x0 = Math.min(old.where[0], old.end[0]), x1 = Math.max(old.where[0], old.end[0]);
+        const y0 = Math.min(old.where[1], old.end[1]), y1 = Math.max(old.where[1], old.end[1]);
+        const ids = [...new Set(hitCards.filter((c) => !c.figureHit && handlers.canOrder(c.unit)
+          && (c.left + c.width / 2) >= x0 && (c.left + c.width / 2) <= x1
+          && (c.top + c.height / 2) >= y0 && (c.top + c.height / 2) <= y1).map((c) => c.unit.id))];
+        if (ids.length) handlers.selectBox?.(ids);
+        else draw();
+      } else if (old.moved && old.unit) {
         const target = nearest(...xy, 28) || places.get(cardAt(...xy)?.city);
         if (target) handlers.quickOrder(target.id, old.unit.id);
         else draw();

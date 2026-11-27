@@ -387,6 +387,24 @@ test('围点打援可削弱进入目标城镇的援军，保留目标城镇原�
   assert.ok(state.log.some(entry => entry.type === 'intercept' && entry.city === 'b'));
 });
 
+test('钢铁雄心4玩法：民族精神改革、参谋任命、经典师编制、港口驻防与后撤线', () => {
+  const api = getEngine();
+  const state = create({ side: 'roc', scope: 'national', goal: 'all' });
+  state.armyXp.roc = 120;
+  state.political.roc.points = 150;
+  assert.equal(api.reformSpirit(state, 'army_corruption').ok, true);
+  assert.equal(state.spirits.roc.find(s => s.id === 'army_corruption').tier, 2);
+  assert.equal(api.hireAdvisor(state, 'infantry_expert').ok, true);
+  assert.ok(state.advisors.roc.includes('infantry_expert'));
+  const preset = api.applyDivisionPreset(state, 'shock_9inf2art');
+  assert.equal(preset.ok, true);
+  assert.equal(preset.design.infantry, 9);
+  assert.equal(preset.design.artillery, 2);
+  const rocUnit = state.units.find(u => !u.parent && u.side === 'roc' && u.strength > 0);
+  const fb = api.fallbackLineOrder(data, state, [rocUnit.id], [rocUnit.city]);
+  assert.equal(fb.ok, true, fb.error);
+});
+
 test('局内切换历史模式并停用指定事件，匹配历史锚点一并停用', () => {
   const api = getEngine();
   const switched = create();

@@ -2983,19 +2983,43 @@
       const invasionPrep = clampValue(state.navy?.[side]?.invasion ?? 0, 0, 1);
       const landingFactor = 1 - 0.18 * seaRatio + 0.26 * seaRatio * invasionPrep;
       const night = battle.period === '夜战';
+      const isCampaign = map.cities.size > 40;
+      const atkSpirit = isCampaign ? hoiCombatFactor(state, side, false) : 1;
+      const defSpirit = isCampaign ? hoiCombatFactor(state, defendingSide, true) : 1;
+      const defEncircled = isCampaign && pocketFactor(map, state, target, defendingSide) < 1;
+      for (const unit of defenders) unit.encircled = defEncircled;
+      const encirclePenalty = defEncircled ? 0.67 : 1;
       const attackPower = power(engaged, false, state) * (1 - obstacle) * (1 + air) * variation
         * weather.attack * tacticAttack * cas * multidir * armored * river * (1 + prep) * landingFactor
-        * (night ? 0.92 : 1) * (attackPostureStats.power ?? 1);
+        * (night ? 0.92 : 1) * (attackPostureStats.power ?? 1) * atkSpirit;
       const attackStrength = engaged.reduce((sum, unit) => sum + unit.strength, 0);
       const siegeStrength = engaged.reduce((sum, unit) => sum + (unit.order?.type === 'siege'
         ? unit.strength * profileFor(unit).siege * (1 + unitSupport(unit).artillery / 400) : 0), 0);
       const siegeEffect = attackStrength > 0 ? 1 - 0.3 * siegeStrength / attackStrength : 1;
       const defensePower = power(defenders, true, state) * terrainFactor * (isTaiwan(city) ? 1.55 : 1)
-        * (1 + fort) * siegeEffect * tacticDefense * (night ? 1.03 : 1) * (defensePostureStats.defense ?? 1);
+        * (1 + fort) * siegeEffect * tacticDefense * (night ? 1.03 : 1) * (defensePostureStats.defense ?? 1)
+        * defSpirit * encirclePenalty;
       const ratio = attackPower / Math.max(defensePower, 1);
       battle.lastRatio = Math.round(ratio * 100) / 100;
+      battle.bubbleScore = Math.round(clampValue(50 + Math.log(Math.max(0.15, ratio)) * 34, 5, 95));
+      battle.encircled = defEncircled;
+      battle.modifiers = {
+        terrain: Math.round((terrainFactor - 1) * 100),
+        river: Math.round((river - 1) * 100),
+        fort: Math.round(fort * 100),
+        multidir: Math.round((multidir - 1) * 100),
+        planning: Math.round(prep * 100),
+        air: Math.round(air * 100),
+        atkSpirit: Math.round((atkSpirit - 1) * 100),
+        defSpirit: Math.round((defSpirit - 1) * 100),
+        encircled: defEncircled ? -33 : 0,
+        night: night ? -8 : 0,
+      };
       battle.weather = weather.name;
       battle.tactic = tactic?.name ?? null;
+      ensureSystems(state);
+      state.armyXp[side] = Math.min(500, Math.round((num(state.armyXp[side], 0) + 2) * 10) / 10);
+      state.armyXp[defendingSide] = Math.min(500, Math.round((num(state.armyXp[defendingSide], 0) + 2.5) * 10) / 10);
 
       const attackOrgLoss = clampValue(3 + 8.5 / Math.max(ratio, 0.15), 2, 20) * (attackPostureStats.org ?? 1);
       const defenseOrgLoss = clampValue(3 + 8 * ratio, 2, 22) * (defensePostureStats.defenseOrg ?? 1);
@@ -3042,6 +3066,20 @@
         }
         const defenderBeforeCapture = defenders.reduce((sum, unit) => sum + unit.strength, 0);
         capture(map, state, combat, target, side, false, undefined, interceptArrival);
+        state.railCooldown ??= {};
+        state.railCooldown[target] = 3;
+        if (defEncircled) {
+          let wiped = 0;
+          for (const unit of defenders) {
+            if (unit.strength > 0) { wiped += unit.strength; unit.strength = 0; clearOrder(unit); }
+          }
+          if (wiped > 0) {
+            state.stock[side].infantry = (state.stock[side].infantry ?? 0) + Math.round(wiped / 120);
+            state.stock[side].artillery = (state.stock[side].artillery ?? 0) + Math.round(wiped / 420);
+            addLog(state, '包饺子合围全歼！' + city.name + '被困守军无路可退，' + Math.round(wiped) + ' 人缴械，缴获大批步枪与火炮。',
+              'encirclement', { city: target, side, wiped });
+          }
+        }
         battle.routed += Math.max(0, defenderBeforeCapture - defenders.reduce((sum, unit) => sum + unit.strength, 0));
         if (directed) recordIntervention(state, target, side);
         for (const unit of attackersAll) {
@@ -3548,6 +3586,27 @@
     state.foreign.ussr = { support: 0, pressure: 0, equipment: 0, ...(state.foreign.ussr ?? {}) };
     state.foreign.japan = { stock: 0, equipment: 0, ...(state.foreign.japan ?? {}) };
     state.seaZones ??= {};
+    state.armyXp ??= { ccp: 40, roc: 40 };
+    state.railCooldown ??= {};
+    state.prodEff ??= {
+      ccp: { infantry: 0.62, artillery: 0.52, armor: 0.42, air: 0.45, naval: 0.45 },
+      roc: { infantry: 0.58, artillery: 0.55, armor: 0.52, air: 0.56, naval: 0.56 },
+    };
+    state.advisors ??= { ccp: [], roc: [] };
+    if (!state.spirits) {
+      state.spirits = {
+        ccp: [
+          { id: 'land_reform_zeal', name: '土地改革动员', tier: 1, maxTier: 1, good: true, desc: '人力动员与组织度恢复 +10%' },
+          { id: 'people_guerrilla', name: '人民游击与穿插', tier: 1, maxTier: 1, good: true, desc: '防守挖壕与侦察 +8%' },
+          { id: 'weak_heavy_industry', name: '重工业薄弱', tier: 2, maxTier: 2, good: false, costType: 'pp', cost: 60, desc: '每级压低重装备产能 6%，可消耗政治点改革消除' },
+        ],
+        roc: [
+          { id: 'army_corruption', name: '陆军派系与腐败', tier: 3, maxTier: 5, good: false, costType: 'xp', cost: 50, desc: '每级降低部队攻防 5%，消耗 50 陆军经验点击「改革陆军」逐级消除' },
+          { id: 'inflation', name: '法币通胀', tier: 2, maxTier: 3, good: false, costType: 'pp', cost: 60, desc: '每级降低工业与补给效率 6%，可消耗政治点整顿消除' },
+          { id: 'us_aid_channel', name: '美援装备渠道', tier: 1, maxTier: 1, good: true, desc: '定期获得美械步枪与空军补给' },
+        ],
+      };
+    }
     for (const [zone, records] of Object.entries(state.seaZones)) {
       if (!records || typeof records !== 'object') { delete state.seaZones[zone]; continue; }
       for (const side of sides) {
@@ -4385,7 +4444,147 @@
     navy.transports = Math.max(0, navy.transports - Math.round(used * factor));
   }
 
+  const advisorCatalog = [
+    { id: 'infantry_expert', name: '步兵作战专家', role: '陆军参谋', cost: 60, attack: 0.08, defense: 0.08, desc: '步兵攻防 +8%，提升填线与反攻硬度' },
+    { id: 'artillery_expert', name: '炮兵火力专家', role: '重武器参谋', cost: 65, attack: 0.12, defense: 0.03, desc: '进攻软攻与围城火力 +12%' },
+    { id: 'logistics_wizard', name: '后勤补给大师', role: '总后勤长', cost: 60, attack: 0.02, defense: 0.04, supply: 0.15, desc: '补给覆盖与弹性恢复 +15%，大幅减少前线断粮' },
+    { id: 'fortress_engineer', name: '要塞工兵大师', role: '筑城总监', cost: 55, attack: 0, defense: 0.14, desc: '依托黄河/山地与战壕防守 +14%' },
+    { id: 'maneuver_master', name: '穿插机动专家', role: '快速兵团参谋', cost: 65, attack: 0.09, defense: 0.02, speed: 0.12, desc: '穿插包饺子与骑兵/机械化推进提速 +12%' },
+  ];
+
+  const divisionPresets = [
+    { id: 'line_9inf', name: '9步填线守家师 (18宽)', branch: 'infantry', infantry: 9, artillery: 0, armor: 0, motorized: 0, antiAir: 0, antiTank: 0, support: { engineer: true, artillery: true, recon: false, medical: false, antiAir: false, logistics: false }, desc: '钢4经典低造价守线/守港口编制：高组织度、强挖壕防御' },
+    { id: 'shock_9inf2art', name: '9步2炮主力反攻师 (24宽)', branch: 'infantry', infantry: 9, artillery: 2, armor: 0, motorized: 0, antiAir: 0, antiTank: 0, support: { engineer: true, artillery: true, recon: true, medical: true, antiAir: false, logistics: false }, desc: '高软攻突破主力，专打两翼钳形突破与包饺子' },
+    { id: 'cav_breakthrough', name: '骑兵穿插断补给师 (12宽)', branch: 'mobile', infantry: 4, artillery: 0, armor: 0, motorized: 2, antiAir: 0, antiTank: 0, support: { engineer: false, artillery: false, recon: true, medical: false, antiAir: false, logistics: true }, desc: '高机动不耗油，专钻防线缺口直扑敌后铁路枢纽与补给中心' },
+    { id: 'armor_spear', name: '机械化装甲矛头师 (20宽)', branch: 'armor', infantry: 0, artillery: 1, armor: 4, motorized: 4, antiAir: 1, antiTank: 0, support: { engineer: true, artillery: true, recon: true, medical: false, antiAir: false, logistics: true }, desc: '重甲高突破矛头，撕开平原防线实施大纵深合围' },
+  ];
+
+  function hoiCombatFactor(state, side, defending) {
+    let factor = 1;
+    for (const sp of state.spirits?.[side] ?? []) {
+      if (sp.tier <= 0) continue;
+      if (sp.id === 'army_corruption') factor -= sp.tier * 0.05;
+      else if (sp.id === 'people_guerrilla' && defending) factor += 0.08;
+      else if (sp.id === 'land_reform_zeal') factor += 0.04;
+    }
+    for (const advId of state.advisors?.[side] ?? []) {
+      const adv = advisorCatalog.find(item => item.id === advId);
+      if (adv) factor += defending ? (adv.defense ?? 0) : (adv.attack ?? 0);
+    }
+    return clampValue(factor, 0.55, 1.45);
+  }
+
+  function reformSpirit(state, spiritId) {
+    ensureSystems(state);
+    const side = state.player;
+    const spirit = (state.spirits?.[side] ?? []).find(item => item.id === spiritId);
+    if (!spirit || spirit.good || spirit.tier <= 0) return { ok: false, error: '该民族精神无需改革或已消除。' };
+    if (spirit.costType === 'xp') {
+      if (num(state.armyXp[side], 0) < spirit.cost) return { ok: false, error: '改革需要陆军经验 ' + spirit.cost + ' 点（打仗或守线可积累）。' };
+      state.armyXp[side] = Math.round((state.armyXp[side] - spirit.cost) * 10) / 10;
+    } else {
+      ensurePolitics(state);
+      if (state.political[side].points < spirit.cost) return { ok: false, error: '改革需要政治点 ' + spirit.cost + ' 点。' };
+      state.political[side].points -= spirit.cost;
+    }
+    spirit.tier -= 1;
+    addLog(state, sideNames[side] + '推进改革，「' + spirit.name + '」负面影响降至 ' + spirit.tier + ' 级。', 'reform',
+      { side, spiritId, tier: spirit.tier });
+    return { ok: true, tier: spirit.tier };
+  }
+
+  function hireAdvisor(state, advisorId) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    const side = state.player;
+    const adv = advisorCatalog.find(item => item.id === advisorId);
+    if (!adv) return { ok: false, error: '找不到该军事参谋。' };
+    if (state.advisors[side].includes(advisorId)) return { ok: false, error: '已任命该参谋。' };
+    if (state.advisors[side].length >= 3) return { ok: false, error: '内阁军事参谋席位已满（最多 3 位）。' };
+    if (state.political[side].points < adv.cost) return { ok: false, error: '任命需要政治点 ' + adv.cost + ' 点。' };
+    state.political[side].points -= adv.cost;
+    state.advisors[side].push(advisorId);
+    addLog(state, sideNames[side] + '任命军事参谋「' + adv.name + '」，' + adv.desc + '。', 'advisor',
+      { side, advisorId });
+    return { ok: true };
+  }
+
+  function applyDivisionPreset(state, presetId) {
+    ensureSystems(state);
+    const preset = divisionPresets.find(item => item.id === presetId);
+    if (!preset) return { ok: false, error: '找不到该师编制模板。' };
+    const side = state.player;
+    const list = state.designs[side];
+    const existing = list.find(d => d.id === side + '-' + preset.id);
+    if (existing) {
+      Object.assign(existing, normalizeDesign({ ...preset, id: existing.id }));
+      return { ok: true, design: existing };
+    }
+    const created = normalizeDesign({ ...preset, id: side + '-' + preset.id });
+    list.push(created);
+    addLog(state, sideNames[side] + '启用师编制模板「' + preset.name + '」。', 'design', { side, designId: created.id });
+    return { ok: true, design: created };
+  }
+
+  function portGarrisonOrder(data, state, unitIds = []) {
+    const map = index(data);
+    const side = state.player;
+    const ports = data.cities.filter(city => city.terrain === 'port' && state.owners[city.id] === side);
+    if (!ports.length) return { ok: false, error: '当前没有己方控制的沿海港口。' };
+    const ids = (Array.isArray(unitIds) && unitIds.length ? unitIds
+      : activeUnits(state).filter(u => !u.parent && u.side === side && canCommand(state, u)).slice(0, 6).map(u => u.id));
+    if (!ids.length) return { ok: false, error: '请先选择要执行港口驻防的部队。' };
+    let assigned = 0;
+    ids.forEach((id, idx) => {
+      const unit = state.units.find(u => u.id === id);
+      if (!unit) return;
+      const sorted = ports.slice().sort((a, b) => {
+        const uCity = map.cities.get(unit.city);
+        const da = uCity ? Math.hypot(a.lon - uCity.lon, a.lat - uCity.lat) : 0;
+        const db = uCity ? Math.hypot(b.lon - uCity.lon, b.lat - uCity.lat) : 0;
+        return da - db;
+      });
+      const pick = sorted[idx % sorted.length];
+      const res = order(data, state, id, 'entrench', pick.id);
+      if (res.ok) assigned += 1;
+    });
+    if (!assigned) return { ok: false, error: '所选部队无法抵达己方港口。' };
+    addLog(state, sideNames[side] + '下达「⚓ 死守港口」指令，' + assigned + ' 支部队分驻沿海港口构筑战壕。', 'plan', { side, action: 'port-garrison', assigned });
+    return { ok: true, assigned };
+  }
+
+  function fallbackLineOrder(data, state, unitIds = [], lineCities = []) {
+    const map = index(data);
+    const side = state.player;
+    const validLine = (Array.isArray(lineCities) ? lineCities : []).filter(id => state.owners[id] === side);
+    const fallbackCities = validLine.length ? validLine : data.cities.filter(city => state.owners[city.id] === side
+      && (city.river || /mountain|hill|高原|山/.test(city.terrain || ''))).slice(0, 8).map(c => c.id);
+    if (!fallbackCities.length) return { ok: false, error: '没有可用于依托河山构筑后撤线的己方城镇。' };
+    const ids = (Array.isArray(unitIds) && unitIds.length ? unitIds
+      : activeUnits(state).filter(u => !u.parent && u.side === side && canCommand(state, u)).slice(0, 8).map(u => u.id));
+    if (!ids.length) return { ok: false, error: '请先选择要撤入后撤线的部队。' };
+    let assigned = 0;
+    ids.forEach((id, idx) => {
+      const target = fallbackCities[idx % fallbackCities.length];
+      const res = order(data, state, id, 'entrench', target);
+      if (res.ok) assigned += 1;
+    });
+    if (!assigned) return { ok: false, error: '所选部队无法撤往指定后撤线。' };
+    addLog(state, sideNames[side] + '建立依托地形的「↩️ 后撤防线」，' + assigned + ' 支部队转入纵深挖壕固守。', 'plan',
+      { side, action: 'fallback-line', line: fallbackCities, assigned });
+    return { ok: true, assigned, line: fallbackCities };
+  }
+
   function systemsStep(data, state) {
+    for (const [cityId, days] of Object.entries(state.railCooldown ?? {})) {
+      if (days <= 1) delete state.railCooldown[cityId];
+      else state.railCooldown[cityId] = days - 1;
+    }
+    for (const side of sides) {
+      for (const key of ['infantry', 'artillery', 'armor', 'air', 'naval']) {
+        state.prodEff[side][key] = Math.min(1, (state.prodEff[side][key] ?? 0.5) + 0.012);
+      }
+    }
     foreignStep(data, state);
     navalStep(state);
     researchStep(data, state);
@@ -4741,6 +4940,7 @@
   const api = {
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
+    reformSpirit, hireAdvisor, applyDivisionPreset, portGarrisonOrder, fallbackLineOrder,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,
@@ -4749,7 +4949,7 @@
     metadata: { supportKinds, supportKeys, fortKinds, buildingKinds, recruitmentKinds, planModes, planStances, decisionKinds, supplyGoods,
       fortLevel, engineerSupport, unitSupport, supportFactor, power,
       techLines, airMissions, focusTrees, commandAbilities, designBattalions, designSupports,
-      designDefaults, intelOps, diplomacyOps, lawNames, lawFactors,
+      designDefaults, intelOps, diplomacyOps, lawNames, lawFactors, advisorCatalog, divisionPresets,
       designStats: (state, side, design) => designStats(state, side, design),
       battlePeriod,
       canBarrage: (data, state, city, side = state.player) => artilleryAvailable(data, state, side, city),

@@ -126,6 +126,16 @@
     quickOrder,
     canOrder: permitted,
     previewCity,
+    selectBox(ids) {
+      const roots = [...new Set(ids.map((id) => topUnit(state.units.find((u) => u.id === id))?.id).filter(Boolean))].slice(0, 24);
+      if (!roots.length) return;
+      selectedUnits = new Set(roots);
+      selectedUnit = roots[0];
+      pane = 'army';
+      setMapHelp();
+      render();
+      notify('框选已编入 ' + roots.length + ' 支部队，右键目标城镇即可统一下达进攻/机动指令。');
+    },
     selectStack(city, units, region) {
       if (units.length === 1 && !region) { selectUnit(units[0], false); return; }
       stack = { city, units, region };
@@ -147,6 +157,8 @@
   }
   const store = loadStore();
   const storeBackend = SaveStore?.create?.();
+  let preview3DRenderer = null;
+  try { preview3DRenderer = globalThis.CivilWarHuman3D?.createRenderer?.() || null; } catch { preview3DRenderer = null; }
 
   function writeStore(next) {
     Object.assign(store, next);
@@ -310,8 +322,52 @@
       $('night-toggle').setAttribute('aria-pressed', String(Boolean(state.nightMode)));
       $('night-toggle').textContent = state.nightMode ? '☀️ 切换白昼' : '🌙 夜间宿营';
     }
+    if ($('hoi-hud-stats')) {
+      const side = state.player;
+      const pp = Math.round(state.political?.[side]?.points ?? 0);
+      const mp = Math.round((state.economy?.[side]?.manpower ?? 0) / 1000);
+      const xp = Math.round(state.armyXp?.[side] ?? 0);
+      const rifles = Math.round(state.stock?.[side]?.infantry ?? 0);
+      const supRatio = Math.round((supplyView?.ration?.[side] ?? 1) * 100);
+      const debuffs = (state.spirits?.[side] ?? []).filter(sp => !sp.good && sp.tier > 0).length;
+      $('hoi-hud-stats').innerHTML =
+        '<button type="button" class="hoi-stat-pill" data-open-panel="politics" title="政治点数与民族精神">政治 <b>' + pp + '</b></button>'
+        + '<button type="button" class="hoi-stat-pill" data-open-panel="economy" title="兵源人力储备">人力 <b>' + mp + 'k</b></button>'
+        + '<button type="button" class="hoi-stat-pill" data-open-panel="production" title="步枪与轻武器库存">枪炮 <b>' + format(rifles) + '</b></button>'
+        + '<button type="button" class="hoi-stat-pill' + (supRatio < 70 ? ' warn' : '') + '" data-open-panel="supply" title="全军平均补给率">补给 <b>' + supRatio + '%</b></button>'
+        + '<button type="button" class="hoi-stat-pill' + (debuffs ? ' warn' : '') + '" data-open-panel="politics" title="陆军经验（可消除陆军腐败/设计编制）">陆经 <b>' + xp + '</b></button>';
+    }
     $('brief-settings').setAttribute('aria-pressed', Object.keys(pauseLabels).some((key) => pausePreferences[key]));
     document.querySelectorAll('[data-speed]').forEach((item) => item.setAttribute('aria-pressed', Number(item.dataset.speed) === speed));
+  }
+
+  function renderGeneralDock() {
+    const dock = $('general-dock');
+    if (!dock) return;
+    const units = Engine.activeUnits(state).filter(u => !u.parent && u.side === state.player && permitted(u));
+    if (!units.length) { dock.innerHTML = ''; return; }
+    const byGroup = new Map();
+    for (const u of units) {
+      const key = u.group || u.area || 'main';
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key).push(u);
+    }
+    const groups = [...byGroup.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 6);
+    dock.innerHTML = groups.map(([key, list]) => {
+      const leadUnit = list.find(u => u.leader && leadersById.get(u.leader)) || list[0];
+      const leader = leadUnit?.leader ? leadersById.get(leadUnit.leader) : null;
+      const grp = groupsById.get(key);
+      const title = leader?.name || grp?.name || (regions[key] || '主力集团');
+      const total = list.reduce((s, u) => s + u.strength, 0);
+      const active = list.every(u => selectedUnits.has(u.id)) && list.length > 0;
+      const img = leader && globalThis.CivilWarPortraits?.[leader.id];
+      const avatar = img ? '<img src="' + img + '" alt="' + escape(title) + '">'
+        : '<span class="gen-monogram">' + escape(title.slice(0, 1)) + '</span>';
+      return '<button type="button" class="gen-card" data-gen-group="' + escape(key) + '" aria-pressed="' + active
+        + '" title="点击一键框选该集团军全部 ' + list.length + ' 支纵队/军（共 ' + format(total) + ' 人）">'
+        + avatar + '<div><strong>' + escape(title) + '</strong><small>' + list.length + '/24 · '
+        + Math.round(total / 1000) + 'k</small></div></button>';
+    }).join('');
   }
 
   function resourceTiles(economy) {
@@ -403,8 +459,20 @@
           : !artilleryReady ? '炮火准备 · 无炮兵' : '炮火准备';
     const ratio = Number(battle.lastRatio) || 1;
     const attackShare = Math.max(8, Math.min(92, ratio / (1 + ratio) * 100));
+    const rawBubble = Number.isFinite(battle.bubbleScore) ? battle.bubbleScore : Math.round(attackShare);
+    const bubble = Math.max(1, Math.min(99, isAttacker ? rawBubble : 100 - rawBubble));
+    const mods = battle.modifiers || {};
+    const modChips = [
+      mods.terrain ? ['地形 +' + mods.terrain + '%', isAttacker ? 'neg' : 'pos'] : null,
+      mods.river ? ['跨河 ' + mods.river + '%', isAttacker ? 'neg' : 'pos'] : null,
+      mods.fort ? ['要塞/战壕 +' + mods.fort + '%', isAttacker ? 'neg' : 'pos'] : null,
+      mods.multidir ? ['多路包围 +' + mods.multidir + '%', isAttacker ? 'pos' : 'neg'] : null,
+      mods.encircled ? ['包饺子断粮 ' + mods.encircled + '%', isAttacker ? 'pos' : 'neg'] : null,
+      mods.planning ? ['计划加成 +' + mods.planning + '%', isAttacker ? 'pos' : 'neg'] : null,
+    ].filter(Boolean).map(([text, cls]) => '<span class="hoi-mod-chip ' + cls + '">' + escape(text) + '</span>').join('');
+    const lowOrgDefender = !isAttacker && defenders.find(u => valueOf(u, 'org', 100) < 40);
     hud.innerHTML = '<div class="battle-hud-head"><strong>' + escape(cityName(city)) + ' · ' + (battle.phase ? escape(battle.phase) : '交战中')
-      + '</strong><small>第 ' + format(battle.days) + ' 日 · ' + (isAttacker ? '我方进攻' : '我方防守') + '</small></div>'
+      + '</strong><span class="hoi-bubble-pill ' + (bubble >= 50 ? 'win' : 'lose') + '">' + bubble + '</span><small>第 ' + format(battle.days) + ' 日 · ' + (isAttacker ? '我方进攻' : '我方防守') + '</small></div>'
       + (battles.length > 1 ? '<div class="battle-hud-picker" aria-label="选择战场">' + battles.map((item) =>
         '<button type="button" data-battle-focus="' + escape(item.city) + '" aria-pressed="' + (item.city === city) + '">'
           + escape(cityName(item.city)) + ' · ' + format(item.battle.days) + '日</button>').join('') + '</div>' : '')
@@ -412,6 +480,8 @@
       + format(battle.attackDirections || 1) + '</b></span><span>攻守比 <b>' + ratio.toFixed(2) + ' : 1</b></span>'
       + '<span>累计减员 <b>' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人</b></span>'
       + (battle.weather ? '<span>' + escape(battle.weather) + '</span>' : '') + '</div>'
+      + (modChips ? '<div class="hoi-mod-row">' + modChips + '</div>' : '')
+      + (lowOrgDefender ? '<div class="unit-actions"><button type="button" class="gold" data-battle-cycle="' + escape(city) + '">🔄 车轮战换防（撤出低组织度部队）</button></div>' : '')
       + '<div class="battle-hud-meter" role="img" aria-label="当前攻守比"><i style="width:' + attackShare + '%"></i></div>'
       + '<div class="battle-hud-strength"><div><span>攻方兵力 · 前线 ' + format(battle.engagedUnitIds?.length || 0)
       + ' 支 / 预备 ' + format(battle.reserveUnitIds?.length || 0) + ' 支</span><strong>'
@@ -594,7 +664,12 @@
       + '<div class="card"><div class="city-title"><h3 style="font-size:17px">' + escape(unit.name) + '</h3>'
       + sideTag(unit.side) + '</div><p>' + escape(cityName(unit.city)) + ' · ' + escape(orderLabel)
       + (state.nightMode && (!unit.order || ['hold', 'rest'].includes(unit.order.type)) ? ' · 夜间宿营中' : '') + '</p>'
-      + '<div class="unit-headline">' + portrait + '<div class="unit-readout"><span>现役兵力 <strong>' + strength + '</strong> / ' + format(unit.maxStrength)
+      + '<div class="unit-headline">' + portrait + '<canvas id="unit-3d-preview" width="110" height="110" data-side="'
+      + escape(unit.side) + '" data-group="' + escape(unit.group || '') + '" data-kind="'
+      + (unit.profile === 'artillery' || unit.branch === 'artillery' ? 'artillery'
+        : unit.profile === 'mobile' || unit.branch === 'armor' ? 'tank' : 'human')
+      + '" style="width:72px;height:72px;border-radius:6px;border:1px solid #4e5e52;background:#1a241f;flex-shrink:0;" title="3D 实时兵模预览"></canvas>'
+      + '<div class="unit-readout"><span>现役兵力 <strong>' + strength + '</strong> / ' + format(unit.maxStrength)
       + ' 人（地图 ' + format(figureIcons) + ' 兵标' + (tankIcons ? ' · ' + format(tankIcons) + ' 坦克标' : '') + '）</span>'
       + (leader ? '<span>现任主官：' + escape(leader.name + '（' + (leader.role || '司令官') + '）') + '</span>' : '<span>现任主官：暂缺（可任命）</span>')
       + (group ? '<span>派系与军服：' + escape(group.name) + '</span>' : '')
@@ -668,6 +743,17 @@
     $('tab-city').setAttribute('aria-pressed', pane === 'city');
     $('tab-army').setAttribute('aria-pressed', pane === 'army');
     body.innerHTML = pane === 'army' ? armyInspector() : cityInspector();
+    const previewCanvas = $('unit-3d-preview');
+    if (previewCanvas && preview3DRenderer) {
+      const pctx = previewCanvas.getContext('2d');
+      const side = previewCanvas.dataset.side || 'ccp';
+      const kind = previewCanvas.dataset.kind || 'human';
+      const group = previewCanvas.dataset.group || '';
+      const u = inspectUnit();
+      const act = globalThis.CivilWarHuman3D?.orderAction(u, Boolean(u && state.battles?.[u.city]), Boolean(state.nightMode)) || 'idle';
+      pctx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      pctx.drawImage(preview3DRenderer.frame(side, true, performance.now(), kind, act === 'bombard' ? 'idle' : act, group), 0, 0, previewCanvas.width, previewCanvas.height);
+    }
   }
 
   function render() {
@@ -677,6 +763,7 @@
     renderInspector();
     renderCommandDeck();
     renderBattleHud();
+    renderGeneralDock();
     const unit = inspectUnit();
     orderPreviews = permitted(unit) ? Engine.previewOrders(Data, state, unit.id) : {};
     const plans = (state.plans || []).filter((plan) => plan.side === state.player
@@ -884,6 +971,8 @@
     const canHere = pendingOrder && ['defend', 'entrench', 'rest'].includes(pendingOrder)
       && unit && permitted(unit) && state.owners[unit.city] === state.player;
     $('command-bar').innerHTML = ['advance', 'siege', 'defend', 'entrench', 'intercept', 'move', 'rest', 'hold'].map(commandButton).join('')
+      + '<button type="button" data-hoi-port title="钢4钓鱼执法：派兵专守己方沿海港口并挖战壕">⚓ 守港口</button>'
+      + '<button type="button" data-hoi-fallback title="钢4后撤线：主动撤往黄河/山地城镇挖壕固守">↩️ 后撤线</button>'
       + '<button type="button" data-command="bombard" data-deck-command="bombard" aria-pressed="'
       + (pendingOrder === 'bombard') + '"' + (unit && permitted(unit) && (state.airWar?.[state.player]?.planes ?? 0) >= 10
         ? '' : ' disabled') + '>轰炸</button>'
@@ -1123,7 +1212,10 @@
     const active = Engine.activeUnits(state).filter((unit) => !unit.parent && permitted(unit));
     const selected = permitted(inspectUnit()) ? inspectUnit() : active[0];
     const choices = selected?.parent ? [selected, ...active] : active;
-    const body = showDialog('兵种与军械', choices.length ? '<p>选定纵队、师或团后换装。费用从本阵营的军械和财政中扣除。</p>'
+    const body = showDialog('兵种与军械 · 3D 兵模图鉴', choices.length ? '<p>选定纵队、师或团后换装。费用从本阵营的军械和财政中扣除。</p>'
+      + '<div style="display:flex;align-items:center;gap:12px;margin:6px 0 8px;padding:8px;border-radius:6px;border:1px solid #4e5e52;background:#1c2620;">'
+      + '<canvas id="gear-3d-preview" width="140" height="140" style="width:92px;height:92px;border-radius:6px;background:#151d19;border:1px solid #59695a;flex-shrink:0;"></canvas>'
+      + '<div style="font-size:12px;color:var(--dim);line-height:1.5;"><strong style="color:#f5e1b0;display:block;margin-bottom:3px;">高清 3D 兵模实时预览</strong>地图拉远时自动切为清爽 2D 部队牌，在此可随时检视当前部队的步兵、重炮与坦克三维建模细节。</div></div>'
       + '<form><label class="field">换装部队<select name="unit">'
       + choices.map((unit) => option(unit.id, unit.name + ' · ' + cityName(unit.city), selected?.id)).join('')
       + '</select></label><p id="unit-gear-current" class="roster-label"></p><div class="gear-options">'
@@ -1137,6 +1229,13 @@
       const profile = unit.profile || unit.branch || 'infantry';
       $('unit-gear-current').textContent = '现用' + equipmentTypes[profile][0] + ' · 军械库存 ' + format(state.economy[state.player].arms);
       body.querySelectorAll('[name="profile"]').forEach((button) => { button.disabled = button.value === profile; });
+      const gearCanvas = $('gear-3d-preview');
+      if (gearCanvas && preview3DRenderer) {
+        const gctx = gearCanvas.getContext('2d');
+        const kind = profile === 'artillery' ? 'artillery' : profile === 'mobile' ? 'tank' : 'human';
+        gctx.clearRect(0, 0, gearCanvas.width, gearCanvas.height);
+        gctx.drawImage(preview3DRenderer.frame(unit.side, true, performance.now(), kind, 'idle', unit.group || ''), 0, 0, gearCanvas.width, gearCanvas.height);
+      }
     };
     form.elements.unit.onchange = update;
     update();
@@ -1605,19 +1704,33 @@
     const side = state.player;
     const focus = state.focus?.[side] ?? { done: [], current: null, progress: 0 };
     const tree = focusTree[side] ?? [];
-    return '<p class="subtext">国策按天推进，完成时立刻生效；灰色表示前置未完成。</p><div class="defense-cards">'
-      + tree.map((item) => {
-        const done = focus.done?.includes(item.id);
-        const current = focus.current === item.id;
-        const locked = (item.requires ?? []).some((id) => !focus.done?.includes(id));
-        return '<article class="card defense-card"><header><h3>' + escape(item.name) + '</h3><span class="plan-status is-'
-          + (done ? 'done' : current ? 'active' : 'draft') + '">'
-          + (done ? '已完成' : current ? '进行中 ' + (focus.progress ?? 0) + '/' + item.days : locked ? '需前置' : '未开始')
-          + '</span></header><p class="subtext">' + escape(item.desc) + '</p>'
-          + '<div class="progress"><i style="width:' + (done ? 100 : current ? Math.min(100, Math.round((focus.progress ?? 0) / item.days * 100)) : 0) + '%"></i></div>'
-          + '<div class="unit-actions"><button type="button" data-focus="' + item.id + '"'
-          + (done || current || locked ? ' disabled' : '') + '>开始推进</button></div></article>';
-      }).join('') + '</div>';
+    const roots = tree.filter((item) => !(item.requires && item.requires.length));
+    const cols = roots.map((root) => {
+      const chain = [root];
+      let next = tree.find((item) => (item.requires ?? []).includes(root.id));
+      while (next) {
+        chain.push(next);
+        const curId = next.id;
+        next = tree.find((item) => (item.requires ?? []).includes(curId));
+      }
+      return chain;
+    });
+    const renderNode = (item) => {
+      const done = focus.done?.includes(item.id);
+      const current = focus.current === item.id;
+      const locked = (item.requires ?? []).some((id) => !focus.done?.includes(id));
+      const pct = done ? 100 : current ? Math.min(100, Math.round((focus.progress ?? 0) / item.days * 100)) : 0;
+      return '<article class="hoi-focus-node ' + (done ? 'done' : current ? 'active' : locked ? 'locked' : '') + '">'
+        + '<header style="display:flex;justify-content:space-between;align-items:center;gap:6px;"><h3 style="margin:0;font-size:13px;">'
+        + escape(item.name) + '</h3><span class="plan-status is-' + (done ? 'done' : current ? 'active' : 'draft') + '">'
+        + (done ? '已完成' : current ? (focus.progress ?? 0) + '/' + item.days + '天' : locked ? '需前置' : item.days + '天')
+        + '</span></header><p class="subtext" style="margin:4px 0;">' + escape(item.desc) + '</p>'
+        + '<div class="progress"><i style="width:' + pct + '%"></i></div>'
+        + '<div class="unit-actions"><button type="button" data-focus="' + item.id + '"'
+        + (done || current || locked ? ' disabled' : '') + '>开始推进</button></div></article>';
+    };
+    return '<p class="subtext">钢4分支国策树：每次推进一项，按天自动完成并立刻获得工厂、装备或改革加成。</p>'
+      + '<div class="hoi-focus-tree">' + cols.map((col) => '<div class="hoi-focus-col">' + col.map(renderNode).join('') + '</div>').join('') + '</div>';
   }
 
   function techBody() {
@@ -1656,8 +1769,11 @@
       + '<div class="stat-line">' + statChips({ '基础工厂': Math.max(2, Math.round(controlledValue / 9)),
         '军工厂': militaryFactories, '民用工厂': civilianFactories, '建设项目': projects }) + '</div>'
       + '<form id="production-form" class="card"><div class="production-grid">'
-      + Object.entries(labels).map(([key, label]) => '<label>' + label + '<input type="number" min="0" max="100" name="'
-        + key + '" value="' + (production.lines?.[key] ?? 0) + '"></label>').join('')
+      + Object.entries(labels).map(([key, label]) => {
+        const eff = Math.round((state.prodEff?.[side]?.[key] ?? 0.55) * 100);
+        return '<label>' + label + ' <small style="color:#8de67a;">效率 ' + eff + '%</small><input type="number" min="0" max="100" name="'
+          + key + '" value="' + (production.lines?.[key] ?? 0) + '"><span class="hoi-eff-bar"><i style="width:' + eff + '%"></i></span></label>';
+      }).join('')
       + '</div><div class="unit-actions"><button class="gold" type="submit">保存分配</button></div></form>'
       + '<table class="dialog-table"><thead><tr><th>储备</th><th>数量</th></tr></thead><tbody>'
       + Object.entries(labels).filter(([key]) => key !== 'naval').map(([key, label]) =>
@@ -1669,9 +1785,27 @@
 
   function designForm() {
     const draft = defenseDraft ?? {
-      name: '新编制', infantry: 8, artillery: 2, armor: 0, motorized: 0, antiAir: 0, antiTank: 0, support: {},
+      name: '新编制', infantry: 9, artillery: 1, armor: 0, motorized: 0, antiAir: 0, antiTank: 0, support: { engineer: true, artillery: true },
     };
-    return '<form id="design-form" class="card"><h3>' + (draft.id ? '编辑「' + escape(draft.name) + '」' : '新建编制') + '</h3>'
+    const presets = meta.divisionPresets ?? [];
+    const supSlots = Object.entries(supportInfo2).slice(0, 5).map(([key, label]) =>
+      '<div class="hoi-slot ' + (draft.support?.[key] ? 'sup' : 'empty') + '">' + escape(label.replace('连', '')) + '</div>').join('');
+    const batItems = [];
+    for (let i = 0; i < (draft.infantry || 0); i++) batItems.push(['步兵', '']);
+    for (let i = 0; i < (draft.artillery || 0); i++) batItems.push(['炮兵', 'art']);
+    for (let i = 0; i < (draft.armor || 0); i++) batItems.push(['装甲', 'arm']);
+    for (let i = 0; i < (draft.motorized || 0); i++) batItems.push(['摩托', 'arm']);
+    for (let i = 0; i < (draft.antiAir || 0); i++) batItems.push(['防空', 'art']);
+    for (let i = 0; i < (draft.antiTank || 0); i++) batItems.push(['战防', 'art']);
+    while (batItems.length < 15) batItems.push(['＋', 'empty']);
+    const visualGrid = '<div class="hoi-div-visual"><div><div class="hoi-div-col-label">支援连 (5格)</div><div class="hoi-div-slots">'
+      + supSlots + '</div></div><div><div class="hoi-div-col-label">主力营编成网格（钢4 5×3 示意）</div><div class="hoi-div-battalions">'
+      + batItems.slice(0, 15).map(([txt, cls]) => '<div class="hoi-slot ' + cls + '">' + txt + '</div>').join('')
+      + '</div></div></div>';
+    return (presets.length ? '<div class="hoi-preset-row">' + presets.map((p) =>
+      '<button type="button" data-design-preset="' + escape(p.id) + '" title="' + escape(p.desc) + '">一键套用：' + escape(p.name) + '</button>').join('') + '</div>' : '')
+      + visualGrid
+      + '<form id="design-form" class="card"><h3>' + (draft.id ? '编辑「' + escape(draft.name) + '」' : '新建编制') + '</h3>'
       + '<label class="field">名称<input name="name" maxlength="20" value="' + escape(draft.name) + '"></label>'
       + '<div class="battalion-grid">' + Object.entries(battalionInfo).map(([key, label]) =>
         '<label>' + label + '<input type="number" min="0" max="12" name="' + key + '" value="' + (draft[key] ?? 0) + '"></label>').join('')
@@ -1901,11 +2035,38 @@
         + '<button type="button" data-decide="' + escape(kind) + '"' + (disabled ? ' disabled' : '') + '>'
         + (cooldown ? cooldown + ' 天后' : politics.points < info.cost ? '点数不足' : '执行') + '</button></article>';
     }).join('');
-    showDialog('政治与决议', '<p>政治点随控制城镇每日增长。战斗胜负、伤亡、民心与供给会影响支持度和征兵；决议有冷却。'
-      + '首都失守且支持度长期低迷时可能停战。</p>'
+    const spirits = state.spirits?.[side] ?? [];
+    const xp = Math.round(state.armyXp?.[side] ?? 0);
+    const spiritHtml = '<h3 style="margin:8px 0 4px;">民族精神与陆军改革（当前陆军经验 ' + xp + ' 点）</h3><div class="hoi-spirit-grid">'
+      + spirits.map((sp) => {
+        const active = sp.tier > 0;
+        const canReform = !sp.good && active && (sp.costType === 'xp' ? xp >= sp.cost : politics.points >= sp.cost);
+        return '<article class="hoi-spirit-card ' + (sp.good ? 'buff' : active ? 'debuff' : '') + '"><header><h4>'
+          + escape(sp.name) + (sp.maxTier > 1 ? '（' + sp.tier + '/' + sp.maxTier + '级）' : '') + '</h4>'
+          + '<span class="plan-status is-' + (sp.good ? 'active' : active ? 'draft' : 'done') + '">'
+          + (sp.good ? '增益' : active ? '负面' : '已消除') + '</span></header><p class="subtext">' + escape(sp.desc) + '</p>'
+          + (!sp.good && active ? '<div class="unit-actions"><button type="button" class="gold" data-reform-spirit="' + escape(sp.id) + '"'
+            + (canReform ? '' : ' disabled') + '>改革消除（' + sp.cost + (sp.costType === 'xp' ? ' 陆军经验' : ' 政治点') + '）</button></div>' : '')
+          + '</article>';
+      }).join('') + '</div>';
+    const hired = new Set(state.advisors?.[side] ?? []);
+    const advisors = meta.advisorCatalog ?? [];
+    const advisorHtml = '<h3 style="margin:8px 0 4px;">内阁军事参谋（' + hired.size + ' / 3）</h3><div class="hoi-spirit-grid">'
+      + advisors.map((adv) => {
+        const isHired = hired.has(adv.id);
+        const canHire = !isHired && hired.size < 3 && politics.points >= adv.cost;
+        return '<article class="hoi-spirit-card ' + (isHired ? 'buff' : '') + '"><header><h4>' + escape(adv.name)
+          + '</h4><span class="plan-status is-' + (isHired ? 'active' : 'draft') + '">' + (isHired ? '已任职' : adv.cost + ' 政治点')
+          + '</span></header><p class="subtext">' + escape(adv.desc) + '</p>'
+          + (!isHired ? '<div class="unit-actions"><button type="button" data-hire-advisor="' + escape(adv.id) + '"'
+            + (canHire ? '' : ' disabled') + '>任命参谋</button></div>' : '') + '</article>';
+      }).join('') + '</div>';
+    showDialog('政治与内阁 · 民族精神', '<p>政治点随控制城镇每日增长；陆军经验在战斗与挖壕守线中积累，可用于消除「陆军派系与腐败」等负面状态。</p>'
       + '<div class="politics-head"><div><span>政治点</span><strong>' + format(politics.points) + '</strong></div>'
+      + '<div><span>陆军经验</span><strong>' + format(xp) + '</strong></div>'
       + '<div><span>民心 / 战争支持</span><strong>' + format(support) + '</strong></div>'
       + '<div><span>首都</span><strong>' + escape(cityName(capital)) + '</strong></div></div>'
+      + spiritHtml + advisorHtml + '<h3 style="margin:10px 0 4px;">战时政治决议</h3>'
       + cards + '<div class="dialog-actions"><button type="button" data-politics-close>关闭</button></div>');
   }
 
@@ -2346,6 +2507,21 @@
       }
     }
     else if (d.politicsClose !== undefined) dialog.close();
+    else if (d.reformSpirit) {
+      if (action('reformSpirit', [d.reformSpirit])) {
+        saveAuto(true); render(); notify('改革推进成功，负面民族精神已削弱。'); politicsPanel();
+      }
+    }
+    else if (d.hireAdvisor) {
+      if (action('hireAdvisor', [d.hireAdvisor])) {
+        saveAuto(true); render(); notify('军事参谋已任命进入内阁。'); politicsPanel();
+      }
+    }
+    else if (d.designPreset) {
+      if (action('applyDivisionPreset', [d.designPreset])) {
+        saveAuto(true); render(); notify('已套用经典师编制模板。'); defensePanel('design');
+      }
+    }
     else if (d.defenseTab) defensePanel(d.defenseTab);
     else if (d.focus) {
       if (action('startFocus', [d.focus])) { saveAuto(true); render(); defensePanel('focus'); }
@@ -2529,6 +2705,14 @@
     if (!button) return;
     const args = button.dataset;
     if (args.command) chooseCommand(args.command);
+    else if (args.hoiPort !== undefined) {
+      const ids = selectedUnits.size ? [...selectedUnits] : (selectedUnit ? [selectedUnit] : []);
+      if (action('portGarrisonOrder', [ids])) { saveAuto(true); render(); notify('已派兵专守己方沿海港口并挖战壕。'); }
+    }
+    else if (args.hoiFallback !== undefined) {
+      const ids = selectedUnits.size ? [...selectedUnits] : (selectedUnit ? [selectedUnit] : []);
+      if (action('fallbackLineOrder', [ids, []])) { saveAuto(true); render(); notify('已依托黄河/山地建立后撤防线并掘壕固守。'); }
+    }
     else if (args.deckHere !== undefined && pendingOrder && inspectUnit()) issue(pendingOrder, inspectUnit().city);
     else if (args.deckPlan !== undefined) planEditor();
     else if (args.deckClear !== undefined) { selectedUnits = new Set(); render(); }
@@ -2562,7 +2746,54 @@
       notify('已导入存档。');
     } catch (error) { notify(error.message); }
   };
+  $('hoi-hud-stats')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-open-panel]');
+    if (!btn) return;
+    if (btn.dataset.openPanel === 'politics') politicsPanel();
+    else if (btn.dataset.openPanel === 'production') defensePanel('production');
+    else if (btn.dataset.openPanel === 'economy') economy();
+    else if (btn.dataset.openPanel === 'supply') logisticsPanel();
+  });
+  $('general-dock')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-gen-group]');
+    if (!btn) return;
+    const key = btn.dataset.genGroup;
+    const members = Engine.activeUnits(state).filter((u) => !u.parent && u.side === state.player && permitted(u) && (u.group || u.area || 'main') === key);
+    if (!members.length) return;
+    selectedUnits = new Set(members.map((u) => u.id));
+    selectedUnit = members[0].id;
+    selectedCity = members[0].city;
+    pane = 'army';
+    setMapHelp();
+    render();
+    map.jump(members[0].city);
+    notify('已一键选中该集团军共 ' + members.length + ' 支纵队/军，可直接统一下达作战指令。');
+  });
+  $('battle-hud')?.addEventListener('click', (event) => {
+    const cycleBtn = event.target.closest('[data-battle-cycle]');
+    if (!cycleBtn) return;
+    const city = cycleBtn.dataset.battleCycle;
+    const neighbors = (cityConnected.get(city) || []).filter((id) => state.owners[id] === state.player);
+    if (!neighbors.length) { notify('已被合围，无相邻己方城镇可供换防撤出！'); return; }
+    const defenders = Engine.activeUnits(state).filter((u) => !u.parent && u.side === state.player && u.city === city)
+      .sort((a, b) => valueOf(a, 'org', 100) - valueOf(b, 'org', 100));
+    const low = defenders[0];
+    if (!low) return;
+    if (action('order', [low.id, 'rest', neighbors[0]])) {
+      saveAuto(true); render();
+      notify('车轮战换防：' + low.name + ' 撤往' + cityName(neighbors[0]) + '休整回组织度！');
+    }
+  });
   document.addEventListener('keydown', (event) => {
+    if (!dialog.open && !event.target.closest('input,select,textarea')) {
+      const fMap = { F1: ['layer', 'situation'], F2: ['overlay', 'maritime'], F3: ['layer', 'faction'], F4: ['overlay', 'supply'], F5: ['layer', 'terrain'] };
+      if (fMap[event.key]) {
+        event.preventDefault();
+        const [kind, val] = fMap[event.key];
+        document.querySelector('[data-' + kind + '="' + val + '"]')?.click();
+        return;
+      }
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !dialog.open
       && !event.target.closest('input,select,textarea')) {
       event.preventDefault();
