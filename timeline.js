@@ -1,14 +1,14 @@
 (function (root) {
   'use strict';
 
-  const actions = new Set(['order', 'setSide', 'setScope', 'setPolicy', 'setDelegated', 'setGroup', 'setLeader',
-    'setEquipment', 'setHistoryMode', 'setHistoricalEvent',
+  const actions = new Set(['order', 'setSide', 'setScope', 'setPolicy', 'setDelegated', 'releaseToAI', 'setGroup', 'setLeader',
+    'setEquipment', 'setHistoryMode', 'setHistoricalEvent', 'setNightMode',
     'createPlan', 'updatePlan', 'executePlan', 'pausePlan', 'delegatePlan', 'removePlan',
-    'buildFort', 'setSupport', 'decide',
+    'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide',
     'createDesign', 'updateDesign', 'assignDesign', 'researchTech', 'setAirMission', 'startFocus',
-    'setProduction', 'commandAbility', 'intelOperation', 'setLaw', 'diplomacyAction', 'foreignAction', 'setNavalMission']);
-  const usesData = new Set(['order', 'setLeader', 'setEquipment', 'createPlan', 'updatePlan', 'executePlan',
-    'pausePlan', 'buildFort', 'setSupport', 'decide', 'commandAbility']);
+    'setProduction', 'commandAbility', 'setBattlePosture', 'intelOperation', 'setLaw', 'diplomacyAction', 'foreignAction', 'setNavalMission']);
+  const usesData = new Set(['order', 'setLeader', 'setEquipment', 'createPlan', 'updatePlan', 'executePlan', 'setBattlePosture',
+    'pausePlan', 'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide', 'commandAbility']);
   const day = 86400000;
   const toTime = (value) => Date.parse(value + 'T00:00:00Z');
   const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)

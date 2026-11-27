@@ -435,10 +435,42 @@ test('同等兵力的进攻会被击退，守军撤退而非全歼', () => {
   assert.ok(ended, '应产生战斗结束记录');
   assert.equal(ended.result, 'repelled');
   assert.equal(state.owners.flank, 'roc');
+  assert.equal(state.battles.flank, undefined, '击退后应结束本次接战');
+  assert.equal(unit(state, 'main').order, undefined, '失败的正面进攻应停下，让玩家重新下令');
+  assert.equal(state.log.filter(entry => entry.type === 'battle-end' && entry.city === 'flank').length, 1,
+    '同一条失败命令不能在后续日期反复开打并偷偷磨掉守军');
   assert.ok(ended.aftermath.days >= 2);
   const enemy = state.units.find(member => member.id === 'enemy');
   assert.ok(enemy.strength > 12_000, '守军应以撤退保存兵力，而不是被整体歼灭');
   assert.ok(ended.aftermath.attackerCasualties < 24_000 * 0.25, '多日战役不应一次打光');
+});
+
+test('被包围且断粮的守军会投降，投降部队与缴获装备归攻方', () => {
+  const state = create();
+  state.owners.far = 'ccp';
+  assert.equal(engine.order(board, state, 'main', 'advance', 'flank').ok, true);
+  for (const unit of state.units) {
+    if (unit.side === 'roc' && unit.city === 'flank') {
+      unit.food = 0;
+      unit.morale = 14;
+      unit.org = 18;
+    }
+    if (unit.side === 'ccp' && unit.order?.target === 'flank') unit.orderDays = 100;
+  }
+  const infantryBefore = state.stock.ccp.infantry;
+  state.battles.flank = { side: 'ccp', defendingSide: 'roc', days: 45, attackerStrength: 24_000,
+    defenderStrength: 6_000, attackerCasualties: 0, defenderCasualties: 0, routed: 0,
+    period: '夜战', phase: '围困整补', attackDirections: 1, attackOrigins: [{ city: 'front', kind: 'infantry' }] };
+
+  for (let day = 0; day < 30 && state.owners.flank !== 'ccp'; day += 1) engine.step(board, state, 1);
+
+  const surrender = state.log.find(entry => entry.type === 'surrender' && entry.city === 'flank');
+  assert.ok(surrender, '长期断粮后应出现投降事件');
+  assert.equal(state.owners.flank, 'ccp');
+  assert.ok(state.units.some(unit => unit.side === 'ccp' && unit.city === 'flank' && unit.surrenderedAt),
+    '接受改编的守军应转入攻方');
+  assert.ok(state.tally.ccp.prisoners > 0, '未接受改编者应计入俘虏');
+  assert.ok(state.stock.ccp.infantry > infantryBefore, '改编与缴械应增加步兵装备库存');
 });
 
 test('多日战役会把战斗开始后抵达的增援计入投入兵力', () => {
@@ -951,6 +983,7 @@ test('AI 在海军登陆准备与制海优势成立时能建立登陆计划', ()
 
 test('无效的对日援助请求不会扣除政治点或增加冷却', () => {
   const state = create();
+  engine.setSide(state, 'ccp');
   state.political.ccp.points = 100;
   const result = engine.foreignAction(state, 'japan', 'request-aid');
   assert.equal(result.ok, false);

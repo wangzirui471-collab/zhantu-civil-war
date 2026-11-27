@@ -13,6 +13,7 @@
   <script defer src="engine.js"></script>
   <script defer src="timeline.js"></script>
   <script defer src="geography.js"></script>
+  <script defer src="human-3d.js"></script>
   <script defer src="map.js"></script>
   <script defer src="save-store.js"></script>
   <script defer src="app.js"></script>
@@ -41,7 +42,7 @@
         <button type="button" id="mobile-scenarios">剧本</button>
         <button type="button" id="economy">经济后勤</button>
         <button type="button" id="plans">作战计划</button>
-        <button type="button" id="supply">铁路补给</button>
+        <button type="button" id="supply">后勤补给</button>
         <button type="button" id="politics">政治决议</button>
         <button type="button" id="defense">国防建设</button>
         <button type="button" id="gear">兵种军械</button>
@@ -74,15 +75,18 @@
       <section class="map-workspace" aria-label="战役地图">
         <canvas id="map" tabindex="0" aria-label="可缩放中国战区地图"></canvas>
         <div class="map-heading"><span class="map-tag" id="map-tag">东北战区</span><strong id="map-title">辽沈战役</strong></div>
+        <section id="battle-hud" class="battle-hud" aria-label="战场指挥" hidden></section>
         <div class="map-top-controls" aria-label="地图视角">
           <button type="button" id="national-view">全国</button><button type="button" id="theater-view">战区</button>
+          <button type="button" id="night-toggle" aria-pressed="false" title="切换昼间姿态与夜间宿营睡觉姿态">🌙 夜间宿营</button>
+          <button type="button" id="map-expand" aria-pressed="false" title="展开地图，隐藏两侧面板">展开地图</button>
           <button type="button" id="find-city">查找城镇</button>
         </div>
         <div class="map-layers" aria-label="地图图层">
           <div class="map-layer-modes"><button type="button" data-layer="situation" aria-pressed="false">态势图</button><button type="button" data-layer="terrain" aria-pressed="true">地形图</button><button type="button" data-layer="contour" aria-pressed="false">等高线</button></div>
           <div class="map-layer-toggles"><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役路线</button><button type="button" data-overlay="supply" aria-pressed="false" title="绿点补给充足、黄点偏紧、红点缺口；红色虚线为运输瓶颈">补给</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button></div>
         </div>
-        <div class="map-legend"><span><b class="dot ccp"></b>共产党</span><span><b class="dot roc"></b>国民党</span><span><i></i>铁路</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span></div>
+        <div class="map-legend"><span><b class="dot ccp"></b>共产党</span><span><b class="dot roc"></b>国民党</span><span><i></i>铁路</span><span><i class="attack-key"></i>进攻路线</span><span><i class="shell-key"></i>炮火</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span></div>
         <div class="map-zoom"><button type="button" id="zoom-in" aria-label="放大">+</button><button type="button" id="zoom-out" aria-label="缩小">−</button><button type="button" id="map-reset" aria-label="回到地图中心" title="回到地图中心">⌂</button></div>
         <div class="map-help" id="map-help"></div>
         <section id="tutorial-card" class="tutorial-card" aria-label="锦州第一局" hidden></section>

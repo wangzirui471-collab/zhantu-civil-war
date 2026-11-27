@@ -16,7 +16,10 @@
   const short = { ccp: '共产党', roc: '国民党' };
   const regions = { national: '全国', northeast: '东北战区', north: '华北战区', east: '华东战区',
     central: '中原战区', south: '华南战区', southwest: '西南战区', northwest: '西北战区', taiwan: '台湾' };
-  const commands = { advance: '进攻', defend: '布防', move: '调动', siege: '围城', intercept: '围点打援', hold: '原地待命', bombard: '战略轰炸' };
+  const commands = {
+    advance: '进攻', siege: '围城', defend: '守阵地', entrench: '挖战壕',
+    intercept: '围点打援', move: '行军', rest: '城内休整', hold: '原地待命', bombard: '战略轰炸',
+  };
   const enemyCommands = new Set(['advance', 'siege', 'intercept', 'bombard']);
   const equipmentTypes = {
     infantry: ['步兵装备', '消耗补给较少，适合驻防和日常行动。'],
@@ -28,6 +31,7 @@
   const terrainName = { urban: '城市', hill: '丘陵', mountain: '山地', port: '港口', plain: '平原', rail: '车站' };
   const meta = Engine.metadata || {};
   const fortInfo = meta.fortKinds || {};
+  const recruitmentInfo = meta.recruitmentKinds || {};
   const supportInfo = meta.supportKinds || {};
   const supportOrder = meta.supportKeys || [];
   const planModeNames = meta.planModes || {};
@@ -54,8 +58,8 @@
   const citiesById = new Map(Data.cities.map((city) => [city.id, city]));
   const leadersById = new Map((Data.leaders || []).map((leader) => [leader.id, leader]));
   const groupsById = new Map((Data.groups || []).map((group) => [group.id, group]));
-  const priorityScenarios = ['liaoshen', 'huaihai', 'pingjin', 'jinzhou', 'tashan', 'siping', 'changchun'];
-  const scenarioMarks = { liaoshen: '辽', huaihai: '淮', pingjin: '平', jinzhou: '锦', tashan: '塔', siping: '四', changchun: '长', full: '全' };
+  const priorityScenarios = ['liaoshen', 'northwest', 'huaihai', 'pingjin', 'jinzhou', 'tashan', 'siping'];
+  const scenarioMarks = { liaoshen: '辽', northwest: '西', huaihai: '淮', pingjin: '平', jinzhou: '锦', tashan: '塔', siping: '四', changchun: '长', full: '全' };
   const stageTargets = new Map([['liaoshen', ['jinzhou', 'tashan', 'shenyang', 'changchun']]]);
   const historyFamily = (id) => ({ jinzhou: 'liaoshen', tashan: 'liaoshen', changchun: 'liaoshen' }[id] || id);
   const storageKey = 'civil-war-map-v1';
@@ -145,11 +149,15 @@
   const storeBackend = SaveStore?.create?.();
 
   function writeStore(next) {
-    let localSaved = false;
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); localSaved = true; } catch { /* IndexedDB 仍可保存。 */ }
     Object.assign(store, next);
-    if (storeBackend) { void storeBackend.write(storageKey, next); return true; }
-    return localSaved;
+    if (storeBackend) {
+      void storeBackend.write(storageKey, next).then((saved) => {
+        if (!saved) notify('IndexedDB 不可用或空间不足，当前浏览器备用存储也可能受限；建议导出存档。');
+      }).catch(() => notify('存档写入失败，请立即导出存档备份。'));
+      return true;
+    }
+    try { localStorage.setItem(storageKey, JSON.stringify(next)); return true; }
+    catch { return false; }
   }
 
   function validateSave(raw) {
@@ -196,7 +204,7 @@
   function permitted(unit) {
     return unit && !state.winner && !unit.inactive && unit.strength > 0 && unit.side === state.player
       && (state.scope === 'national' || unit.area === state.area || citiesById.get(unit.city)?.region === state.area)
-      && (!state.group || unit.group === state.group);
+      && (!state.group || state.scope !== 'theater' || unit.group === state.group);
   }
   function topUnit(unit) {
     let army = unit;
@@ -225,7 +233,7 @@
     pane = 'army';
     setMapHelp();
     render();
-    notify(selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支部队，可点「编成计划」统一下令。'
+    notify(selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支部队，可统一下令；不同出发城会形成多路进攻。'
       : selectedUnits.size ? '已选 1 支部队。' : '已清空编队。');
   }
 
@@ -279,7 +287,8 @@
     $('player-name').textContent = sides[state.player];
     $('player-dot').className = 'dot ' + state.player;
     const group = groupsById.get(state.group);
-    $('scope-label').textContent = group?.name || (state.scope === 'national' ? '全国指挥' : regions[area()] || '战区指挥');
+    $('scope-label').textContent = group && state.scope === 'theater' ? group.name
+      : state.scope === 'national' ? '全国指挥' : regions[area()] || '战区指挥';
     $('date').textContent = fmtDate(state.date);
     $('date').dateTime = state.date;
     $('clock-label').textContent = state.winner
@@ -297,6 +306,10 @@
     const latest = recentBrief || state.log.at(-1);
     $('latest-event').textContent = state.winner ? sides[state.winner] + '达成统一目标。'
       : (latest?.text || '请选择部队或城镇。');
+    if ($('night-toggle')) {
+      $('night-toggle').setAttribute('aria-pressed', String(Boolean(state.nightMode)));
+      $('night-toggle').textContent = state.nightMode ? '☀️ 切换白昼' : '🌙 夜间宿营';
+    }
     $('brief-settings').setAttribute('aria-pressed', Object.keys(pauseLabels).some((key) => pausePreferences[key]));
     document.querySelectorAll('[data-speed]').forEach((item) => item.setAttribute('aria-pressed', Number(item.dataset.speed) === speed));
   }
@@ -317,7 +330,7 @@
       + '<p class="territory-status">' + escape(regions[area()] || '') + ' · 我方 '
       + Data.cities.filter((city) => city.region === area() && state.owners[city.id] === state.player).length + ' 城 / '
       + Data.cities.filter((city) => city.region === area()).length + ' 城</p>'
-      + '<p class="territory-status">战争支持 · 共产党 ' + format(valueOf(state.warSupport, 'ccp', 82))
+      + '<p class="territory-status">民心 / 战争支持 · 共产党 ' + format(valueOf(state.warSupport, 'ccp', 82))
       + ' · 国民党 ' + format(valueOf(state.warSupport, 'roc', 58)) + '</p>'
       + '<p class="territory-status">稳定 ' + format(valueOf(state.stability, state.player, 60))
       + ' · 科研 ' + format(state.research?.[state.player]?.points ?? 0)
@@ -328,10 +341,13 @@
   function unitRow(unit) {
     const own = unit.side === state.player;
     const display = own ? format(unit.strength) : '约 ' + format(Math.round(unit.strength / 100) * 100);
+    const commander = leadersById.get(unit.leader)?.name;
+    const divCount = state.units.filter((child) => child.parent === unit.id && child.strength > 0).length;
+    const metaText = (commander ? commander + ' · ' : '') + (divCount ? divCount + '师 · ' : '') + display + '人';
     return '<button class="unit-row ' + (own ? '' : 'enemy') + '" type="button" data-unit="' + escape(unit.id)
-      + '" aria-pressed="' + (unit.id === selectedUnit) + '" title="' + escape(unit.name) + '"><span><b class="dot ' + unit.side
-      + '"></b><strong>' + escape(unit.name) + '</strong></span><small>' + display + ' 人 · 组织 '
-      + format(valueOf(unit, 'org', 100)) + '</small></button>';
+      + '" aria-pressed="' + (unit.id === selectedUnit) + '" title="' + escape(unit.name + (commander ? ' · 司令 ' + commander : ''))
+      + '"><span><b class="dot ' + unit.side
+      + '"></b><strong>' + escape(unit.name) + '</strong></span><small>' + escape(metaText) + '</small></button>';
   }
 
   function unitRows(units, empty) {
@@ -342,13 +358,74 @@
     const battle = state.battles?.[cityId];
     if (!battle) return '';
     const ratio = typeof battle.lastRatio === 'number' ? battle.lastRatio.toFixed(2) : '—';
-    return '<div class="card battle-card"><h3>围攻第 ' + format(battle.days) + ' 天</h3>'
+    return '<div class="card battle-card"><h3>' + (battle.phase ? escape(battle.phase) + ' · ' : '') + '第 ' + format(battle.days) + ' 天</h3>'
       + '<p>' + escape(short[battle.side] || battle.side) + '进攻 · 优势比 ' + ratio
       + ' · 进攻方向 ' + format(battle.attackDirections || 1)
+      + ' · 前线 ' + format(battle.engagedUnitIds?.length || 0) + ' 支 / 预备 ' + format(battle.reserveUnitIds?.length || 0) + ' 支'
       + ' · 累计伤亡 ' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人'
       + (battle.weather ? ' · 天气 ' + escape(battle.weather) : '')
       + (battle.tactic ? ' · 战术 ' + escape(battle.tactic) : '') + '</p>'
-      + '<p class="subtext">组织度耗尽的一方将退出战斗；守军只有在没有退路时才会被歼灭。</p></div>';
+      + '<p class="subtext">组织度耗尽的一方将退出战斗；守军只有在没有退路时才会被歼灭。进攻方被击退后会原地整补，想再攻需重新下令。</p></div>';
+  }
+
+  function renderBattleHud() {
+    const hud = $('battle-hud');
+    const battles = Object.entries(state.battles || {}).map(([city, battle]) => ({ city, battle }))
+      .sort((a, b) => b.battle.days - a.battle.days || a.city.localeCompare(b.city));
+    if (!battles.length) { hud.hidden = true; hud.innerHTML = ''; return; }
+    hud.hidden = false;
+    const selected = battles.find((item) => item.city === selectedCity) || battles[0];
+    const { city, battle } = selected;
+    const isAttacker = battle.side === state.player;
+    const playerInBattle = isAttacker || battle.defendingSide === state.player;
+    const parents = new Set(state.units.map((unit) => unit.parent).filter(Boolean));
+    const fieldUnits = state.units.filter((unit) => !parents.has(unit.id) && unit.strength > 0);
+    const attackers = fieldUnits.filter((unit) => unit.side === battle.side && unit.order?.target === city
+      && ['advance', 'siege'].includes(unit.order.type));
+    const defenders = fieldUnits.filter((unit) => unit.side === battle.defendingSide && unit.city === city);
+    const strength = (units) => units.reduce((sum, unit) => sum + unit.strength, 0);
+    const displayStrength = (value, side) => side === state.player ? format(value)
+      : '约 ' + format(Math.round(value / 500) * 500);
+    const posture = battle.postureBySide?.[state.player] || 'balanced';
+    const postures = isAttacker
+      ? [['balanced', '均衡'], ['assault', '全线突击'], ['envelop', '多路包围'], ['cautious', '谨慎推进']]
+      : [['balanced', '均衡'], ['hold', '坚守阵地']];
+    const command = state.command?.[state.player] || {};
+    const ability = commandInfo.barrage || { cost: 30 };
+    const cooldown = Number(command.cooldowns?.barrage) || 0;
+    const shortage = (Number(command.points) || 0) < ability.cost;
+    const artilleryReady = typeof meta.canBarrage === 'function'
+      ? meta.canBarrage(Data, state, city, state.player)
+      : attackers.some((unit) => unit.branch === 'artillery' || unit.profile === 'artillery');
+    const barrageText = !isAttacker ? '炮火准备 · 攻方行动'
+      : cooldown > 0 ? '炮火准备 · 冷却 ' + cooldown + ' 天'
+        : shortage ? '炮火准备 · 需 ' + ability.cost + ' 点'
+          : !artilleryReady ? '炮火准备 · 无炮兵' : '炮火准备';
+    const ratio = Number(battle.lastRatio) || 1;
+    const attackShare = Math.max(8, Math.min(92, ratio / (1 + ratio) * 100));
+    hud.innerHTML = '<div class="battle-hud-head"><strong>' + escape(cityName(city)) + ' · ' + (battle.phase ? escape(battle.phase) : '交战中')
+      + '</strong><small>第 ' + format(battle.days) + ' 日 · ' + (isAttacker ? '我方进攻' : '我方防守') + '</small></div>'
+      + (battles.length > 1 ? '<div class="battle-hud-picker" aria-label="选择战场">' + battles.map((item) =>
+        '<button type="button" data-battle-focus="' + escape(item.city) + '" aria-pressed="' + (item.city === city) + '">'
+          + escape(cityName(item.city)) + ' · ' + format(item.battle.days) + '日</button>').join('') + '</div>' : '')
+      + '<div class="battle-hud-facts"><span>攻方 <b>' + escape(short[battle.side]) + '</b></span><span>进攻方向 <b>'
+      + format(battle.attackDirections || 1) + '</b></span><span>攻守比 <b>' + ratio.toFixed(2) + ' : 1</b></span>'
+      + '<span>累计减员 <b>' + format((battle.attackerCasualties || 0) + (battle.defenderCasualties || 0)) + ' 人</b></span>'
+      + (battle.weather ? '<span>' + escape(battle.weather) + '</span>' : '') + '</div>'
+      + '<div class="battle-hud-meter" role="img" aria-label="当前攻守比"><i style="width:' + attackShare + '%"></i></div>'
+      + '<div class="battle-hud-strength"><div><span>攻方兵力 · 前线 ' + format(battle.engagedUnitIds?.length || 0)
+      + ' 支 / 预备 ' + format(battle.reserveUnitIds?.length || 0) + ' 支</span><strong>'
+      + displayStrength(strength(attackers), battle.side) + ' 人</strong></div><div><span>守方兵力 · 当前守军</span><strong>'
+      + displayStrength(strength(defenders), battle.defendingSide) + ' 人</strong></div></div>'
+      + '<div class="battle-hud-controls">' + postures.map(([id, label]) => '<button type="button" data-battle-posture="'
+        + id + '" data-battle-city="' + escape(city) + '" aria-pressed="' + (posture === id) + '"' + (!playerInBattle ? ' disabled' : '')
+        + '>' + label + '</button>').join('')
+      + '<button type="button" data-battle-action="barrage" data-battle-city="' + escape(city) + '" title="需目标周边有炮兵；削弱守军防御 5 天；消耗指挥点 ' + ability.cost + '"'
+        + (!isAttacker || cooldown > 0 || shortage || !artilleryReady ? ' disabled' : '') + '>' + barrageText + '</button>'
+      + '<button type="button" data-battle-focus="' + escape(city) + '">定位战场</button></div>'
+      + '<p class="battle-hud-note">' + (isAttacker
+        ? '可从远处下令；部队沿道路逐站集结，铁路会加快行军。抵达阵地后可多方向进攻，预备队会接替前线。'
+        : '坚守姿态提高防御；己方兵力按编制精确显示，敌军兵力为估算。') + '</p>';
   }
 
   function fortPanel(city) {
@@ -381,6 +458,21 @@
     const strength = (side) => combat.filter((unit) => unit.side === side).reduce((sum, unit) => sum + unit.strength, 0);
     const own = strength(state.player);
     const other = strength(state.player === 'ccp' ? 'roc' : 'ccp');
+    const buildings = state.buildings?.[city.id] || {};
+    const construction = (state.construction || []).filter(job => job.city === city.id);
+    const constructionRows = construction.map(job => {
+      const label = meta.buildingKinds?.[job.kind]?.name || job.kind;
+      const percent = Math.max(0, Math.min(100, 100 * (1 - job.remaining / Math.max(1, job.days))));
+      return '<div class="build-project"><div><span>' + escape(label) + '</span><small>还需 ' + format(job.remaining) + ' 天</small></div>'
+        + '<i><b style="width:' + percent + '%"></b></i></div>';
+    }).join('');
+    const recruiting = (state.recruitment || []).filter(job => job.city === city.id);
+    const recruitmentRows = recruiting.map(job => {
+      const label = recruitmentInfo[job.kind]?.name || job.kind;
+      const percent = Math.max(0, Math.min(100, 100 * (1 - job.remaining / Math.max(1, job.days))));
+      return '<div class="build-project"><div><span>新编' + escape(label) + '</span><small>训练中 · ' + format(job.remaining) + ' 天</small></div>'
+        + '<i><b style="width:' + percent + '%"></b></i></div>';
+    }).join('');
     const stationed = units.filter((unit) => !unit.parent || !units.some((parent) => parent.id === unit.parent));
     const neighbors = cityConnected.get(city.id) || [];
     const linked = neighbors.map((target) => '<button data-city="' + escape(target)
@@ -399,6 +491,22 @@
       + battlePanel(city.id)
       + '<div class="sector-summary"><div><span>己方驻军</span><strong>' + format(own)
       + '</strong></div><div><span>对方估算</span><strong>' + format(Math.round(other / 100) * 100) + '</strong></div></div>'
+      + '<section class="industry-card"><header><strong>工业与建设</strong><span>军工厂 ' + format(buildings.militaryFactory || 0)
+      + ' · 民用工厂 ' + format(buildings.civilianFactory || 0) + '</span></header>'
+      + (constructionRows || '<p class="subtext">本城暂无建设项目。</p>')
+      + (state.owners[city.id] === state.player ? '<div class="industry-actions">'
+        + '<button type="button" data-build-building="militaryFactory">建军工厂</button>'
+        + '<button type="button" data-build-building="civilianFactory">建民用工厂</button></div>' : '')
+      + '</section>'
+      + '<section class="industry-card recruit-card"><header><strong>征兵与整编</strong><span>兵员储备 '
+      + format(state.economy?.[state.player]?.manpower || 0) + '</span></header>'
+      + (recruitmentRows || '<p class="subtext">本城暂无新军训练。</p>')
+      + (state.owners[city.id] === state.player ? '<div class="industry-actions recruit-actions">'
+        + Object.entries(recruitmentInfo).map(([kind, definition]) => '<button type="button" data-recruit-branch="' + escape(kind)
+          + '" title="' + escape(definition.days + ' 天训练；兵员 ' + definition.manpower + '，军械 ' + definition.arms
+            + '，需要相应兵种装备库存') + '">募' + escape(definition.name) + '</button>').join('')
+        + '</div><p class="subtext">征募会消耗兵员与对应枪炮库存；训练完成后部队列入本城驻军，可直接下令。</p>' : '')
+      + '</section>'
       + fortPanel(city)
       + (progress && (progress.targets.includes(city.id) || city.id === scenarioNow()?.focus)
         ? '<div class="card"><h3>剧本目标</h3><p>' + escape(progress.title)
@@ -415,25 +523,35 @@
 
   function leaderCard(leader) {
     const portrait = Portraits[leader.name];
+    const currentSide = state.leaderTransfers?.[leader.id] || leader.side;
     const image = portrait?.file ? '<img src="' + escape(portrait.file) + '" alt="' + escape(leader.name) + '历史照片">'
       : '<span class="portrait-placeholder" aria-hidden="true">' + escape(leader.name[0]) + '</span>';
     return '<div class="card leader-card">' + image + '<div><h3>' + escape(leader.name) + '</h3><p>'
-      + escape(leader.role || '') + '</p><p>' + escape(leader.bio || '') + '</p>'
+      + escape(leader.role || '') + '</p><p>' + sideTag(currentSide)
+      + (currentSide !== leader.side ? ' · 原属 ' + escape(short[leader.side] || leader.side) : '')
+      + '</p><p>' + escape(leader.bio || '') + '</p>'
       + (portrait ? sourceLink(portrait.source, portrait.credit || '照片出处') + '<br>' : '')
       + sourceLink(leader.source, '人物史料') + '</div></div>';
   }
 
   function renderTree(army) {
+    function hasManualAssignment(unit) {
+      return Boolean(unit.manualAssignment || state.units.some(child => child.parent === unit.id && hasManualAssignment(child)));
+    }
     function rows(unit, depth) {
       const name = unit.parent ? unit.name.split(' · ').at(-1) : unit.name;
       const personnel = unit.side === state.player ? format(unit.strength) : '约 ' + format(Math.round(unit.strength / 100) * 100);
       const profile = equipmentTypes[unit.profile || unit.branch || 'infantry']?.[0] || '步兵装备';
       return '<tr><td><button data-unit="' + escape(unit.id) + '" type="button" style="--depth:' + depth
         + '" aria-pressed="' + (selectedUnit === unit.id) + '">' + escape(name.replace('（模拟）', '')) + '</button></td><td><small>'
-        + escape(profile.replace('装备', '')) + '</small></td><td>' + personnel + '</td></tr>'
+        + escape(profile.replace('装备', '')) + '</small></td><td>' + personnel + '</td><td><small>'
+        + escape(cityName(unit.city)) + ' · ' + escape(unit.order ? (commands[unit.order.type] || '行动') : '待命')
+        + (unit.parent && unit.side === state.player ? (hasManualAssignment(unit) || unit.order && !unit.automatedOrder
+          ? ' · 手动' : army.autoUnassigned || army.delegated ? ' · 自动' : ' · 待命') : '')
+        + '</small></td></tr>'
         + state.units.filter((child) => child.parent === unit.id && child.strength > 0).map((child) => rows(child, depth + 1)).join('');
     }
-    return '<table class="formation-table"><thead><tr><th>纵队 / 师 / 团</th><th>装备</th><th>兵力</th></tr></thead><tbody>'
+    return '<table class="formation-table"><thead><tr><th>纵队 / 师 / 团</th><th>装备</th><th>兵力</th><th>位置与任务</th></tr></thead><tbody>'
       + rows(army, 0) + '</tbody></table>';
   }
 
@@ -460,14 +578,28 @@
     const traits = leader ? leaderTraitsOf(state, leader.id) : [];
     const portrait = leader ? '<button class="commander-chip" type="button" data-leader="' + escape(leader.id) + '">'
       + (photo ? '<img src="' + escape(photo.file) + '" alt="' + escape(leader.name) + '">' : '')
-      + '<span>指挥官<strong>' + escape(leader.name) + '</strong>'
+      + '<span>司令官<strong>' + escape(leader.name) + '</strong>'
       + (traits.length ? '<small>' + escape(traits.map((trait) => trait.name).join('/')) + ' · 等级 '
         + format(leaderLevelOf(state, leader.id)) + '</small>' : '') + '</span></button>' : '';
+    const divisions = root ? state.units.filter((child) => child.parent === root.id && child.strength > 0) : [];
+    const figureIcons = globalThis.CivilWarHuman3D?.iconCount(unit.strength) || Math.ceil(unit.strength / 5000);
+    const tanks = globalThis.CivilWarHuman3D?.unitTanks(unit) || 0;
+    const tankIcons = globalThis.CivilWarHuman3D?.tankIcons(tanks) || 0;
+    const divisionSummary = divisions.length
+      ? '下辖 ' + divisions.length + ' 个师/旅：' + divisions.map((d) =>
+        d.name.split(' · ').at(-1).replace('（模拟）', '') + '（'
+        + (own ? format(d.strength) : '约' + format(Math.round(d.strength / 100) * 100)) + '人）').join('、')
+      : '';
     return '<button class="link-button" type="button" data-back-roster>‹ 返回部队名册</button>'
       + '<div class="card"><div class="city-title"><h3 style="font-size:17px">' + escape(unit.name) + '</h3>'
-      + sideTag(unit.side) + '</div><p>' + escape(cityName(unit.city)) + ' · ' + escape(orderLabel) + '</p>'
-      + '<div class="unit-headline">' + portrait + '<div class="unit-readout"><span>现役 <strong>' + strength + '</strong> / ' + format(unit.maxStrength)
-      + '</span><span>粮食 ' + format(unit.food) + '% · 装备 ' + format(unit.equipment) + '%</span>'
+      + sideTag(unit.side) + '</div><p>' + escape(cityName(unit.city)) + ' · ' + escape(orderLabel)
+      + (state.nightMode && (!unit.order || ['hold', 'rest'].includes(unit.order.type)) ? ' · 夜间宿营中' : '') + '</p>'
+      + '<div class="unit-headline">' + portrait + '<div class="unit-readout"><span>现役兵力 <strong>' + strength + '</strong> / ' + format(unit.maxStrength)
+      + ' 人（地图 ' + format(figureIcons) + ' 兵标' + (tankIcons ? ' · ' + format(tankIcons) + ' 坦克标' : '') + '）</span>'
+      + (leader ? '<span>现任主官：' + escape(leader.name + '（' + (leader.role || '司令官') + '）') + '</span>' : '<span>现任主官：暂缺（可任命）</span>')
+      + (group ? '<span>派系与军服：' + escape(group.name) + '</span>' : '')
+      + (divisionSummary ? '<span>' + escape(divisionSummary) + '</span>' : '')
+      + '<span>粮食 ' + format(unit.food) + '% · 装备 ' + format(unit.equipment) + '%</span>'
       + '<span>弹药 ' + percent(valueOf(unit, 'ammo', 100)) + ' · 油料 ' + percent(valueOf(unit, 'fuel', 100))
       + ' · 医疗 ' + percent(valueOf(unit, 'medical', 100)) + '</span>'
       + '<span>士气 ' + format(valueOf(unit, 'morale', 70)) + ' · 老兵 ' + format(valueOf(unit, 'veteran', 0))
@@ -476,9 +608,11 @@
       + (design ? '<span>编制 ' + escape(design.name) + ' · 宽 ' + (stats?.width ?? 0).toFixed(1)
         + ' · 装 ' + (stats?.armor ?? 0) + ' · 穿 ' + (stats?.piercing ?? 0) + '</span>' : '')
       + (own ? '' : '<span>情报水平 ' + format(intelLevel) + '</span>')
-      + (group ? '<span>' + escape(group.name) + '</span>' : '') + '</div></div>'
+      + '</div></div>'
       + (allowed ? '<button type="button" class="link-button" data-delegate="' + escape(root?.id) + '">'
         + (root?.delegated ? '收回司令员指挥权' : '委托司令员指挥') + '</button>'
+        + (unit.parent ? '<button type="button" class="link-button" data-release-ai="' + escape(unit.id)
+          + '">交给 AI 安排此部队</button>' : '')
         + (root?.id === unit.id && typeof Engine.setLeader === 'function'
           ? '<button type="button" class="link-button" data-appoint="' + escape(unit.id) + '">任命将领</button>' : '')
         + '<button type="button" class="link-button" data-gear-unit>换装</button>'
@@ -542,6 +676,7 @@
     renderLedger();
     renderInspector();
     renderCommandDeck();
+    renderBattleHud();
     const unit = inspectUnit();
     orderPreviews = permitted(unit) ? Engine.previewOrders(Data, state, unit.id) : {};
     const plans = (state.plans || []).filter((plan) => plan.side === state.player
@@ -657,14 +792,33 @@
 
   function setMapHelp() {
     $('map-help').textContent = pendingOrder
-      ? (pendingOrder === 'bombard' ? '战略轰炸 · 点击 18 度范围内敌城' : enemyCommands.has(pendingOrder) ? '命令目标 · 点击相邻敌城或隔海目标' : '命令目标 · 点击有己方通路的城镇')
-      : selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支 · 点「编成计划」统一目标'
+      ? (pendingOrder === 'bombard' ? '战略轰炸 · 点击空军半径内敌城' : enemyCommands.has(pendingOrder)
+        ? '战役命令 · 点击任一可达敌城，部队会沿陆路逐站推进；铁路可加快调动'
+        : '命令目标 · 点击有己方陆路通道的城镇')
+      : selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支 · 选命令后点目标，可让多路部队同时行动'
         : permitted(inspectUnit()) ? '浅蓝为调动 · 暖色为进攻 · 悬停查看时间 · Ctrl 点击多选'
           : '点击部队牌选中 · 右键或拖到城镇下令 · 滚轮缩放';
   }
 
   function issue(type, target) {
-    if (!action('order', [selectedUnit, type, target])) return;
+    const group = [...selectedUnits].filter((id) => permitted(state.units.find((unit) => unit.id === id)));
+    const recipients = group.length > 1 ? group : [selectedUnit];
+    let commandWarnings = 0;
+    if (recipients.length > 1) {
+      const before = { state: Engine.snapshot(state), timeline: structuredClone(timeline) };
+      const failures = [];
+      let issued = 0;
+      for (const unitId of recipients) {
+        const result = Timeline.apply(timeline, Engine, Data, state, 'order', [unitId, type, target]);
+        if (result?.ok === false) failures.push(result.error);
+        else issued += 1;
+      }
+      if (!issued) { notify(failures[0] || '所选部队没有可执行的命令。'); return; }
+      undoStack.push(before);
+      if (undoStack.length > undoLimit) undoStack.shift();
+      lastActionResult = { ok: true, issued, failures };
+      commandWarnings = failures.length;
+    } else if (!action('order', [selectedUnit, type, target])) return;
     if (tutorial?.step === 1 && target === 'jinzhou' && ['advance', 'siege'].includes(type)) {
       tutorial.step = 2;
       tutorial.start = state.date;
@@ -673,7 +827,9 @@
     setMapHelp();
     saveAuto(true);
     render();
-    notify(commands[type] + '命令已下达。');
+    const message = recipients.length > 1 ? '已向 ' + recipients.length + ' 支部队下达' + commands[type] + '命令。'
+      : commands[type] + '命令已下达。';
+    notify(commandWarnings ? message + '另有 ' + commandWarnings + ' 支无法执行。' : message);
   }
 
   function previewCity(city, _screen, draggedUnit) {
@@ -696,8 +852,17 @@
   }
 
   function chooseCommand(type) {
-    if (!permitted(inspectUnit())) { notify('先点击地图上的己方部队牌，或在部队名册中选择。'); return; }
-    if (type === 'hold') { issue(type, inspectUnit().city); return; }
+    const unit = inspectUnit();
+    if (!permitted(unit)) { notify('先点击地图上的己方纵队/军标牌，或在部队名册中选择。'); return; }
+    if (type === 'hold') { issue(type, unit.city); return; }
+    if (type === 'rest' && state.owners[unit.city] === state.player) {
+      issue('rest', unit.city);
+      return;
+    }
+    if ((type === 'entrench' || type === 'defend') && pendingOrder === type && state.owners[unit.city] === state.player) {
+      issue(type, unit.city);
+      return;
+    }
     pendingOrder = pendingOrder === type ? undefined : type;
     setMapHelp();
     render();
@@ -710,15 +875,19 @@
       ? unit.name + ' · ' + cityName(unit.city) + (count > 1 ? '（编队 ' + count + ' 支）' : '')
       : '作战命令';
     $('deck-hint').textContent = count > 1
-      ? '已选 ' + count + ' 支部队：点「编成计划」统一指定战线与目标'
-      : pendingOrder ? '已选' + commands[pendingOrder] + '，点击地图目标'
-        : unit && permitted(unit) ? '点选命令再选城镇，或右键直接下令 · Ctrl 点击多选'
-          : '在地图上点击己方部队牌，可向纵队、师、团下令';
-    $('command-bar').innerHTML = Object.entries(commands).map(([type, label]) => '<button type="button" data-command="'
-      + type + '" data-deck-command="' + type + '" aria-pressed="' + (pendingOrder === type) + '">'
-      + label + '</button>').join('')
-      + '<button type="button" data-command="bombard" data-deck-command="bombard" aria-pressed="' + (pendingOrder === 'bombard') + '"'
-      + (unit && permitted(unit) && (state.airWar?.[state.player]?.planes ?? 0) >= 10 ? '' : ' disabled') + '>战略轰炸</button>'
+      ? '已选 ' + count + ' 支纵队：点战术命令再点城镇可协同行动'
+      : pendingOrder ? '已选「' + commands[pendingOrder] + '」：点击目标城镇，或点「就地执行」'
+        : unit && permitted(unit) ? '每个战术对应专属三维动作 · 5000人/兵 · 5坦/标 · 3机/标 · 1舰/标'
+          : '直接点击地图上的任一纵队/军即可单独调遣（Ctrl 多选）';
+    const commandButton = (type) => '<button type="button" data-command="' + type + '" data-deck-command="' + type
+      + '" aria-pressed="' + (pendingOrder === type) + '">' + commands[type] + '</button>';
+    const canHere = pendingOrder && ['defend', 'entrench', 'rest'].includes(pendingOrder)
+      && unit && permitted(unit) && state.owners[unit.city] === state.player;
+    $('command-bar').innerHTML = ['advance', 'siege', 'defend', 'entrench', 'intercept', 'move', 'rest', 'hold'].map(commandButton).join('')
+      + '<button type="button" data-command="bombard" data-deck-command="bombard" aria-pressed="'
+      + (pendingOrder === 'bombard') + '"' + (unit && permitted(unit) && (state.airWar?.[state.player]?.planes ?? 0) >= 10
+        ? '' : ' disabled') + '>轰炸</button>'
+      + (canHere ? '<button type="button" class="gold" data-deck-here>就地' + commands[pendingOrder] + '</button>' : '')
       + '<button type="button" data-deck-plan' + (count > 1 || unit ? '' : ' disabled') + '>编成计划</button>'
       + (count > 1 ? '<button type="button" data-deck-clear>清空编队</button>' : '')
       + '<button type="button" data-deck-undo' + (undoStack.length ? '' : ' disabled') + '>撤销</button>'
@@ -987,21 +1156,21 @@
   function guide() {
     showDialog('作战操作', '<div class="stack"><div class="card"><h3>选部队</h3><p>点击地图上带番号和兵力的部队牌。'
       + '右侧直接展开纵队、师和团，点击任意一行可切换指挥对象。按住 Ctrl 或 Shift 点击可多选。</p></div>'
-      + '<div class="card"><h3>下命令</h3><p>选中后，右键相邻敌城进攻，右键己方城镇调动。'
-      + '也可以拖动部队牌到目标，或先选底部的命令再点击地图。围城和围点打援均需选相邻敌城。</p></div>'
+      + '<div class="card"><h3>下命令</h3><p>选中部队后，可以右键任一可达敌城或拖动部队牌到目标；远程进攻会沿己方陆路逐站推进，铁路路段更快。'
+      + '也可以先选底部命令再点目标。围城直接打目标；围点打援则先行军到目标外围。</p></div>'
       + '<div class="card"><h3>作战计划</h3><p>Ctrl 多选部队后点底部的「编成计划」，先选<strong>作战决心</strong>：'
       + '突击目标、守备战线、沿战线进攻或后撤至战线，并指定目标与战线。'
       + '统一预览后一键执行，执行中可暂停、撤销或交给司令员。</p></div>'
       + '<div class="card"><h3>组织度与战役</h3><p>部队牌底部的小条是组织度。进攻与防守按日消耗组织度，'
       + '组织度先耗尽的一方退出战斗：守军通常撤退而不是被全歼，只有在没有退路时才会成建制被俘。'
-      + '驻防和补给充足的部队每天恢复组织度。</p></div>'
+      + '被击退的进攻部队会原地整补并结束当前命令；准备好后可重新下令。驻防和补给充足的部队每天恢复组织度。</p></div>'
       + '<div class="card"><h3>政治与决议</h3><p>顶部「政治决议」用政治点执行策反、整军、空运补给与动员。'
       + '战争支持度会随城镇得失升降，支持度崩溃又丢掉首都时，这一方可能停战。</p></div>'
       + '<div class="card"><h3>国防与建设</h3><p>顶部「国防建设」有国策、科研、生产、编制、空军、海军、指挥与情报八个页签：'
-      + '国策按天推进；科研解锁装备型号与装甲营；生产把工厂分到四条装备线与运输船；'
+      + '国策按天推进；科研解锁装备型号与装甲营；生产把工厂分到装备线与运输船，城镇详情可建设军工厂和民用工厂；'
       + '编制设计营级模板并指派给部队；空军切换制空/近距支援/遮断/空投；'
       + '海军决定渡海运力；指挥点可下强行军、死守与炮火准备；情报页处理抵抗、法令与外交。</p></div>'
-      + '<div class="card"><h3>铁路补给</h3><p>顶部「铁路补给」查看后方库存、运输瓶颈与各城镇补给覆盖，'
+      + '<div class="card"><h3>后勤补给</h3><p>顶部「后勤补给」查看后方库存、铁路与车队运输瓶颈、各城镇补给覆盖，'
       + '并在地图上标出缺口。弹药、油料、医疗物资分别计算，补给越差，部队战斗力与整补越慢。</p></div>'
       + '<div class="card"><h3>工事与编制</h3><p>城镇面板的「修筑工事」由驻军工兵施工，可修战壕、掩体、障碍、'
       + '碉堡、固定炮位与补给站。部队面板的「调整编制」可分配装甲、炮兵、工兵、医护和运输支援。</p></div>'
@@ -1102,10 +1271,14 @@
       + '<tr><td>伤员（回补）</td><td colspan="2">' + format(record.wounded) + '</td></tr>'
       + '<tr><td>俘虏</td><td>' + format(record.prisoners) + '</td><td>—</td></tr>'
       + '<tr><td>缴获军械</td><td>' + format(record.captured.arms) + '</td><td>—</td></tr>'
+      + '<tr><td>枪炮库存增加</td><td colspan="2">步兵装备 ' + format(record.captured.infantry ?? 0)
+      + ' · 火炮 ' + format(record.captured.artillery ?? 0) + ' · 装甲 ' + format(record.captured.armor ?? 0) + '</td></tr>'
       + '<tr><td>缴获油料 / 医疗</td><td>' + format(record.captured.fuel) + ' / '
       + format(record.captured.medical) + '</td><td>—</td></tr>'
       + '<tr><td>士气变化</td><td>' + (record.moraleAttack >= 0 ? '+' : '') + record.moraleAttack
       + '</td><td>' + (record.moraleDefend >= 0 ? '+' : '') + record.moraleDefend + '</td></tr>'
+      + '<tr><td>民心 / 战争支持</td><td>' + ((record.supportAttack ?? 0) >= 0 ? '+' : '') + (record.supportAttack ?? 0).toFixed(2)
+      + '</td><td>' + ((record.supportDefend ?? 0) >= 0 ? '+' : '') + (record.supportDefend ?? 0).toFixed(2) + '</td></tr>'
       + '<tr><td>老兵经验</td><td colspan="2">'
       + escape(short[record.experience] || '') + ' +0.5 级</td></tr></tbody></table>';
   }
@@ -1129,12 +1302,19 @@
 
   function regionalGroups() {
     const current = state.group;
-    showDialog('地方派系', '<p>派系标记沿用部队和将领的历史关联。可查看归属并筛选部队。</p>'
+    showDialog('全国野战军与地方军阀派系', '<p>各地方军阀均着国军制式军服并佩戴地域特色装具，列明司令官、总兵力及各军下辖师旅建制。</p>'
       + '<div class="detail-grid">' + [...groupsById.values()].map((group) => {
-        const count = Engine.activeUnits(state).filter((unit) => !unit.parent && unit.group === group.id).length;
+        const corps = Engine.activeUnits(state).filter((unit) => !unit.parent && unit.group === group.id);
+        const count = corps.length;
+        const totalMen = corps.reduce((sum, u) => sum + u.strength, 0);
+        const totalDivs = corps.reduce((sum, u) => sum + state.units.filter((c) => c.parent === u.id && c.strength > 0).length, 0);
+        const commanders = [...new Set(corps.map((u) => leadersById.get(u.leader)?.name).filter(Boolean))].slice(0, 4).join('、');
         return '<article class="card"><h3>' + escape(group.name) + '</h3><p>' + escape(group.summary) + '</p><p>'
-          + escape(regions[group.region] || '') + ' · 在役部队 ' + count + ' 支</p><div class="dialog-actions">'
-          + (count ? '<button type="button" data-group-roster="' + escape(group.id) + '">查看部队</button>' : '')
+          + escape(regions[group.region] || '') + ' · 在役 <strong>' + count + '</strong> 个纵队/军（共 ' + totalDivs + ' 个师/旅 · '
+          + format(totalMen) + ' 人）' + (commanders ? '<br><small>主要将领：' + escape(commanders) + '</small>' : '')
+          + '</p>' + (corps.length ? '<p class="subtext">' + escape(corps.slice(0, 5).map((u) => u.name + ' ' + format(u.strength) + '人').join(' · ')) + '</p>' : '')
+          + '<div class="dialog-actions">'
+          + (count ? '<button type="button" data-group-roster="' + escape(group.id) + '">查看各军编制</button>' : '')
           + (count && typeof Engine.setGroup === 'function' ? '<button type="button" data-group-control="'
             + escape(group.id) + '">' + (current === group.id ? '接管阵营全局' : '接管此派系') + '</button>' : '')
           + sourceLink(group.source, '史料') + '</div></article>';
@@ -1333,7 +1513,7 @@
   }
 
   function logisticsPanel() {
-    if (typeof Engine.supplyReading !== 'function') { showDialog('铁路补给', '<p>当前版本不支持补给网络。</p>'); return; }
+    if (typeof Engine.supplyReading !== 'function') { showDialog('后勤补给', '<p>当前版本不支持补给网络。</p>'); return; }
     const reading = Engine.supplyReading(Data, state);
     const side = state.player;
     const stock = reading.stocks[side];
@@ -1361,7 +1541,7 @@
       + escape(cityName(item.cities[0]) + ' — ' + cityName(item.cities[1])) + '</td><td>' + format(item.load)
       + '</td><td>' + format(item.capacity) + '</td><td>' + Math.round(item.severity * 100) + '%</td></tr>').join('')
       : '<tr><td colspan="4">当前没有运输瓶颈。</td></tr>';
-    showDialog('铁路补给', '<p>后方库存经铁路送到车站与补给站，再分发到前线部队。'
+    showDialog('后勤补给', '<p>库存通过铁路干线和公路车队送到前线补给站，再分发给部队；不在铁路线上的驻军仍可沿陆路获得补给。'
       + '覆盖越低、运输越紧张，部队的弹药、油料与医疗物资补充越慢。</p>'
       + (state.supplyReport?.[side]
         ? '<p class="subtext">最近一日：到货 ' + format(state.supplyReport[side].delivered)
@@ -1372,7 +1552,7 @@
       + '<p class="subtext">物资系数 ' + scarcity.toFixed(2) + '；后方产量随驻军规模与城市产值增长。可用率 '
       + Math.round((reading.ration?.[side] ?? 1) * 100) + '%。侦察 '
       + format(valueOf(state.recon, side, 34)) + ' · 空中支援 ' + format(valueOf(state.air, side, 16)) + '。</p></div>'
-      + '<div><h3>运输瓶颈</h3><table class="dialog-table"><thead><tr><th>铁路段</th><th>运量</th><th>容量</th>'
+      + '<div><h3>运输瓶颈</h3><table class="dialog-table"><thead><tr><th>运输段</th><th>运量</th><th>容量</th>'
       + '<th>紧张度</th></tr></thead><tbody>' + bottleneckRows + '</tbody></table></div></div>'
       + '<p class="roster-label">补给覆盖</p><table class="dialog-table"><thead><tr><th>驻军城镇</th><th>兵力</th>'
       + '<th>通路</th><th>弹药</th><th>覆盖</th></tr></thead><tbody>' + (coverageRows || '<tr><td colspan="5">暂无驻军。</td></tr>')
@@ -1385,7 +1565,11 @@
       const enemies = Engine.activeUnits(state).filter((unit) => !unit.parent && unit.side !== state.player
         && unit.strength > 0).sort((a, b) => b.strength - a.strength).slice(0, 40);
       return '<label class="field">策反对象<select name="unit">'
-        + enemies.map((unit) => option(unit.id, unit.name + ' · ' + cityName(unit.city), '')).join('')
+        + enemies.map((unit) => {
+          const commander = leadersById.get(unit.leader)?.name;
+          const group = groupsById.get(unit.group)?.name;
+          return option(unit.id, [unit.name, commander, group, cityName(unit.city)].filter(Boolean).join(' · '), '');
+        }).join('')
         + '</select></label>';
     }
     if (kind === 'reorganize' || kind === 'airlift') {
@@ -1460,8 +1644,17 @@
     const side = state.player;
     const production = state.production?.[side] ?? { lines: {} };
     const stock = state.stock?.[side] ?? {};
-    const labels = { infantry: '步兵装备', artillery: '火炮', armor: '装甲装备', air: '航空装备', naval: '运输船' };
-    return '<p class="subtext">工厂数按控制城镇价值折算。产线比例总和不超过 100，比例越高产出越多。</p>'
+    const labels = { infantry: '步兵装备', artillery: '火炮', armor: '装甲装备', air: '航空装备', naval: '舰艇与运输船' };
+    const controlledValue = Data.cities.filter(city => state.owners[city.id] === side)
+      .reduce((sum, city) => sum + (Number(city.value) || 1), 0);
+    const militaryFactories = Data.cities.reduce((sum, city) => sum + (state.owners[city.id] === side
+      ? Number(state.buildings?.[city.id]?.militaryFactory) || 0 : 0), 0);
+    const civilianFactories = Data.cities.reduce((sum, city) => sum + (state.owners[city.id] === side
+      ? Number(state.buildings?.[city.id]?.civilianFactory) || 0 : 0), 0);
+    const projects = (state.construction || []).filter(job => job.side === side).length;
+    return '<p class="subtext">基础产能随控制区变化；军工厂增加装备产量，民用工厂增加财政并加快施工。选择城镇后可在地图详情直接开建。产线比例总和不超过 100。</p>'
+      + '<div class="stat-line">' + statChips({ '基础工厂': Math.max(2, Math.round(controlledValue / 9)),
+        '军工厂': militaryFactories, '民用工厂': civilianFactories, '建设项目': projects }) + '</div>'
       + '<form id="production-form" class="card"><div class="production-grid">'
       + Object.entries(labels).map(([key, label]) => '<label>' + label + '<input type="number" min="0" max="100" name="'
         + key + '" value="' + (production.lines?.[key] ?? 0) + '"></label>').join('')
@@ -1470,6 +1663,7 @@
       + Object.entries(labels).filter(([key]) => key !== 'naval').map(([key, label]) =>
         '<tr><td>' + label + '</td><td>' + format(stock[key] ?? 0) + '</td></tr>').join('')
       + '<tr><td>运输船</td><td>' + format(state.navy?.[side]?.transports ?? 0) + '</td></tr>'
+      + '<tr><td>军舰</td><td>' + format(state.navy?.[side]?.warships ?? 0) + '</td></tr>'
       + '</tbody></table>';
   }
 
@@ -1707,9 +1901,10 @@
         + '<button type="button" data-decide="' + escape(kind) + '"' + (disabled ? ' disabled' : '') + '>'
         + (cooldown ? cooldown + ' 天后' : politics.points < info.cost ? '点数不足' : '执行') + '</button></article>';
     }).join('');
-    showDialog('政治与决议', '<p>政治点随控制城镇每日增长。决议有冷却，战争支持度低于 25 又丢掉首都时可能停战。</p>'
+    showDialog('政治与决议', '<p>政治点随控制城镇每日增长。战斗胜负、伤亡、民心与供给会影响支持度和征兵；决议有冷却。'
+      + '首都失守且支持度长期低迷时可能停战。</p>'
       + '<div class="politics-head"><div><span>政治点</span><strong>' + format(politics.points) + '</strong></div>'
-      + '<div><span>战争支持</span><strong>' + format(support) + '</strong></div>'
+      + '<div><span>民心 / 战争支持</span><strong>' + format(support) + '</strong></div>'
       + '<div><span>首都</span><strong>' + escape(cityName(capital)) + '</strong></div></div>'
       + cards + '<div class="dialog-actions"><button type="button" data-politics-close>关闭</button></div>');
   }
@@ -1971,7 +2166,8 @@
   function appoint(unitId) {
     const unit = state.units.find((member) => member.id === unitId);
     if (!permitted(unit) || typeof Engine.setLeader !== 'function') return;
-    const names = [...leadersById.values()].filter((leader) => leader.side === unit.side);
+    const names = [...leadersById.values()].filter((leader) =>
+      (state.leaderTransfers?.[leader.id] || leader.side) === unit.side);
     const body = showDialog('任命将领', '<p>' + escape(unit.name) + '</p><form><div class="form-grid">'
       + '<label>指挥官<select name="leader">' + option('', '解除当前任命', unit.leader || '')
       + names.map((leader) => option(leader.id, leader.name + ' · ' + (leader.role || ''), unit.leader)).join('')
@@ -2004,9 +2200,29 @@
     else if (d.backRoster !== undefined) { stack = selectedUnit = pendingOrder = undefined; setMapHelp(); render(); }
     else if (d.findCity !== undefined) cityPicker();
     else if (d.delegate) delegate(d.delegate);
+    else if (d.releaseAi) {
+      if (action('releaseToAI', [d.releaseAi])) {
+        saveAuto(true); render(); notify('该部队已交给司令员自动安排。');
+      }
+    }
     else if (d.appoint) appoint(d.appoint);
     else if (d.leader) { const leader = leadersById.get(d.leader); if (leader) showDialog(leader.name, leaderCard(leader)); }
     else if (d.gearUnit !== undefined) gear();
+    else if (d.buildBuilding) {
+      const kind = d.buildBuilding;
+      if (action('buildBuilding', [selectedCity, kind])) {
+        saveAuto(true);
+        render();
+        notify(cityName(selectedCity) + '已加入' + (meta.buildingKinds?.[kind]?.name || '建设项目') + '施工队列。');
+      }
+    }
+    else if (d.recruitBranch) {
+      if (action('recruitArmy', [selectedCity, d.recruitBranch])) {
+        saveAuto(true);
+        render();
+        notify(cityName(selectedCity) + '已开始训练新编' + (recruitmentInfo[d.recruitBranch]?.name || '部队') + '。');
+      }
+    }
     else if (d.forts) fortsPanel(d.forts);
     else if (d.formation) formationPanel(d.formation);
     else if (d.defenseDesign) defensePanel('design', { unitId: d.defenseDesign });
@@ -2014,6 +2230,28 @@
     else if (d.stageReport !== undefined) stageReport();
     else if (d.clearGroup !== undefined) { rosterGroup = ''; renderInspector(); }
   };
+  $('battle-hud').addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    const d = button.dataset;
+    if (d.battleFocus) {
+      selectCity(d.battleFocus, false, true);
+    } else if (d.battlePosture) {
+      const city = d.battleCity;
+      if (action('setBattlePosture', [city, d.battlePosture])) {
+        saveAuto(true);
+        render();
+        notify('已切换为「' + ({ balanced: '均衡', assault: '全线突击', envelop: '多路包围', cautious: '谨慎推进', hold: '坚守阵地' }[d.battlePosture]) + '」。');
+      }
+    } else if (d.battleAction === 'barrage') {
+      const city = d.battleCity;
+      if (action('commandAbility', ['barrage', { city }])) {
+        saveAuto(true);
+        render();
+        notify(cityName(city) + '方向炮火准备已下达。');
+      }
+    }
+  });
   $('inspector-body').onchange = (event) => {
     if (event.target.id === 'roster-side') rosterSide = event.target.value;
     else if (event.target.id === 'roster-region') rosterRegion = event.target.value;
@@ -2210,7 +2448,7 @@
         const wasCurrent = state.group === group.id;
         if (state.player !== group.side) action('setSide', [group.side]);
         action('setGroup', [wasCurrent ? null : group.id]);
-        if (!wasCurrent) changeScope('national');
+        if (!wasCurrent) changeScope('theater', group.region);
         saveAuto(true);
       }
       rosterGroup = group.id;
@@ -2265,6 +2503,21 @@
   };
   $('national-view').onclick = () => changeScope('national');
   $('theater-view').onclick = () => changeScope('theater', citiesById.get(selectedCity)?.region);
+  if ($('night-toggle')) {
+    $('night-toggle').onclick = () => {
+      if (action('setNightMode', [!state.nightMode])) {
+        saveAuto(true);
+        render();
+        notify(state.nightMode ? '已切入夜间视图：驻城待命与休整部队转入篝火帐篷宿营姿态。' : '已切回白昼视图。');
+      }
+    };
+  }
+  $('map-expand').onclick = (event) => {
+    const expanded = document.querySelector('.workspace').classList.toggle('map-expanded');
+    event.currentTarget.setAttribute('aria-pressed', String(expanded));
+    event.currentTarget.textContent = expanded ? '恢复面板' : '展开地图';
+    event.currentTarget.title = expanded ? '恢复两侧面板' : '展开地图，隐藏两侧面板';
+  };
   $('find-city').onclick = () => cityPicker();
   $('sector-select').innerHTML = Object.entries(regions).map((item) => option(...item)).join('');
   $('sector-select').onchange = (event) => {
@@ -2276,6 +2529,7 @@
     if (!button) return;
     const args = button.dataset;
     if (args.command) chooseCommand(args.command);
+    else if (args.deckHere !== undefined && pendingOrder && inspectUnit()) issue(pendingOrder, inspectUnit().city);
     else if (args.deckPlan !== undefined) planEditor();
     else if (args.deckClear !== undefined) { selectedUnits = new Set(); render(); }
     else if (args.deckUndo !== undefined) undo();

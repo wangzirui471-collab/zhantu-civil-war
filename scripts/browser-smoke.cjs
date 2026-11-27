@@ -91,6 +91,32 @@ async function main() {
     await request('Page.navigate', { url });
     await poll(() => value('#date'), (label) => label === '1948.09.12');
     assert.equal(await value('#date'), '1948.09.12');
+    const originalMapWidth = await evaluate('document.querySelector("#map").getBoundingClientRect().width');
+    await click('#map-expand');
+    await wait(180);
+    assert.equal(await evaluate('document.querySelector("#map-expand").getAttribute("aria-pressed")'), 'true');
+    assert(await evaluate('document.querySelector("#map").getBoundingClientRect().width') > originalMapWidth + 200,
+      '大地图视图应扩大地图画布');
+    await click('#map-expand');
+    await wait(180);
+    assert.equal(await evaluate('document.querySelector("#map-expand").getAttribute("aria-pressed")'), 'false');
+    const zoomExpansion = await evaluate(`(() => {
+      const distance = () => { const a = testMap.point('jinzhou'), b = testMap.point('tashan');
+        return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+      testMap.zoom(10); const before = distance(); testMap.zoom(2); const after = distance();
+      testMap.focus('northeast', 'jinzhou'); return after / before;
+    })()`);
+    assert(zoomExpansion > 1.4, '高倍率下地图应仍可继续放大');
+    assert.equal(await evaluate('document.querySelector("#map").dataset.humanModel'), 'webgl',
+      '浏览器应实际启用 WebGL 人物模型');
+    assert(await evaluate(`(() => {
+      const renderer = CivilWarHuman3D.createRenderer();
+      const frame = renderer.frame('ccp', true, 200);
+      const pixels = frame.getContext('2d').getImageData(0, 0, frame.width, frame.height).data;
+      let visible = 0;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) visible++;
+      return visible > 100;
+    })()`), '三维模型应真实绘制出可见人物');
     assert(await evaluate('document.documentElement.scrollHeight <= innerHeight'));
     assert(await evaluate('CivilWarGeography.grids.length === 3 && CivilWarGeography.provinces.length > 30'));
     const mapImageBefore = await evaluate('document.querySelector("#map").toDataURL().length');
@@ -126,12 +152,18 @@ async function main() {
     await click('#dialog form button[type=submit]');
     assert.equal((await state()).units.find((unit) => unit.id === 'nw3').delegateTarget, 'jinzhou');
     await click('[data-delegate=nw3]');
-    assert.equal(await evaluate('document.querySelectorAll(".formation-table tbody tr").length'), 9);
+    assert(await evaluate('document.querySelectorAll(".formation-table tbody tr").length >= 9'));
     await click('.formation-table [data-unit=nw3-d1-r1]');
     await click('[data-command=hold]');
     assert(await value('#toast').then((message) => message.includes('已下达')));
     const regiment = (await state()).units.find((unit) => unit.level === 'regiment' && unit.order?.type === 'hold');
     assert(regiment, '团级命令应写入存档');
+    assert.equal(regiment.manualAssignment, true, '手动命令应保留玩家对该团的控制');
+    assert((await value('#inspector-body')).includes('位置与任务'));
+    await click('[data-release-ai="' + regiment.id + '"]');
+    const released = (await state()).units.find((unit) => unit.id === regiment.id);
+    assert.equal(released.manualAssignment, undefined, '交给 AI 后应解除手动控制');
+    assert.equal(released.order, undefined, '交给 AI 后应清除此前的手动任务');
 
     const opponentPoint = await point('jinzhou');
     await mouse('mousePressed', opponentPoint, 'right');
@@ -156,6 +188,17 @@ async function main() {
     await mouse('mousePressed', opponentPoint);
     await mouse('mouseReleased', opponentPoint);
     assert.equal((await state()).units.find((unit) => unit.id === regiment.id).order.type, 'intercept', await value('#toast'));
+
+    // 验证新增直出战术：挖战壕、城内休整与右上角夜间宿营切换
+    await click('[data-command=entrench]');
+    await click('[data-deck-here]');
+    assert.equal((await state()).units.find((unit) => unit.id === regiment.id).order.type, 'entrench', await value('#toast'));
+    await click('[data-command=rest]');
+    assert.equal((await state()).units.find((unit) => unit.id === regiment.id).order.type, 'rest', await value('#toast'));
+    await click('#night-toggle');
+    assert.equal((await state()).nightMode, true);
+    await click('#night-toggle');
+    assert.equal((await state()).nightMode, false);
 
     await click('#gear');
     await click('[name=profile][value=artillery]');
@@ -195,6 +238,9 @@ async function main() {
 
     await click('#groups');
     assert((await value('#dialog-body')).includes('桂系'));
+    assert((await value('#dialog-body')).includes('青海马步芳'));
+    assert((await value('#dialog-body')).includes('胡宗南'));
+    assert((await value('#dialog-body')).includes('西藏'));
     await click('[data-group-control=guixi]');
     assert.equal((await state()).group, 'guixi');
     assert.equal((await state()).player, 'roc');
@@ -413,7 +459,50 @@ async function main() {
     await mouse('mousePressed', jinzhouPoint);
     await mouse('mouseReleased', jinzhouPoint);
     assert.equal((await state()).units.find((unit) => unit.id === 'nw3').order.type, 'advance', await value('#toast'));
-    for (let day = 0; day < 60; day++) await click('#step');
+    let sawBattleAnimation = false;
+    for (let day = 0; day < 60; day++) {
+      await click('#step');
+      if (!sawBattleAnimation && Object.keys((await state()).battles || {}).length) {
+        assert.equal(await evaluate('document.querySelector("#battle-hud").hidden'), false,
+          '进行中的战斗应立即显示战场指挥面板');
+        const battleChoice = await evaluate(`(() => {
+          const saved = JSON.parse(JSON.parse(localStorage.getItem('civil-war-map-v1')).auto).state;
+          const city = document.querySelector('#battle-hud [data-battle-posture]')?.dataset.battleCity;
+          const battle = saved.battles?.[city];
+          const posture = saved.player === battle?.side ? 'assault' : 'hold';
+          const button = [...document.querySelectorAll('#battle-hud [data-battle-posture]')]
+            .find((item) => item.dataset.battlePosture === posture);
+          return { city, posture, available: Boolean(button && !button.disabled) };
+        })()`);
+        if (battleChoice.available) {
+          await click('#battle-hud [data-battle-posture=' + battleChoice.posture + ']');
+          const changed = await state();
+          assert.equal(changed.battles[battleChoice.city].postureBySide?.[changed.player], battleChoice.posture,
+            '玩家应能在战斗进行中切换进攻或坚守姿态');
+        }
+        sawBattleAnimation = await evaluate(`new Promise((resolve) => {
+          const canvas = document.querySelector('#map');
+          const context = canvas.getContext('2d');
+          const before = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          setTimeout(() => {
+            const after = context.getImageData(0, 0, canvas.width, canvas.height).data;
+            let changed = 0;
+            for (let index = 0; index < after.length; index += 28) {
+              if (after[index] !== before[index] || after[index + 1] !== before[index + 1]
+                || after[index + 2] !== before[index + 2]) changed += 1;
+              if (changed > 12) break;
+            }
+            resolve(changed > 12);
+          }, 220);
+        })`);
+        if (sawBattleAnimation && process.env.CIVIL_WAR_BATTLE_SCREENSHOT) {
+          await wait(620);
+          const battleFrame = await request('Page.captureScreenshot', { format: 'png' });
+          await fs.writeFile(process.env.CIVIL_WAR_BATTLE_SCREENSHOT, Buffer.from(battleFrame.data, 'base64'));
+        }
+      }
+    }
+    assert(sawBattleAnimation, '地图上应有持续更新的战斗动效');
     await click('#show-log');
     assert((await value('#dialog-body')).includes('累计战果'));
     await choose('#brief-filter', 'all');
@@ -469,7 +558,30 @@ async function main() {
       const result = await request('Page.captureScreenshot', { format: 'png' });
       await fs.writeFile(process.env.CIVIL_WAR_SCREENSHOT, Buffer.from(result.data, 'base64'));
     }
-    console.log('浏览器通过：地图命令、多选作战计划、政治决议与撤销、国策科研生产编制空军指挥情报、铁路补给、工事、多日战役与战报、单屏界面、锦州引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
+    const reviewUrl = pathToFileURL(path.resolve(__dirname, '..', '..', 'model-review', '模型审阅.html')).href;
+    await request('Page.navigate', { url: reviewUrl });
+    await poll(() => value('#action-status'), text => text.includes('运行中'));
+    assert.deepEqual(await evaluate(`['advanced-units','rifles','smgs','machineguns','pistols']
+      .map(id => document.querySelectorAll('#' + id + ' .card').length)`), [10, 6, 3, 6, 4],
+      '新增兵种与枪械应全部出现在审阅页');
+    for (const [command, label] of [['move', '行军'], ['advance', '射击'], ['defend', '防御'],
+      ['siege', '围住'], ['intercept', '拦截'], ['hold', '待命'], ['bombard', '轰炸']]) {
+      await choose('#action-choice', command);
+      await poll(() => value('#action-description'), text => text.includes(label));
+    }
+    await choose('#action-choice', 'advance');
+    const beforeAction = await evaluate('document.querySelector("#action-preview").toDataURL()');
+    await wait(350);
+    assert.notEqual(await evaluate('document.querySelector("#action-preview").toDataURL()'), beforeAction,
+      '进攻预览应显示随时间变化的画面');
+    if (process.env.CIVIL_WAR_REVIEW_SCREENSHOT) {
+      await request('Emulation.clearDeviceMetricsOverride');
+      await wait(200);
+      const screenshot = await request('Page.captureScreenshot', { format: 'png' });
+      await fs.writeFile(process.env.CIVIL_WAR_REVIEW_SCREENSHOT, Buffer.from(screenshot.data, 'base64'));
+    }
+    assert.deepEqual(errors, []);
+    console.log('浏览器通过：地图命令、多选作战计划、政治决议与撤销、国策科研生产编制空军指挥情报、铁路补给、工事、实时战斗姿态与地图动效、多日战役与战报、单屏界面、锦州引导、两方案预测与存档隔离、历史日期开局、自动暂停、旧存档和照片。');
   } finally {
     socket?.close();
     child.kill();

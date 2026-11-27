@@ -79,6 +79,20 @@ test('师团接受独立命令，所属军可以继续指挥其他部队', () =>
   assert.equal(armyRegiments(state, 'first').filter(unit => unit.city === 'b').length, 1);
 });
 
+test('未安排的师由司令员自动布置，手动驻防的师不被覆盖', () => {
+  const api = getEngine();
+  const state = create({ group: 'north', goal: 'all' });
+  const divisions = state.units.filter(unit => unit.parent === 'first');
+  assert.equal(api.order(data, state, divisions[0].id, 'hold').ok, true);
+  api.step(data, state, 7);
+  const manual = state.units.filter(unit => unit.parent === divisions[0].id);
+  const automatic = state.units.filter(unit => unit.parent === divisions[1].id);
+  assert.ok(manual.every(unit => unit.order?.type === 'hold' && !unit.automatedOrder));
+  assert.ok(automatic.some(unit => unit.automatedOrder), '未下令的师应由 AI 安排');
+  assert.equal(api.releaseToAI(state, divisions[0].id).ok, true);
+  assert.ok(manual.every(unit => !unit.manualAssignment && !unit.order));
+});
+
 function armyRegiments(state, id) {
   const divisions = state.units.filter(unit => unit.parent === id).map(unit => unit.id);
   return state.units.filter(unit => divisions.includes(unit.parent));
@@ -116,12 +130,13 @@ test('地图预览复用实际命令路径，显示多段耗时并保持存档�
   const before = api.snapshot(state);
   const previews = api.previewOrders(board, state, 'first');
   assert.deepEqual(previews.c.move, { ok: true, days: 8, route: ['a', 'b', 'c'] });
-  assert.equal(previews.d.advance.ok, false);
+  assert.equal(previews.d.advance.ok, true, '全国统帅可把进攻命令下达给远方目标');
+  assert.deepEqual(previews.d.advance.route, ['a', 'b', 'c', 'd']);
   assert.equal(previews.b.siege.ok, false);
   assert.equal(previews.b.intercept.ok, false);
   assert.deepEqual(previews.c.move, api.previewOrder(board, state, 'first', 'move', 'c'));
   assert.deepEqual(state, before);
-  assert.equal(api.order(board, state, 'first', 'advance', 'd').error, previews.d.advance.error);
+  assert.equal(api.order(board, state, 'first', 'advance', 'd').ok, true);
 
   assert.equal(api.order(board, state, 'first', 'move', 'c').ok, true);
   api.step(board, state, 7);
@@ -208,6 +223,36 @@ test('战役委任可接管己方部队', () => {
   api.step(data, state, 28);
   assert.equal(state.owners.b, 'ccp');
 });
+
+test('挖战壕、城内休整、夜间模式与史实多师旅建制正常运作', () => {
+  const api = getEngine();
+  require('../data.js');
+  const fullData = globalThis.CivilWarData;
+  const nwState = api.createGame(fullData, { scenarioId: 'northwest', side: 'ccp', scope: 'national', historyMode: 'dynamic' });
+  assert.equal(nwState.date, '1949-07-10');
+  // 验证西北二马、胡宗南、新疆、西藏、滇军、川军、桂军、粤军在全国战局/剧本中均按军级分开存在且带准确下辖师旅
+  for (const id of ['1f-1', '1f-2', 'roc-1c', 'r82', 'r129', 'r11-ning', 'xj-42', 'xz-chamdo', 'xz-lhasa', 'r93-dian', 'r24', 'r95-chuan', 'r7', 'r62-yue']) {
+    const u = nwState.units.find(item => item.id === id);
+    assert.ok(u && u.strength > 0, '应包含独立军/纵队: ' + id);
+    const divs = nwState.units.filter(item => item.parent === id);
+    assert.ok(divs.length >= 2, id + ' 应包含真实下辖师/旅/代本');
+  }
+  const leaf = nwState.units.find(item => item.id === '1f-1-d1-r1');
+  leaf.org = 50;
+  leaf.morale = 60;
+  assert.equal(api.order(fullData, nwState, '1f-1', 'rest', nwState.units.find(u => u.id === '1f-1').city).ok, true);
+  api.step(fullData, nwState, 2);
+  assert.ok(leaf.org >= 80, '城内休整应快速恢复组织度');
+  assert.ok(leaf.morale >= 65, '城内休整应提升士气');
+
+  const c2 = nwState.units.find(u => u.id === '1f-2').city;
+  assert.equal(api.order(fullData, nwState, '1f-2', 'entrench', c2).ok, true);
+  api.step(fullData, nwState, 6);
+  assert.ok((nwState.forts?.[c2]?.trench || 0) >= 1, '挖战壕指令应自动累积并建成战壕等级');
+
+  assert.equal(api.setNightMode(nwState, true).nightMode, true);
+});
+
 
 test('委任军向指定目标优先行军', () => {
   const api = getEngine();

@@ -17,6 +17,22 @@
     catch { return normalize(null); }
   }
 
+  function writeLocalBackup(storage, key, normalized) {
+    if (!storage) return false;
+    try {
+      storage.setItem(key, JSON.stringify(normalized));
+      return true;
+    } catch {
+      for (let keep = Math.min(2, normalized.slots.length - 1); keep >= 0; keep--) {
+        try {
+          storage.setItem(key, JSON.stringify({ ...normalized, slots: normalized.slots.slice(0, keep) }));
+          return true;
+        } catch { /* 继续缩减本地手动槽备份，保证最新 auto 状态实时落盘。 */ }
+      }
+      return false;
+    }
+  }
+
   function nativeDatabase(factory) {
     if (!factory || typeof factory.open !== 'function') return Promise.resolve(null);
     return new Promise((resolve, reject) => {
@@ -64,6 +80,8 @@
     const suppliedDatabase = options.database;
     let databasePromise;
     let lastWriteAt = 0;
+    const latestByKey = new Map();
+    let writeChain = Promise.resolve();
     const stamp = value => {
       lastWriteAt = Math.max(Date.now(), lastWriteAt + 1);
       return { ...normalize(value), updatedAt: lastWriteAt };
@@ -79,7 +97,9 @@
     };
 
     async function load(key) {
-      const legacy = localValue(storage, key);
+      const rawLegacy = localValue(storage, key);
+      // 老 localStorage 没有 updatedAt；第一次迁移时以 0 作为版本戳，IndexedDB 优先。
+      const legacy = { ...rawLegacy, updatedAt: rawLegacy.updatedAt || 0 };
       lastWriteAt = Math.max(lastWriteAt, legacy.updatedAt);
       try {
         const db = await database();
@@ -88,16 +108,17 @@
         if (saved === null || saved === undefined) {
           const migrated = stamp(legacy);
           await db.put(key, migrated);
-          try { storage?.setItem(key, JSON.stringify(migrated)); } catch { /* 保留 IndexedDB 存档。 */ }
+          writeLocalBackup(storage, key, migrated);
           return migrated;
         }
         const normalized = normalize(saved);
         lastWriteAt = Math.max(lastWriteAt, normalized.updatedAt);
         if (legacy.updatedAt > normalized.updatedAt) {
-          await db.put(key, legacy);
-          return legacy;
+          const merged = { ...legacy, slots: legacy.slots.length >= normalized.slots.length ? legacy.slots : normalized.slots };
+          await db.put(key, merged);
+          return merged;
         }
-        try { storage?.setItem(key, JSON.stringify(normalized)); } catch { /* 保留 IndexedDB 存档。 */ }
+        writeLocalBackup(storage, key, normalized);
         return normalized;
       } catch { return legacy; }
     }
@@ -105,13 +126,22 @@
     async function write(key, value) {
       lastWriteAt = Math.max(lastWriteAt, localValue(storage, key).updatedAt);
       const normalized = stamp(value);
-      try { storage?.setItem(key, JSON.stringify(normalized)); } catch { /* 尝试写入 IndexedDB。 */ }
-      try {
-        const db = await database();
-        if (!db) return false;
-        await db.put(key, normalized);
-        return true;
-      } catch { return false; }
+      latestByKey.set(key, normalized.updatedAt);
+      const localSaved = writeLocalBackup(storage, key, normalized);
+      const runWrite = async () => {
+        if (latestByKey.get(key) > normalized.updatedAt) return true;
+        try {
+          const db = await database();
+          if (db) {
+            await db.put(key, normalized);
+            return true;
+          }
+        } catch { /* 降级到 localStorage。 */ }
+        return localSaved;
+      };
+      const pending = writeChain.then(runWrite, runWrite);
+      writeChain = pending.catch(() => {});
+      return pending;
     }
 
     return { load, write };

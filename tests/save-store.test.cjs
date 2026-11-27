@@ -56,6 +56,27 @@ test('IndexedDB 不可用时仍可从 localStorage 读取并写入', async () =>
   const backend = SaveStore.create({ storage, database });
 
   assert.equal((await backend.load('civil-war-map-v1')).auto, 'fallback');
-  assert.equal(await backend.write('civil-war-map-v1', { auto: 'saved', slots: [] }), false);
+  assert.equal(await backend.write('civil-war-map-v1', { auto: 'saved', slots: [] }), true,
+    'IndexedDB 失败后 localStorage 写入成功，整体存档操作仍应报告成功');
   assert.equal(JSON.parse(storage.getItem('civil-war-map-v1')).auto, 'saved');
+});
+
+test('连续快速写入时同步更新 localStorage 且旧异步写入不会覆盖新状态', async () => {
+  const storage = memoryStorage();
+  const putOrder = [];
+  const database = {
+    async get() { return null; },
+    async put(_key, value) {
+      await new Promise((resolve) => setTimeout(resolve, value.auto === 'first' ? 25 : 1));
+      putOrder.push(value.auto);
+    },
+  };
+  const backend = SaveStore.create({ storage, database });
+
+  const first = backend.write('civil-war-map-v1', { auto: 'first', slots: [] });
+  const second = backend.write('civil-war-map-v1', { auto: 'second', slots: [] });
+  assert.equal(JSON.parse(storage.getItem('civil-war-map-v1')).auto, 'second');
+  await Promise.all([first, second]);
+  assert.equal(JSON.parse(storage.getItem('civil-war-map-v1')).auto, 'second');
+  assert.equal(putOrder.at(-1), 'second');
 });
