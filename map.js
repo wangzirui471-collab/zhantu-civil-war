@@ -112,6 +112,7 @@
     let hover;
     let keyboardCard;
     let hitCards = [];
+    let battleBubbles = [];
     let backgroundKey;
     let lastBattleDays = {};
     let battleEffects = [];
@@ -552,6 +553,7 @@
     }
 
     function drawBattles() {
+      battleBubbles = [];
       if (!state.battles) return;
       for (const [cityId, battle] of Object.entries(state.battles)) {
         const city = places.get(cityId);
@@ -562,6 +564,7 @@
         const score = Math.max(1, Math.min(99, battle.side === state.player ? rawScore : 100 - rawScore));
         const winning = score >= 50;
         const bx = x + 15, by = y - 13, br = 12;
+        battleBubbles.push({ cityId, bx, by, br: br + 4 });
         if (battle.encircled) {
           brush.save();
           brush.beginPath();
@@ -1167,16 +1170,28 @@
 
           brush.beginPath();
           brush.roundRect(left, top, cardWidth, cardHeight, 4);
-          brush.fillStyle = unit.side === 'ccp' ? '#603e36f7' : '#334f5af7';
+          brush.fillStyle = unit.side === 'ccp' ? '#68302bf2' : '#2a4559f2';
           brush.fill();
-          brush.lineWidth = focused ? 2.1 : .85;
+          brush.lineWidth = focused ? 2.1 : 1;
           brush.strokeStyle = focused ? (chosen.has(unit.id) && unit.id !== selection.unit ? '#9ee0c2' : '#f7dc98')
-            : (unit.side === 'ccp' ? '#d9927e' : '#9bbbc8');
+            : '#8c7853cc';
           brush.stroke();
 
           brush.fillStyle = '#fff3d7';
           brush.textBaseline = 'middle';
-          brush.fillText(label, left + 5, top + (national ? 9 : 8.5), cardWidth - 10);
+          brush.fillText(label, left + 5, top + (national ? 9 : 8.5), cardWidth - (idx === 0 && totalInSide > 1 ? 24 : 10));
+          if (idx === 0 && totalInSide > 1) {
+            brush.save();
+            brush.fillStyle = '#8c7853';
+            brush.beginPath();
+            brush.roundRect(left + cardWidth - 19, top + 2, 17, 11, 3);
+            brush.fill();
+            brush.fillStyle = '#fff7df';
+            brush.font = '700 8px "Microsoft YaHei UI", sans-serif';
+            brush.textAlign = 'center';
+            brush.fillText('×' + totalInSide, left + cardWidth - 10.5, top + 7.5);
+            brush.restore();
+          }
 
           if (!national) {
             brush.font = '500 9px "Microsoft YaHei UI", sans-serif';
@@ -1973,11 +1988,13 @@
         draw();
         return;
       }
-      const unit = cardAt(...xy);
-      const city = nearest(...xy, 12) || places.get(unit?.city);
+      const bubble = battleBubbles.find((b) => Math.hypot(xy[0] - b.bx, xy[1] - b.by) <= b.br);
+      const unit = bubble ? null : cardAt(...xy);
+      const city = bubble ? places.get(bubble.cityId) : (nearest(...xy, 12) || places.get(unit?.city));
       hoverPoint = xy;
-      canvas.title = unit ? unit.name + ' · ' + (sideNames[unit.side] || '') + ' · ' + city?.name : city?.name || '';
-      if (highlightedCity !== city?.id || city && selection.unit) { highlightedCity = city?.id; draw(); }
+      canvas.title = bubble ? (city?.name || '') + ' 交战中（悬停查看修正）'
+        : unit ? unit.name + ' · ' + (sideNames[unit.side] || '') + ' · ' + city?.name : city?.name || '';
+      if (highlightedCity !== city?.id || city && (selection.unit || bubble)) { highlightedCity = city?.id; draw(); }
     });
     canvas.addEventListener('pointerup', (event) => {
       if (!pointer) return;

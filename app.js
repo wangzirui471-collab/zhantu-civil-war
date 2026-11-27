@@ -325,17 +325,17 @@
     if ($('hoi-hud-stats')) {
       const side = state.player;
       const pp = Math.round(state.political?.[side]?.points ?? 0);
+      const ws = Math.round(valueOf(state.warSupport, side, 60));
       const mp = Math.round((state.economy?.[side]?.manpower ?? 0) / 1000);
-      const xp = Math.round(state.armyXp?.[side] ?? 0);
       const rifles = Math.round(state.stock?.[side]?.infantry ?? 0);
+      const rifleDelta = rifles - 200;
+      const rifleClass = rifleDelta >= 0 ? 'surplus' : 'deficit';
       const supRatio = Math.round((supplyView?.ration?.[side] ?? 1) * 100);
-      const debuffs = (state.spirits?.[side] ?? []).filter(sp => !sp.good && sp.tier > 0).length;
       $('hoi-hud-stats').innerHTML =
-        '<button type="button" class="hoi-stat-pill" data-open-panel="politics" title="政治点数与民族精神">政治 <b>' + pp + '</b></button>'
-        + '<button type="button" class="hoi-stat-pill" data-open-panel="economy" title="兵源人力储备">人力 <b>' + mp + 'k</b></button>'
-        + '<button type="button" class="hoi-stat-pill" data-open-panel="production" title="步枪与轻武器库存">枪炮 <b>' + format(rifles) + '</b></button>'
-        + '<button type="button" class="hoi-stat-pill' + (supRatio < 70 ? ' warn' : '') + '" data-open-panel="supply" title="全军平均补给率">补给 <b>' + supRatio + '%</b></button>'
-        + '<button type="button" class="hoi-stat-pill' + (debuffs ? ' warn' : '') + '" data-open-panel="politics" title="陆军经验（可消除陆军腐败/设计编制）">陆经 <b>' + xp + '</b></button>';
+        '<button type="button" class="hoi-stat-pill" data-open-panel="economy" title="兵源人力储备">👥 人力 <b>' + mp + 'k</b></button>'
+        + '<button type="button" class="hoi-stat-pill ' + rifleClass + '" data-open-panel="production" title="枪炮库存盈余/缺口">🔫 枪炮 <b>' + (rifleDelta >= 0 ? '+' : '') + format(rifles) + '</b></button>'
+        + '<button type="button" class="hoi-stat-pill' + (supRatio < 70 ? ' deficit' : '') + '" data-open-panel="supply" title="全军补给覆盖率">📦 补给 <b>' + supRatio + '%</b></button>'
+        + '<button type="button" class="hoi-stat-pill" data-open-panel="politics" title="政治点数 / 军心支持度">🏛️ 政治 <b>' + pp + '</b> · ' + ws + '%</button>';
     }
     $('brief-settings').setAttribute('aria-pressed', Object.keys(pauseLabels).some((key) => pausePreferences[key]));
     document.querySelectorAll('[data-speed]').forEach((item) => item.setAttribute('aria-pressed', Number(item.dataset.speed) === speed));
@@ -817,6 +817,14 @@
     render();
   }
 
+  function setInspectorOpen(open) {
+    const panel = document.querySelector('.inspector');
+    if (!panel) return;
+    panel.classList.toggle('is-hidden', !open);
+    panel.classList.toggle('is-open', Boolean(open));
+    $('mobile-inspector')?.setAttribute('aria-expanded', String(Boolean(open)));
+  }
+
   function selectUnit(unitId, jump = true) {
     const unit = state.units.find((item) => item.id === unitId);
     if (!unit) return;
@@ -828,6 +836,7 @@
     pane = 'army';
     if (tutorial?.step === 0 && unit.id === 'nw3') tutorial.step = 1;
     setMapHelp();
+    setInspectorOpen(true);
     render();
     if (jump) map.jump(unit.city);
   }
@@ -845,6 +854,7 @@
     pendingOrder = undefined;
     pane = 'city';
     setMapHelp();
+    setInspectorOpen(true);
     render();
     if (jump) map.jump(city);
   }
@@ -1030,6 +1040,7 @@
     selectedUnit = undefined;
     saveDay = '';
     if (dialog.open) dialog.close();
+    setInspectorOpen(false);
     setMapHelp();
     renderScenarios();
     render();
@@ -2083,7 +2094,7 @@
       + '<div><span>民心 / 战争支持</span><strong>' + format(support) + '</strong></div>'
       + '<div><span>首都</span><strong>' + escape(cityName(capital)) + '</strong></div></div>'
       + spiritHtml + advisorHtml + '<h3 style="margin:10px 0 4px;">战时政治决议</h3>'
-      + cards + '<div class="dialog-actions"><button type="button" data-politics-close>关闭</button></div>');
+      + cards + '<div class="dialog-actions"><button type="button" class="gold" onclick="document.getElementById(\'groups\').click()">查看地方军阀与派系</button><button type="button" data-politics-close>关闭</button></div>');
   }
 
   function economy() {
@@ -2093,7 +2104,8 @@
       + '<h3>' + sides[state.player] + ' · 统帅分配</h3><div class="form-grid">'
       + Object.entries(rows).map(([key, label]) => '<label>' + label + '<select name="' + key + '">'
         + [['low', '低'], ['normal', '均衡'], ['high', '优先']].map((item) => option(...item, state.policies[key])).join('') + '</select></label>').join('')
-      + '</div><button type="submit" class="gold">执行分配</button></form>');
+      + '</div><div class="dialog-actions"><button type="submit" class="gold">执行分配</button>'
+      + '<button type="button" onclick="document.getElementById(\'defense\').click()">国策 / 科研 / 军工生产 / 师编制</button></div></form>');
     body.querySelector('form').addEventListener('submit', (event) => {
       event.preventDefault();
       for (const [key, value] of new FormData(event.currentTarget)) action('setPolicy', [key, value]);
@@ -2691,7 +2703,7 @@
   $('tab-army').onclick = () => { pane = 'army'; renderInspector(); };
   $('mobile-inspector').onclick = () => {
     const inspector = $('inspector-body').closest('aside');
-    $('mobile-inspector').setAttribute('aria-expanded', inspector.classList.toggle('is-open'));
+    setInspectorOpen(inspector.classList.contains('is-hidden') || !inspector.classList.contains('is-open'));
   };
   $('national-view').onclick = () => changeScope('national');
   $('theater-view').onclick = () => changeScope('theater', citiesById.get(selectedCity)?.region);
@@ -2770,9 +2782,12 @@
     else if (btn.dataset.openPanel === 'economy') economy();
     else if (btn.dataset.openPanel === 'supply') logisticsPanel();
   });
-  document.querySelector('.workbar-more')?.addEventListener('click', (event) => {
+  document.querySelector('#sys-menu')?.addEventListener('click', (event) => {
     if (event.target.closest('button')) event.currentTarget.open = false;
   });
+  $('inspector-close')?.addEventListener('click', () => setInspectorOpen(false));
+  $('tab-city')?.addEventListener('click', () => setInspectorOpen(true));
+  $('tab-army')?.addEventListener('click', () => setInspectorOpen(true));
   $('general-dock')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-gen-group]');
     if (!btn) return;
@@ -2805,7 +2820,7 @@
   });
   document.addEventListener('keydown', (event) => {
     if (!dialog.open && !event.target.closest('input,select,textarea')) {
-      const fMap = { F1: ['layer', 'situation'], F2: ['overlay', 'maritime'], F3: ['layer', 'faction'], F4: ['overlay', 'supply'], F5: ['layer', 'terrain'] };
+      const fMap = { F1: ['layer', 'situation'], F2: ['layer', 'terrain'], F3: ['overlay', 'supply'], F4: ['layer', 'faction'] };
       if (fMap[event.key]) {
         event.preventDefault();
         const [kind, val] = fMap[event.key];

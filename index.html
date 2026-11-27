@@ -35,32 +35,33 @@
           </div>
         </div>
       </div>
-      <div class="top-actions"><button type="button" id="save-menu" class="quiet">存档</button><button type="button" id="new-game" class="gold">新开局</button></div>
+      <div class="top-actions">
+        <details class="sys-menu" id="sys-menu">
+          <summary title="系统菜单：剧本、存档、新开局、战史与说明">⚙ 菜单 ▾</summary>
+          <div class="sys-menu-panel">
+            <button type="button" id="mobile-scenarios">战役剧本</button>
+            <button type="button" id="save-menu">存档管理</button>
+            <button type="button" id="new-game" class="gold">新开局</button>
+            <button type="button" id="plans">作战计划</button>
+            <button type="button" id="defense">国防建设</button>
+            <button type="button" id="groups">地方派系</button>
+            <button type="button" id="archive">战史档案</button>
+            <button type="button" id="help">操作说明</button>
+          </div>
+        </details>
+      </div>
     </header>
     <nav class="workbar" aria-label="主界面功能">
       <div class="workbar-tools">
-        <button type="button" id="mobile-scenarios">剧本</button>
         <button type="button" id="politics" class="hoi-core-btn">🏛️ 政局派系</button>
         <button type="button" id="economy" class="hoi-core-btn">🏭 经济建设</button>
         <button type="button" id="gear" class="hoi-core-btn">🎖️ 兵种军械</button>
         <button type="button" id="supply" class="hoi-core-btn">🚂 后勤补给</button>
         <button type="button" id="history-mode" class="hoi-core-btn">📜 历史事件</button>
-        <button type="button" id="defense" class="hoi-core-btn">⚔️ 国防编成</button>
-        <details class="workbar-more">
-          <summary>更多 ▾</summary>
-          <div class="workbar-more-menu">
-            <button type="button" id="plans">作战计划</button>
-            <button type="button" id="groups">地方派系</button>
-            <button type="button" id="forecast">局势预测</button>
-            <button type="button" id="archive">战史档案</button>
-            <button type="button" id="help">操作说明</button>
-            <button type="button" id="tutorial-open">锦州引导</button>
-          </div>
-        </details>
       </div>
       <div class="workbar-region">
         <label for="sector-select">战区</label><select id="sector-select" aria-label="选择指挥范围"></select>
-        <button type="button" id="mobile-inspector" aria-controls="inspector-body" aria-expanded="false">部队</button>
+        <button type="button" id="mobile-inspector" aria-controls="inspector-body" aria-expanded="false">详情抽屉</button>
       </div>
     </nav>
 
@@ -80,16 +81,20 @@
       <section class="map-workspace" aria-label="战役地图">
         <canvas id="map" tabindex="0" aria-label="可缩放中国战区地图"></canvas>
         <div class="map-heading"><span class="map-tag" id="map-tag">东北战区</span><strong id="map-title">辽沈战役</strong></div>
+        <div class="alert-badges" aria-label="战区提醒">
+          <button type="button" id="tutorial-open" class="alert-flag" title="打开锦州战役新手引导">⚑ 锦州引导</button>
+          <button type="button" id="forecast" class="alert-flag" title="推演未来数月局势预测">⚑ 局势预测</button>
+        </div>
         <section id="battle-hud" class="battle-hud" aria-label="战场指挥" hidden></section>
         <div class="map-top-controls" aria-label="地图视角">
           <button type="button" id="national-view">全国</button><button type="button" id="theater-view">战区</button>
           <button type="button" id="night-toggle" aria-pressed="false" title="切换昼间姿态与夜间宿营睡觉姿态">🌙 夜间宿营</button>
-          <button type="button" id="map-expand" aria-pressed="false" title="展开地图，隐藏两侧面板">展开地图</button>
+          <button type="button" id="map-expand" aria-pressed="false" title="隐藏左侧栏，全屏沙盘视角">展开地图</button>
           <button type="button" id="find-city">查找城镇</button>
         </div>
         <div class="map-layers" aria-label="地图图层">
-          <div class="map-layer-modes"><button type="button" data-layer="situation" aria-pressed="false" title="F1 态势图">态势图</button><button type="button" data-layer="terrain" aria-pressed="true" title="F5 地形图">地形图</button><button type="button" data-layer="faction" aria-pressed="false" title="F3 派系疆域图">派系疆域</button><button type="button" data-layer="contour" aria-pressed="false">等高线</button></div>
-          <div class="map-layer-toggles"><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役路线</button><button type="button" data-overlay="supply" aria-pressed="false" title="F4 蓝区补给充足、黄区偏紧、红区断粮">补给(F4)</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false" title="F2 海路">海路(F2)</button><button type="button" data-overlay="models3d" aria-pressed="true" title="战术拉近时自动显示3D兵模，关闭后纯2D极速微操">3D兵模</button></div>
+          <div class="map-layer-modes"><button type="button" data-layer="situation" aria-pressed="false" title="F1 态势图">态势(F1)</button><button type="button" data-layer="terrain" aria-pressed="true" title="F2 地形图">地形(F2)</button><button type="button" data-layer="faction" aria-pressed="false" title="F4 派系疆域">派系</button><button type="button" data-layer="contour" aria-pressed="false">等高线</button></div>
+          <div class="map-layer-toggles"><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役线</button><button type="button" data-overlay="supply" aria-pressed="false" title="F3 蓝区补给充足、黄区偏紧、红区断粮">补给(F3)</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button><button type="button" data-overlay="models3d" aria-pressed="true" title="拉近显示3D兵模，关闭后纯2D微操">3D兵模</button></div>
         </div>
         <div id="general-dock" class="general-dock" aria-label="集团军将领栏"></div>
         <div class="map-legend"><span><b class="dot ccp"></b>共产党</span><span><b class="dot roc"></b>国民党</span><span><i></i>铁路</span><span><i class="attack-key"></i>进攻路线</span><span><i class="shell-key"></i>炮火</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span></div>
@@ -98,8 +103,8 @@
         <section id="tutorial-card" class="tutorial-card" aria-label="锦州第一局" hidden></section>
       </section>
 
-      <aside class="inspector" aria-label="部队和城市详情">
-        <div class="inspector-tabs" role="group" aria-label="详情切换"><button id="tab-city" type="button" aria-pressed="true">战区情报</button><button id="tab-army" type="button" aria-pressed="false">部队名册</button></div>
+      <aside class="inspector is-hidden" aria-label="部队和城市详情">
+        <div class="inspector-tabs" role="group" aria-label="详情切换"><button id="tab-city" type="button" aria-pressed="true">战区情报</button><button id="tab-army" type="button" aria-pressed="false">部队名册</button><button id="inspector-close" type="button" class="inspector-close" aria-label="收起详情抽屉" title="收起详情抽屉，释放地图视野">×</button></div>
         <div id="inspector-body" class="inspector-body"></div>
       </aside>
     </main>
