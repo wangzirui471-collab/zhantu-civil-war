@@ -372,6 +372,13 @@
     body.querySelector('#set-close-btn').onclick = () => dialog.close();
   }
 
+  function unitTerm(side = state?.player) {
+    const tm = Data?.theaterMode || 'civil';
+    if (tm === 'ww2') return side === 'roc' ? '装甲军/师团' : '集团军/方面军';
+    if (tm === 'korea') return side === 'ccp' ? '军/兵团' : '集团军/师';
+    return side === 'roc' ? '整编师/军' : '纵队/军';
+  }
+
   function renderScenarios() {
     const sc = scenariosById.get(state.scenarioId) || Data.scenarios[0];
     const sideLabel = sides[state.player] || state.player;
@@ -385,7 +392,7 @@
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><span style="font-size:10px;color:#c9bc95;">当前存档</span>' + endlessBadge + '</div>'
       + '<div class="lock-title" style="display:block;word-break:break-word;">' + escape(sc?.title || '全面内战') + '</div>'
       + '<div style="word-break:break-word;"><b>锁定阵营：</b>' + escape(sideLabel) + '</div>'
-      + '<div><b>当前日期：</b>' + fmtDate(state.date) + ' · 纵队 ' + ownUnits.length + ' 支</div>'
+      + '<div><b>当前日期：</b>' + fmtDate(state.date) + ' · ' + escape(unitTerm()) + ' ' + ownUnits.length + ' 支</div>'
       + prepHtml
       + '<div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;">'
       + '<button type="button" id="rail-sandbox-war" style="flex:1;font-size:10.5px;padding:3px 5px;" title="HOI4 自由跨国宣战（东征日本 / 美苏开战 / 称霸全球）">🌍 自由宣战</button>'
@@ -940,7 +947,7 @@
         const displayName = /战区|战场|战线|海峡|群岛|本土/.test(rawName) ? rawName : (rawName + '战区');
         return '<button type="button" class="hoi-theater-card" data-hoi-theater="' + reg + '" aria-pressed="' + pressed + '">'
           + '<div><strong>' + escape(displayName) + '</strong><small>'
-          + regUnits.length + ' 支纵队</small></div>'
+          + regUnits.length + ' 支' + escape(unitTerm()) + '</small></div>'
           + '<span class="hoi-theater-badge ' + (regBattles ? 'fight' : 'calm') + '">'
           + (regBattles ? '⚔ ' + regBattles + '战' : '平稳') + '</span></button>';
       }).join('');
@@ -1260,6 +1267,8 @@
       + '<button type="button" class="hoi-bp-btn" data-map-tool="sabotage" aria-pressed="' + (pendingMapTool === 'sabotage') + '" title="地图直接铁路破袭：点此后再点敌占城镇（15 点），瘫痪敌军补给 10 天">🔧 破袭</button>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="airborne" aria-pressed="' + (pendingMapTool === 'airborne') + '" title="地图直接敌后奇袭（25 指挥点）：空城直接夺占，有守军则重创组织度并断路">' + airLabel + '</button>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="barrage" aria-pressed="' + (pendingMapTool === 'barrage') + '" title="地图直接炮火准备/喀秋莎齐射（30 指挥点）：重创目标守军">🎯 炮火/导弹</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="camp" title="军队高自由度部署：指定距离（15/30/50/80km）与方向在城外构筑野战营地">⛺ 城外扎营</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="artfire" title="炮兵按真实公里射程跨距开炮：查看射程内敌城公里数并实施压制/反炮兵轰击">🎯 按距开炮</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="blitz" title="同步二战模式：装甲闪电总攻，选定/前线主力全线高速突击">⚡ 闪电战</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="naval3" title="同步二战模式：发动 HOI4 三排海战阵型决战">🚢 三排海战</button>'
       + '<span class="hoi-bp-sep"></span>'
@@ -5098,6 +5107,81 @@
       renderBattlePlansBar();
       WarAudio.click();
       notify(civilDrawFront ? '✏️ 手绘战线已开启：在地图上按住左键从前沿拖向目标城镇，松手即刻吹号突击！' : '已退出手绘战线模式。');
+    } else if (d.bpQuick === 'camp') {
+      const u = inspectUnit() || Engine.activeUnits(state).find((x) => !x.parent && x.side === state.player && permitted(x));
+      if (!u) { notify('请先点击选择一支己方部队。'); return; }
+      const cName = cityName(u.city);
+      let pickedDist = u.camp?.distKm || 50;
+      let pickedDir = 'enemy';
+      const dirOpts = [['enemy', '🎯 自动朝向最近敌城'], ['0', '⬆ 正北'], ['45', '↗ 东北'], ['90', '➡ 正东'], ['135', '↘ 东南'], ['180', '⬇ 正南'], ['225', '↙ 西南'], ['270', '⬅ 正西'], ['315', '↖ 西北']];
+      const body = showDialog('⛺ 军队城外自由扎营部署',
+        '<div class="hoi-cipher-box">'
+        + '<header><strong style="color:#f5e1b0;">当前部队：' + escape(u.name) + '（驻地：' + escape(cName) + (u.camp ? ' · 已在城外 ' + u.camp.distKm + 'km' : ' · 城内') + '）</strong></header>'
+        + '<p class="subtext" style="margin:6px 0;">可自由将部队前出至城外指定公里数构筑野战营地（防空/防炮减伤 +25%、阵地警戒 +10%，同时拉近炮兵射程！）。</p>'
+        + '<div style="margin:8px 0;"><b>1. 选择距城距离：</b><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;">'
+        + [[0, '回城驻防 (0 km)'], [15, '城外 15 km'], [30, '城外 30 km'], [50, '城外 50 km'], [80, '城外 80 km']].map(([km, lbl]) =>
+          '<button type="button" data-camp-dist="' + km + '" aria-pressed="' + (pickedDist === km) + '">' + lbl + '</button>').join('')
+        + '</div></div>'
+        + '<div style="margin:8px 0;"><b>2. 选择部署方位：</b><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;">'
+        + dirOpts.map(([val, lbl]) => '<button type="button" data-camp-dir="' + val + '" aria-pressed="' + (pickedDir === val) + '" style="font-size:11px;padding:3px 7px;">' + lbl + '</button>').join('')
+        + '</div></div>'
+        + '<button type="button" class="gold" id="camp-confirm-btn" style="width:100%;margin-top:8px;">⛺ 立即执行野战扎营部署</button>'
+        + '</div>');
+      body.querySelectorAll('[data-camp-dist]').forEach((b) => b.onclick = () => {
+        pickedDist = Number(b.dataset.campDist);
+        body.querySelectorAll('[data-camp-dist]').forEach((x) => x.setAttribute('aria-pressed', String(Number(x.dataset.campDist) === pickedDist)));
+      });
+      body.querySelectorAll('[data-camp-dir]').forEach((b) => b.onclick = () => {
+        pickedDir = b.dataset.campDir;
+        body.querySelectorAll('[data-camp-dir]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.campDir === pickedDir)));
+      });
+      body.querySelector('#camp-confirm-btn').onclick = () => {
+        const dirArg = pickedDir === 'enemy' ? 'enemy' : Number(pickedDir);
+        if (action('setFieldCamp', [u.id, pickedDist, dirArg])) {
+          WarAudio.click(); saveAuto(true); render(); dialog.close();
+          notify(pickedDist > 0 ? '⛺ ' + u.name + ' 已前出至 ' + cName + ' 城外 ' + pickedDist + ' km 构筑野战营地！' : '⛺ ' + u.name + ' 已返回 ' + cName + ' 城内驻防。');
+        }
+      };
+    } else if (d.bpQuick === 'artfire') {
+      const u = inspectUnit() || Engine.activeUnits(state).find((x) => !x.parent && x.side === state.player && permitted(x));
+      if (!u) { notify('请先点击选择一支己方部队。'); return; }
+      const fromCity = citiesById.get(u.city);
+      const fromLon = u.camp?.lon ?? fromCity?.lon ?? 0;
+      const fromLat = u.camp?.lat ?? fromCity?.lat ?? 0;
+      const maxRange = Engine.unitArtilleryRangeKm ? Engine.unitArtilleryRangeKm(u) : 60;
+      const distFn = Engine.haversineKm || ((a, b, c, d2) => Math.hypot((c - a) * 90, (d2 - b) * 111));
+      const enemyTargets = Data.cities
+        .filter((c) => state.owners[c.id] !== u.side)
+        .map((c) => ({ c, dist: Math.round(distFn(fromLon, fromLat, c.lon, c.lat)) }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 10);
+      let fireMode = 'suppress';
+      const body = showDialog('🎯 炮兵 / 远程火力按射程跨距开炮',
+        '<div class="hoi-cipher-box">'
+        + '<header><strong style="color:#f5e1b0;">开火部队：' + escape(u.name) + ' · 当前最大射程：<span style="color:#ffd866;">' + maxRange + ' km</span>（每次 10 指挥点）</strong></header>'
+        + '<p class="subtext" style="margin:5px 0;">部队当前位于 ' + escape(cityName(u.city)) + (u.camp ? ' 城外 ' + u.camp.distKm + 'km 营地' : ' 城内') + '。若目标略超射程，可先点「⛺ 城外扎营」向敌方前出 50–80 km！</p>'
+        + '<div style="display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;">'
+        + [['suppress', '💥 覆盖压制'], ['counter', '🎯 反炮兵火力'], ['creeping', '🔥 徐进弹幕']].map(([m, lbl]) =>
+          '<button type="button" data-art-mode="' + m + '" aria-pressed="' + (fireMode === m) + '">' + lbl + '</button>').join('')
+        + '</div>'
+        + '<div style="display:grid;gap:5px;max-height:260px;overflow:auto;">'
+        + enemyTargets.map(({ c, dist }) => {
+          const inRange = dist <= maxRange;
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border-radius:4px;border:1px solid ' + (inRange ? '#c8a355' : '#4a554c') + ';background:' + (inRange ? '#2b3324' : '#1d231f') + ';">'
+            + '<span><b>' + escape(c.name) + '</b> · 距离 <b>' + dist + ' km</b> ' + (inRange ? '<span style="color:#7ee094;">✔ 射程内</span>' : '<span style="color:#ff9482;">✘ 超出 ' + (dist - maxRange) + 'km</span>') + '</span>'
+            + '<button type="button" class="' + (inRange ? 'gold' : '') + '" data-art-tgt="' + escape(c.id) + '" ' + (inRange ? '' : 'disabled') + '>🎯 开炮</button></div>';
+        }).join('')
+        + '</div></div>');
+      body.querySelectorAll('[data-art-mode]').forEach((b) => b.onclick = () => {
+        fireMode = b.dataset.artMode;
+        body.querySelectorAll('[data-art-mode]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.artMode === fireMode)));
+      });
+      body.querySelectorAll('[data-art-tgt]').forEach((b) => b.onclick = () => {
+        if (action('artilleryFire', [u.id, b.dataset.artTgt, fireMode])) {
+          WarAudio.artillery(); saveAuto(true); render(); dialog.close();
+          notify('🎯 炮火齐射已命中 ' + cityName(b.dataset.artTgt) + '！敌军组织度与工事遭受重创！');
+        }
+      });
     } else if (d.bpQuick === 'blitz') {
       const targetEnemy = (selectedCity && state.owners[selectedCity] !== state.player) ? selectedCity
         : Data.cities.find((c) => state.owners[c.id] !== state.player && (cityConnected.get(c.id) || []).some((n) => state.owners[n] === state.player))?.id;

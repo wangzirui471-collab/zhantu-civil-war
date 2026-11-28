@@ -235,6 +235,13 @@
     { id: 'pohang', name: '浦项港', lon: 129.37, lat: 36.02, side: 'un', terrain: 'port', value: 6 },
     { id: 'andong_kr', name: '安东(庆北)', lon: 128.73, lat: 36.57, side: 'un', terrain: 'mountain', value: 5 },
     { id: 'masan', name: '马山/晋州', lon: 128.57, lat: 35.20, side: 'un', terrain: 'port', value: 6 },
+    // ── 抗美援朝关键决战与著名事件发生地（总计 50 城）──
+    { id: 'songgufeng', name: '松骨峰(38军阻击)', lon: 126.15, lat: 39.72, side: 'dprk', terrain: 'mountain', value: 7 },
+    { id: 'chipyongni', name: '砥平里', lon: 127.64, lat: 37.47, side: 'un', terrain: 'mountain', value: 6 },
+    { id: 'imjin', name: '雪马里(临津江)', lon: 126.92, lat: 37.93, side: 'un', terrain: 'river', value: 6 },
+    { id: 'white_horse', name: '白马山高地', lon: 127.12, lat: 38.28, side: 'dprk', terrain: 'mountain', value: 6 },
+    { id: 'kumsong', name: '金城(金城反击战)', lon: 127.58, lat: 38.43, side: 'dprk', terrain: 'mountain', value: 7 },
+    { id: 'tabudong', name: '多富洞(洛东江血战)', lon: 128.45, lat: 36.04, side: 'un', terrain: 'mountain', value: 6 },
   ];
 
   // 朝鲜半岛铁路、山地公路与两栖海运航线网
@@ -278,6 +285,12 @@
     ['andong_kr', 'taegu', 'rail'], ['andong_kr', 'pohang', 'road'], ['gangneung', 'pohang', 'road'], ['pohang', 'taegu', 'rail'], ['pohang', 'pusan', 'rail'],
     ['taejon', 'jeonju', 'rail'], ['jeonju', 'gunsan', 'rail'], ['jeonju', 'gwangju', 'rail'], ['gwangju', 'mokpo', 'rail'],
     ['gwangju', 'masan', 'road'], ['masan', 'taegu', 'road'], ['masan', 'pusan', 'rail'], ['gunsan', 'incheon', 'sea'], ['mokpo', 'pusan', 'sea'],
+    ['songgufeng', 'tokchon', 'road'], ['songgufeng', 'sunchon', 'road'], ['songgufeng', 'chongchon', 'road'],
+    ['chipyongni', 'wonju', 'road'], ['chipyongni', 'seoul', 'road'], ['chipyongni', 'chuncheon', 'road'],
+    ['imjin', 'kaesong', 'road'], ['imjin', 'seoul', 'road'], ['imjin', 'cheorwon', 'road'],
+    ['white_horse', 'cheorwon', 'road'], ['white_horse', 'shangganling', 'road'],
+    ['kumsong', 'kumhwa', 'road'], ['kumsong', 'shangganling', 'road'], ['kumsong', 'wonsan', 'road'],
+    ['tabudong', 'taegu', 'road'], ['tabudong', 'andong_kr', 'road'], ['tabudong', 'taejon', 'road'],
   ];
 
   // 朝鲜战争 HOI4 分支国策树

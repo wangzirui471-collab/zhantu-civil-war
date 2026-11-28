@@ -1324,7 +1324,23 @@
           const totalInSide = members.length;
           const ringSlot = idx === 0 ? 0 : (idx % 2 === 1 ? Math.ceil(idx / 2) : -Math.ceil(idx / 2));
           let ux = cx, uy = cy;
-          if (ringSlot !== 0) {
+          if (unit.camp?.distKm > 0 && Number.isFinite(unit.camp.lon) && Number.isFinite(unit.camp.lat)) {
+            [ux, uy] = project(unit.camp.lon, unit.camp.lat);
+            brush.save();
+            brush.strokeStyle = 'rgba(240, 208, 128, 0.72)';
+            brush.lineWidth = 1.1;
+            brush.setLineDash([3, 3]);
+            brush.beginPath();
+            brush.moveTo(cx, cy);
+            brush.lineTo(ux, uy);
+            brush.stroke();
+            brush.setLineDash([]);
+            brush.font = '700 9px "Microsoft YaHei UI", sans-serif';
+            brush.fillStyle = '#ffe599';
+            brush.textAlign = 'center';
+            brush.fillText('⛺ ' + unit.camp.distKm + 'km', ux, uy + 24);
+            brush.restore();
+          } else if (ringSlot !== 0) {
             const spread = national ? 48 : zoomLevel() === 'detail' ? 86 : 68;
             ux = cx + ringSlot * spread;
             uy = cy + (unit.side === 'ccp' ? -Math.abs(ringSlot) * 7 : Math.abs(ringSlot) * 7);
@@ -1505,7 +1521,57 @@
           if (idx === 0 && !national) {
             hitCards.push({ unit, stack: [unit.id], anchorX: cx, anchorY: cy + 16, primaryPin: true, figureHit: true, left: cx - 14, top: cy + 8, width: 28, height: 18 });
           }
+          // 选中己方部队且开启射程圈时，实时绘制炮兵真实公里射程圈
+          if (unit.id === selection.unit && unit.side === state.player && (globalThis.GameSettings?.showRangeRings !== false)) {
+            const rangeKm = globalThis.CivilWarEngine?.unitArtilleryRangeKm?.(unit) || 40;
+            const dLat = rangeKm / 111.32;
+            const [rx, ry] = project(unit.camp?.lon ?? anchorCity.lon, (unit.camp?.lat ?? anchorCity.lat) + dLat);
+            const pxRadius = Math.hypot(rx - ux, ry - uy);
+            if (pxRadius >= 12 && pxRadius <= Math.max(width, height) * 1.4) {
+              brush.save();
+              brush.strokeStyle = 'rgba(245, 198, 84, 0.52)';
+              brush.fillStyle = 'rgba(245, 198, 84, 0.06)';
+              brush.lineWidth = 1.25;
+              brush.setLineDash([5, 4]);
+              brush.beginPath();
+              brush.arc(ux, uy, pxRadius, 0, Math.PI * 2);
+              brush.fill();
+              brush.stroke();
+              brush.setLineDash([]);
+              brush.font = '600 9.5px "Microsoft YaHei UI", sans-serif';
+              brush.fillStyle = '#ffe599';
+              brush.textAlign = 'center';
+              brush.fillText('🎯 炮兵射程 ' + rangeKm + ' km', ux, uy - pxRadius - 4);
+              brush.restore();
+            }
+          }
         });
+      }
+      // 绘制最近跨距炮兵炮击的抛物线弹道与落点闪光
+      for (const st of (state.artilleryStrikes || [])) {
+        if (st.date !== state.date && Date.now() - (st.at || 0) > 8000) continue;
+        const [x1, y1] = project(st.fromLon, st.fromLat);
+        const [x2, y2] = project(st.toLon, st.toLat);
+        if (!inMap(x1, y1) && !inMap(x2, y2)) continue;
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - Math.min(80, Math.hypot(x2 - x1, y2 - y1) * 0.28);
+        brush.save();
+        brush.strokeStyle = 'rgba(255, 122, 68, 0.88)';
+        brush.lineWidth = 2.0;
+        brush.setLineDash([6, 4]);
+        brush.beginPath();
+        brush.moveTo(x1, y1);
+        brush.quadraticCurveTo(mx, my, x2, y2);
+        brush.stroke();
+        brush.setLineDash([]);
+        brush.fillStyle = 'rgba(255, 92, 54, 0.45)';
+        brush.beginPath();
+        brush.arc(x2, y2, 11, 0, Math.PI * 2);
+        brush.fill();
+        brush.fillStyle = '#ffe599';
+        brush.font = '700 9px "Microsoft YaHei UI", sans-serif';
+        brush.textAlign = 'center';
+        brush.fillText('💥 ' + st.distKm + 'km', x2, y2 - 13);
+        brush.restore();
       }
     }
 

@@ -412,6 +412,21 @@
     ['us_hanford', '汉福德基地', -119.50, 46.55, 'america', 'usa', 'plain', false, 8, 8],
     ['us_pensacola', '彭萨科拉海航基地', -87.22, 30.42, 'america', 'usa', 'port', true, 7, 5],
     ['us_mobile', '莫比尔造船港', -88.04, 30.69, 'america', 'usa', 'port', true, 7, 6],
+
+    // ═══ 关键历史战役与重大事件发生地专属地名 ═══
+    ['evt_yalta', '雅尔塔(三巨头会议)', 34.17, 44.50, 'east', 'ussr', 'port', true, 9, 3],
+    ['evt_potsdam', '波茨坦(波茨坦公告)', 13.06, 52.40, 'europe', 'germany', 'urban', false, 9, 4],
+    ['evt_compiegne', '康边森林(停战车厢)', 2.91, 49.43, 'europe', 'france', 'forest', false, 7, 2],
+    ['evt_prokhorovka', '普罗霍罗夫卡(坦克决战)', 36.73, 51.04, 'east', 'ussr', 'plain', false, 9, 3],
+    ['evt_malmedy', '马耳梅迪(阿登血战)', 6.03, 50.43, 'europe', 'france', 'forest', false, 7, 2],
+    ['evt_sainte_mere', '圣梅尔埃格利斯(诺曼底空降)', -1.32, 49.41, 'europe', 'france', 'plain', false, 8, 2],
+    ['evt_lugouqiao', '卢沟桥(七七事变)', 116.21, 39.85, 'china', 'china', 'river', false, 9, 3],
+    ['evt_yangquan', '阳泉(百团大战)', 113.58, 37.86, 'china', 'china', 'mountain', false, 8, 4],
+    ['evt_songshan', '松山要塞(滇西血战)', 98.91, 24.74, 'china', 'china', 'fort', false, 8, 2],
+    ['evt_tengchong', '腾冲(滇西反攻)', 98.49, 25.02, 'china', 'china', 'mountain', false, 7, 3],
+    ['evt_kunlunguan', '昆仑关(桂南大捷)', 108.73, 22.97, 'china', 'china', 'fort', false, 8, 2],
+    ['evt_zhijiang', '芷江(日军受降洽降地)', 109.68, 27.44, 'china', 'china', 'mountain', false, 9, 3],
+    ['evt_nomonhan', '诺门罕(哈拉哈河战役)', 118.58, 47.73, 'china', 'ussr', 'plain', false, 8, 2],
   ];
 
   function applyWorldCitiesExt(WW2) {

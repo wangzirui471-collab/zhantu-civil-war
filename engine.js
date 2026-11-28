@@ -5589,12 +5589,30 @@
     const cityObj = data.cities.find((c) => c.id === tgtCity);
     const id = 'direct-' + kind + '-' + state.units.length + '-' + Date.now().toString(36).slice(-3);
     const sName = sideNames[side] || (side === 'ccp' ? '我方' : '敌方');
-    const nameMap = {
-      tank: `${sName}独立装甲坦克军`,
-      air: `${sName}前线空军混成联队`,
-      navy: `${sName}航母战舰特混舰队`,
-      missile: `${sName}远程导弹重炮旅`,
-    };
+    const reg = cityObj?.region || state.area || '';
+    const tm = data.theaterMode || 'civil';
+    let nameMap;
+    if (tm === 'ww2') {
+      if (side === 'roc') {
+        const isJapan = reg === 'pacific' || reg === 'china';
+        nameMap = isJapan
+          ? { tank: '日军独立战车师团', air: '第一航空舰队联队', navy: '联合舰队机动部队', missile: '重炮攻城联队' }
+          : { tank: '德军装甲军 (Panzerkorps)', air: '德国空军第2航空队', navy: '公海破交特混舰队', missile: 'V-2/重型铁道炮兵旅' };
+      } else {
+        const isUssr = reg === 'east';
+        nameMap = isUssr
+          ? { tank: '苏联近卫坦克集团军', air: '红军近卫强击航空师', navy: '苏联红旗舰队编队', missile: '近卫喀秋莎火箭炮师' }
+          : { tank: '盟军装甲军 (Armored Corps)', air: '盟军战术航空队', navy: '快速航母特混舰队', missile: '155mm长脚汤姆重炮群' };
+      }
+    } else if (tm === 'korea') {
+      nameMap = side === 'ccp'
+        ? { tank: '志愿军独立坦克团', air: '志愿军米格-15航空师', navy: '海岸防卫舰艇大队', missile: '志愿军炮兵喀秋莎师' }
+        : { tank: '美军第1装甲突击军', air: '远东空军第5航空队', navy: '第7舰队航母特混群', missile: '联合国军重炮支援群' };
+    } else {
+      nameMap = side === 'ccp'
+        ? { tank: '野战军独立装甲纵队', air: '人民空军前线混成旅', navy: '华东海军渡海特混舰队', missile: '特种兵炮兵重炮旅' }
+        : { tank: '国军装甲兵团', air: '空军战区轰炸大队', navy: '海军第一机动舰队', missile: '美械155mm重炮团' };
+    }
     if (kind === 'air') {
       if (state.air) {
         if (typeof state.air[side] === 'number') state.air[side] += 18;
@@ -5692,6 +5710,101 @@
     return { ok: true, target: targetTag, flipped };
   }
 
+  // ── 军队高自由度部署：城外 X km 自由扎营 + 炮兵/远程火力按射程(km)跨距开炮 ──
+  function haversineKm(lon1, lat1, lon2, lat2) {
+    const rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLon = (lon2 - lon1) * rad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+    return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function unitArtilleryRangeKm(unit) {
+    const art = Number(unit?.support?.artillery) || 0;
+    const isMissile = /导弹|火箭|喀秋莎|V-2|铁道炮|重炮/.test(unit?.name || '');
+    if (isMissile) return 420;
+    if (art >= 4 || unit?.branch === 'artillery') return 140;
+    if (art >= 2) return 75;
+    if (art >= 1) return 40;
+    return 25;
+  }
+
+  function setFieldCamp(data, state, unitId, distKm = 50, bearing = 'enemy') {
+    const unit = state.units.find((u) => u.id === unitId && u.strength > 0 && !u.inactive);
+    if (!unit || unit.side !== state.player) return { ok: false, error: '请选择一支己方在编部队进行扎营部署。' };
+    const city = data.cities.find((c) => c.id === unit.city);
+    if (!city) return { ok: false, error: '未找到部队所在城镇。' };
+    const dist = Math.max(0, Math.min(120, Math.round(Number(distKm) || 0)));
+    if (dist === 0) {
+      delete unit.camp;
+      addLog(state, `⛺ 【回城驻防】${unit.name} 已收拢野战营地，返回 ${city.name} 城内休整驻防。`, 'order', { unitId, city: city.id });
+      return { ok: true, distKm: 0 };
+    }
+    let deg = Number(bearing);
+    if (!Number.isFinite(deg)) {
+      const enemies = data.cities.filter((c) => state.owners[c.id] !== unit.side);
+      let nearest = null, bestD = Infinity;
+      for (const ec of enemies) {
+        const d = haversineKm(city.lon, city.lat, ec.lon, ec.lat);
+        if (d < bestD) { bestD = d; nearest = ec; }
+      }
+      if (nearest) {
+        const rad = Math.atan2((nearest.lon - city.lon) * Math.cos(city.lat * Math.PI / 180), nearest.lat - city.lat);
+        deg = ((rad * 180 / Math.PI) + 360) % 360;
+      } else {
+        deg = 90;
+      }
+    }
+    const dirs = ['正北', '东北', '正东', '东南', '正南', '西南', '正西', '西北'];
+    const dirLabel = dirs[Math.round(((deg % 360) / 45)) % 8];
+    const rad = deg * Math.PI / 180;
+    const campLat = city.lat + (dist * Math.cos(rad)) / 111.32;
+    const campLon = city.lon + (dist * Math.sin(rad)) / (111.32 * Math.max(0.25, Math.cos(city.lat * Math.PI / 180)));
+    unit.camp = { distKm: dist, bearingDeg: Math.round(deg), dirLabel, lon: Math.round(campLon * 1000) / 1000, lat: Math.round(campLat * 1000) / 1000 };
+    unit.entrench = Math.min(100, (unit.entrench || 0) + 12);
+    addLog(state, `⛺ 【城外野战扎营】${unit.name} 已前出至 ${city.name} 城外 ${dist} km（${dirLabel}方向）构筑野战营地（防空/防炮减伤 +25%，阵地警戒 +10%）！`, 'order', { unitId, city: city.id, distKm: dist });
+    return { ok: true, camp: unit.camp };
+  }
+
+  function artilleryFire(data, state, unitId, targetCityId, mode = 'suppress') {
+    const unit = state.units.find((u) => u.id === unitId && u.strength > 0 && !u.inactive);
+    if (!unit || unit.side !== state.player) return { ok: false, error: '请选择己方拥有火炮的部队。' };
+    const fromCity = data.cities.find((c) => c.id === unit.city);
+    const toCity = data.cities.find((c) => c.id === targetCityId);
+    if (!fromCity || !toCity) return { ok: false, error: '目标城镇无效。' };
+    if (state.owners[toCity.id] === unit.side) return { ok: false, error: '不能向己方控制城镇开炮。' };
+    const fromLon = unit.camp?.lon ?? fromCity.lon;
+    const fromLat = unit.camp?.lat ?? fromCity.lat;
+    const distKm = Math.round(haversineKm(fromLon, fromLat, toCity.lon, toCity.lat));
+    const maxRange = unitArtilleryRangeKm(unit);
+    if (distKm > maxRange) {
+      return { ok: false, error: `目标 ${toCity.name} 距离 ${distKm} km，超出 ${unit.name} 当前炮兵最大射程（${maxRange} km）！可先将部队前出城外扎营拉近距离，或调遣重炮/导弹旅。` };
+    }
+    const cmd = state.command?.[unit.side];
+    if (cmd && cmd.points < 10) return { ok: false, error: '炮兵跨距火力打击需要 10 指挥点。' };
+    if (cmd) cmd.points -= 10;
+    const defenders = state.units.filter((u) => u.city === toCity.id && u.side !== unit.side && u.strength > 0 && !u.inactive);
+    const artMult = mode === 'counter' ? 1.25 : mode === 'creeping' ? 1.1 : 1.0;
+    let totalCasualties = 0;
+    for (const def of defenders) {
+      const orgDrop = Math.round((14 + (unit.support?.artillery || 1) * 3.5) * artMult);
+      const loss = Math.min(def.strength - 100, Math.max(0, Math.round(def.strength * 0.045 * artMult)));
+      def.org = Math.max(5, (def.org ?? 70) - orgDrop);
+      if (loss > 0) { def.strength -= loss; totalCasualties += loss; }
+    }
+    if (state.forts?.[toCity.id] > 0) {
+      state.forts[toCity.id] = Math.max(0, state.forts[toCity.id] - 1);
+    }
+    state.artilleryStrikes = (state.artilleryStrikes || []).slice(-6);
+    state.artilleryStrikes.push({
+      fromLon, fromLat, toLon: toCity.lon, toLat: toCity.lat,
+      distKm, mode, date: state.date, at: Date.now(), unitName: unit.name, targetName: toCity.name,
+    });
+    const modeLabel = mode === 'counter' ? '反炮兵压制' : mode === 'creeping' ? '徐进弹幕掩护' : '覆盖压制炮击';
+    addLog(state, `🎯 【炮兵跨距开炮 · ${distKm}km】${unit.name} 从 ${fromCity.name}${unit.camp ? `城外${unit.camp.distKm}km营地` : ''}向 ${toCity.name} 实施${modeLabel}，造成敌军伤亡 ${totalCasualties} 人并大幅压制组织度与工事！`, 'bombard', { unitId, city: toCity.id, distKm });
+    return { ok: true, distKm, maxRange, totalCasualties };
+  }
+
   const api = {
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
@@ -5700,7 +5813,7 @@
     scorchedEarth, sabotageRail, buildSpyNetwork, activateCipherBreak,
     setAirRegion, setDoctrine, setMotorization, airborneInfiltrate, callSovietSupport,
     ensureCivilHoi, upgradeCivilMIO, designCivilEquipment, buildCivilRadar, relocateCivilIndustry, suppressCivilResistance, civilNavalThreeLineBattle, deployDirectForceCivil,
-    continueSandboxMode, endPrepEarly, declareSandboxWar,
+    continueSandboxMode, endPrepEarly, declareSandboxWar, setFieldCamp, artilleryFire, unitArtilleryRangeKm, haversineKm,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,
