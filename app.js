@@ -129,11 +129,12 @@
       if (!hit?.item) return;
       if (hit.kind === 'deployment') {
         const d = hit.item;
-        showDialog('全球战略布兵情报 · ' + d.name,
+        showDialog('全球战略布兵情报 · ' + (d.nation ? d.nation + ' · ' : '') + d.name,
           '<div class="hoi-cipher-box" style="display:grid;gap:6px;font-size:12.5px;">'
-          + '<p style="margin:0;"><b>部队番号：</b>' + escape(d.name) + '</p>'
+          + '<p style="margin:0;"><b>所属国家：</b>' + escape(d.nation || '国际集群') + ' · <b>部队番号：</b>' + escape(d.name) + '</p>'
           + '<p style="margin:0;"><b>驻地港口/城市：</b>' + escape(d.city) + ' · <b>兵种构成：</b>' + escape(d.kind) + '</p>'
           + '<p style="margin:0;"><b>主官：</b>' + escape(d.commander) + ' · <b>总兵力：</b>' + format(d.strength) + ' 人</p>'
+          + (d.arsenal ? '<p style="margin:0;color:#ffe599;"><b>核心重装备：</b>' + escape(d.arsenal) + '</p>' : '')
           + '<p class="subtext" style="margin:4px 0 0;line-height:1.55;">' + escape(d.note) + '</p>'
           + '</div><div class="dialog-actions"><button type="button" onclick="document.getElementById(\'dialog\').close()">关闭</button></div>');
       } else if (hit.kind === 'city') {
