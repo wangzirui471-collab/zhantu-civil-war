@@ -364,8 +364,11 @@
     const worldAtlasCtx = worldAtlas.getContext('2d');
     const worldLandMask = document.createElement('canvas');
     const worldLandMaskCtx = worldLandMask.getContext('2d');
+    const chinaLandMask = document.createElement('canvas');
+    const chinaLandMaskCtx = chinaLandMask.getContext('2d');
     let worldAtlasKey = '';
     let worldMaskBuilt = false;
+    let chinaMaskBuilt = false;
     let territoryKey = '';
     let pendingDrawFrame = 0;
 
@@ -482,6 +485,29 @@
         pendingDrawFrame = 0;
         draw();
       });
+    }
+
+    function ensureChinaLandMask() {
+      if (chinaMaskBuilt) return;
+      chinaMaskBuilt = true;
+      const mw = 2048, mh = 1024;
+      chinaLandMask.width = mw;
+      chinaLandMask.height = mh;
+      const ctx = chinaLandMaskCtx;
+      ctx.clearRect(0, 0, mw, mh);
+      const px = (lon) => ((lon + 180) / 360) * mw;
+      const py = (lat) => ((90 - lat) / 180) * mh;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      const maskRings = geography?.boundary?.length ? geography.boundary : (geography?.land || []);
+      for (let r = 0; r < maskRings.length; r++) {
+        const ring = maskRings[r];
+        if (!ring?.length) continue;
+        ctx.moveTo(px(ring[0][0]), py(ring[0][1]));
+        for (let i = 1; i < ring.length; i++) ctx.lineTo(px(ring[i][0]), py(ring[i][1]));
+        ctx.closePath();
+      }
+      ctx.fill();
     }
 
     function ensureWorldLandMask() {
@@ -1839,13 +1865,13 @@
           }
           territoryClippedBrush.clearRect(0, 0, width, height);
           territoryClippedBrush.save();
-          if (data.theaterMode && camera.zoom < 45) {
-            // GPU destination-in 硬件蒙版裁剪（0.2ms，替代 20,000 顶点 CPU path clip）
-            ensureWorldLandMask();
+          if (camera.zoom < 45) {
+            // 三大战区统一走硬件蒙版 destination-in 裁剪（0.2ms，彻底告别 CPU 路径 clip！）
+            const maskTex = data.theaterMode ? (ensureWorldLandMask(), worldLandMask) : (ensureChinaLandMask(), chinaLandMask);
             territoryClippedBrush.imageSmoothingEnabled = true;
             territoryClippedBrush.drawImage(territoryCanvas, 0, 0, width, height);
             territoryClippedBrush.globalCompositeOperation = 'destination-in';
-            blitWorldTexture(territoryClippedBrush, worldLandMask, worldLandMask.width, worldLandMask.height);
+            blitWorldTexture(territoryClippedBrush, maskTex, maskTex.width, maskTex.height);
           } else {
             const clipRings = data.theaterMode ? land : (geography?.boundary?.length ? geography.boundary : land);
             shape(territoryClippedBrush, clipRings);
