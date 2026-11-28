@@ -3947,8 +3947,8 @@
       map.overlay(button.dataset.overlay, next);
     };
   });
-  $('zoom-in').onclick = () => map.zoom(1.25);
-  $('zoom-out').onclick = () => map.zoom(.8);
+  $('zoom-in').onclick = () => map.zoom(1.45);
+  $('zoom-out').onclick = () => map.zoom(.69);
   $('map-reset').onclick = () => map.focus(state.scope === 'national' ? 'national' : area(), selectedCity);
   $('import-file').onchange = async (event) => {
     const file = event.target.files[0];

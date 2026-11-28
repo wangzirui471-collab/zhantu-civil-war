@@ -75,9 +75,12 @@
       for (let col = 0; col < grid.width; col++) {
         const height = at(row, col);
         if (height < -1) continue;
-        const neighborX = at(row, Math.min(grid.width - 1, col + 1)) - at(row, Math.max(0, col - 1));
+        const neighborX = at(row, Math.min(grid.width - 1, col + 1)) - at(row, Math.max(grid.width - 1, col - 1) === col ? col : Math.max(0, col - 1));
         const neighborY = at(Math.min(grid.height - 1, row + 1), col) - at(Math.max(0, row - 1), col);
-        const reliefAmount = clamp((neighborX - neighborY) / (grid.step * 160), -33, 32);
+        const slopeX = (at(row, Math.min(grid.width - 1, col + 1)) - at(row, Math.max(0, col - 1))) / (grid.step * 115);
+        const slopeY = (at(Math.min(grid.height - 1, row + 1), col) - at(Math.max(0, row - 1), col)) / (grid.step * 115);
+        // 3D 立体西北 315° 太阳斜射光影（暖阳面提亮、背阴面偏冷蓝灰，增强真实山脊立体感）
+        const shade = clamp((slopeX - slopeY) * 1.35, -46, 44);
         let upper = terrainStops.findIndex(([level]) => level > height);
         if (upper < 0) upper = terrainStops.length - 1;
         upper = Math.max(1, upper);
@@ -85,9 +88,12 @@
         const [upperLevel, upperColor] = terrainStops[upper];
         const t = clamp((height - lowerLevel) / (upperLevel - lowerLevel), 0, 1);
         const i = (row * grid.width + col) * 4;
-        for (let channel = 0; channel < 3; channel++) {
-          image.data[i + channel] = lowerColor[channel] * (1 - t) + upperColor[channel] * t + reliefAmount;
-        }
+        const warmR = shade > 0 ? shade * 1.08 : shade * 0.92;
+        const warmG = shade * 0.98;
+        const coolB = shade > 0 ? shade * 0.84 : shade * 0.68;
+        image.data[i] = clamp(lowerColor[0] * (1 - t) + upperColor[0] * t + warmR, 0, 255);
+        image.data[i + 1] = clamp(lowerColor[1] * (1 - t) + upperColor[1] * t + warmG, 0, 255);
+        image.data[i + 2] = clamp(lowerColor[2] * (1 - t) + upperColor[2] * t + coolB, 0, 255);
         const border = Math.min(row, col, grid.width - 1 - col, grid.height - 1 - row);
         image.data[i + 3] = index > 0 ? 255 * clamp(border * grid.step / .7, 0, 1) : 255;
       }
@@ -357,7 +363,7 @@
       if (!activeGrids.length) return;
       const southwest = unproject(0, height);
       const northeast = unproject(width, 0);
-      const step = camera.zoom >= 200 ? 50 : camera.zoom >= 100 ? 100 : camera.zoom >= 48 ? 200 : camera.zoom >= 24 ? 400 : 800;
+      const step = camera.zoom >= 1200 ? 25 : camera.zoom >= 260 ? 50 : camera.zoom >= 100 ? 100 : camera.zoom >= 48 ? 200 : camera.zoom >= 24 ? 400 : 800;
       const paths = new Map();
       for (const [index, grid] of activeGrids.entries()) {
         const stride = camera.zoom < 19 ? 3 : camera.zoom < 35 ? 2 : 1;
@@ -405,6 +411,263 @@
       ctx.fillText('等高距 ' + step + ' 米', 15, height - 115);
     }
 
+    function sampleElevation(lon, lat) {
+      for (let i = grids.length - 1; i >= 0; i--) {
+        const g = grids[i];
+        if (lon >= g.west && lon <= g.east && lat <= g.north && lat >= g.south) {
+          const fc = (lon - g.west) / g.step;
+          const fr = (g.north - lat) / g.step;
+          const c0 = clamp(Math.floor(fc), 0, g.width - 2);
+          const r0 = clamp(Math.floor(fr), 0, g.height - 2);
+          const tx = fc - c0, ty = fr - r0;
+          const h00 = g.at(r0, c0), h10 = g.at(r0, c0 + 1), h01 = g.at(r0 + 1, c0), h11 = g.at(r0 + 1, c0 + 1);
+          return (h00 * (1 - tx) + h10 * tx) * (1 - ty) + (h01 * (1 - tx) + h11 * tx) * ty;
+        }
+      }
+      for (let i = worldGrids.length - 1; i >= 0; i--) {
+        const g = worldGrids[i];
+        if (lon >= g.west && lon <= g.east && lat <= g.north && lat >= g.south) {
+          const fc = (lon - g.west) / g.step;
+          const fr = (g.north - lat) / g.step;
+          const c0 = clamp(Math.floor(fc), 0, g.width - 2);
+          const r0 = clamp(Math.floor(fr), 0, g.height - 2);
+          const tx = fc - c0, ty = fr - r0;
+          const h00 = g.at(r0, c0), h10 = g.at(r0, c0 + 1), h01 = g.at(r0 + 1, c0), h11 = g.at(r0 + 1, c0 + 1);
+          return (h00 * (1 - tx) + h10 * tx) * (1 - ty) + (h01 * (1 - tx) + h11 * tx) * ty;
+        }
+      }
+      return 0;
+    }
+
+    function drawCroppedGrid(ctx, grid, alpha) {
+      const [a, b] = project(grid.west, grid.north);
+      const [x, y] = project(grid.east, grid.south);
+      if (x < 0 || a > width || y < 0 || b > height) return;
+      const fullW = x - a;
+      const fullH = y - b;
+      if (fullW <= 0 || fullH <= 0) return;
+      // 仅裁剪视口内可见区域绘制，避免深度放大至 zoom=24000 时超大目标矩形引发 Canvas/GPU 掉帧或裁切失效
+      const dx0 = Math.max(0, a);
+      const dy0 = Math.max(0, b);
+      const dx1 = Math.min(width, x);
+      const dy1 = Math.min(height, y);
+      if (dx1 <= dx0 || dy1 <= dy0) return;
+      const sx = ((dx0 - a) / fullW) * grid.width;
+      const sy = ((dy0 - b) / fullH) * grid.height;
+      const sw = ((dx1 - dx0) / fullW) * grid.width;
+      const sh = ((dy1 - dy0) / fullH) * grid.height;
+      ctx.globalAlpha = alpha;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(grid.relief, sx, sy, sw, sh, dx0, dy0, dx1 - dx0, dy1 - dy0);
+    }
+
+    function drawTerrain3DRelief(ctx) {
+      const is3DMode = options.mode === 'terrain3d';
+      if (!is3DMode && camera.zoom < 95) return;
+      const cell = is3DMode ? 22 : 28;
+      const cols = Math.ceil(width / cell) + 1;
+      const rows = Math.ceil(height / cell) + 1;
+      const elev = new Float32Array(cols * rows);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const [lon, lat] = unproject(c * cell, r * cell);
+          elev[r * cols + c] = sampleElevation(lon, lat);
+        }
+      }
+      ctx.save();
+      const liftScale = is3DMode ? clamp(camera.zoom * 0.012, 0.008, 0.032) : 0.007;
+      // 绘制 3D 立体山脊斜坡光影与高程透视层叠（完全符合 1937–1953 历史地貌）
+      for (let r = 1; r < rows - 1; r++) {
+        for (let c = 1; c < cols - 1; c++) {
+          const h = elev[r * cols + c];
+          if (h < 160) continue;
+          const hx = elev[r * cols + (c + 1)] - elev[r * cols + (c - 1)];
+          const hy = elev[(r + 1) * cols + c] - elev[(r - 1) * cols + c];
+          const slope = Math.hypot(hx, hy);
+          if (slope < 22 && h < 900) continue;
+          const px = c * cell;
+          const py = r * cell;
+          const lift = clamp(h * liftScale, 2, is3DMode ? 26 : 12);
+          // 东南背阴山坡立体投影
+          if (is3DMode || slope > 45) {
+            ctx.fillStyle = h > 2600 ? 'rgba(46, 56, 72, 0.24)' : 'rgba(54, 48, 36, 0.20)';
+            ctx.beginPath();
+            ctx.moveTo(px - cell * 0.45, py + cell * 0.15);
+            ctx.lineTo(px + cell * 0.05, py - lift);
+            ctx.lineTo(px + cell * 0.62, py + cell * 0.28);
+            ctx.closePath();
+            ctx.fill();
+            // 西北向阳山坡暖光高光
+            ctx.fillStyle = h > 3200 ? 'rgba(250, 248, 240, 0.34)' : 'rgba(244, 224, 174, 0.20)';
+            ctx.beginPath();
+            ctx.moveTo(px - cell * 0.55, py + cell * 0.18);
+            ctx.lineTo(px + cell * 0.05, py - lift);
+            ctx.lineTo(px - cell * 0.05, py + cell * 0.20);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
+      }
+      // 局部最高峰标高三角点（△ 842m）
+      const peaks = [];
+      for (let r = 2; r < rows - 2; r += 2) {
+        for (let c = 2; c < cols - 2; c += 2) {
+          const h = elev[r * cols + c];
+          if (h < 350) continue;
+          if (h >= elev[(r - 1) * cols + c] && h >= elev[(r + 1) * cols + c]
+            && h >= elev[r * cols + (c - 1)] && h >= elev[r * cols + (c + 1)]) {
+            peaks.push({ x: c * cell, y: r * cell, h: Math.round(h) });
+          }
+        }
+      }
+      peaks.sort((a, b) => b.h - a.h);
+      const placed = [];
+      ctx.font = '600 9.5px "Microsoft YaHei UI", sans-serif';
+      ctx.textAlign = 'center';
+      for (const pk of peaks.slice(0, is3DMode ? 18 : 10)) {
+        if (placed.some((p) => Math.hypot(p.x - pk.x, p.y - pk.y) < 95)) continue;
+        placed.push(pk);
+        const label = '△ ' + pk.h + 'm';
+        ctx.strokeStyle = 'rgba(242, 232, 206, 0.85)';
+        ctx.lineWidth = 2.4;
+        ctx.strokeText(label, pk.x, pk.y - 4);
+        ctx.fillStyle = '#4a3520';
+        ctx.fillText(label, pk.x, pk.y - 4);
+      }
+      ctx.restore();
+    }
+
+    function drawHistoricalMicroDetails(ctx) {
+      // 参考谷歌地图微观缩放层次，严格遵守 1937–1953 历史年代（老城街廓、蒸汽铁路站场、海港栈桥防波堤、野战土质机场、农田与战壕）
+      if (camera.zoom < 85) return;
+      const alpha = clamp((camera.zoom - 85) / 140, 0.15, 0.92);
+      const allCities = data.theaterMode === 'ww2' ? data.cities : [...data.cities, ...globalBackdropCities];
+      ctx.save();
+      for (const city of allCities) {
+        const [x, y] = project(city.lon, city.lat);
+        if (x < -120 || x > width + 120 || y < -120 || y > height + 120) continue;
+        const val = Number(city.value || Math.round((city.vp || 6) / 2)) || 4;
+        const scale = clamp(camera.zoom / 220, 0.45, 5.5);
+        const cityRad = (10 + val * 2.2) * Math.min(scale, 3.2);
+        const seed = (city.id || city.name || 'c').split('').reduce((s, ch) => s + ch.charCodeAt(0), 0);
+
+        // 1. 历史老城城廓与民国/二战时期棋盘街巷（绝无现代高架/摩天楼）
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.62;
+        ctx.fillStyle = 'rgba(182, 168, 138, 0.42)';
+        ctx.strokeStyle = 'rgba(96, 82, 58, 0.62)';
+        ctx.lineWidth = Math.max(1, scale * 0.85);
+        ctx.beginPath();
+        ctx.roundRect(x - cityRad, y - cityRad * 0.78, cityRad * 2, cityRad * 1.56, 3);
+        ctx.fill();
+        ctx.stroke();
+        // 老城十字主街与次级街巷
+        ctx.strokeStyle = 'rgba(116, 102, 76, 0.46)';
+        ctx.lineWidth = Math.max(0.7, scale * 0.45);
+        ctx.beginPath();
+        const cols = camera.zoom >= 350 ? 6 : 4;
+        for (let i = 1; i < cols; i++) {
+          const gx = x - cityRad + (cityRad * 2 * i) / cols;
+          ctx.moveTo(gx, y - cityRad * 0.76);
+          ctx.lineTo(gx, y + cityRad * 0.76);
+        }
+        const rows = camera.zoom >= 350 ? 5 : 3;
+        for (let j = 1; j < rows; j++) {
+          const gy = y - cityRad * 0.78 + (cityRad * 1.56 * j) / rows;
+          ctx.moveTo(x - cityRad, gy);
+          ctx.lineTo(x + cityRad, gy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. 蒸汽铁路编组站与铁轨股道
+        if (val >= 4 || outlets.get(city.id)) {
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.72;
+          const ry = y + cityRad * 0.95;
+          ctx.strokeStyle = '#3f3528';
+          ctx.lineWidth = 1.2;
+          for (const dy of [-2.5, 0, 2.5]) {
+            ctx.beginPath();
+            ctx.moveTo(x - cityRad * 0.9, ry + dy);
+            ctx.lineTo(x + cityRad * 0.9, ry + dy);
+            ctx.stroke();
+          }
+          ctx.fillStyle = '#6e4c36';
+          ctx.fillRect(x - 6, ry - 5, 12, 4);
+          ctx.restore();
+        }
+
+        // 3. 海港石砌防波堤与栈桥码头（港口专属）
+        if (city.port || city.terrain === 'port') {
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.78;
+          const px = x + cityRad * 1.05;
+          ctx.strokeStyle = '#56646b';
+          ctx.lineWidth = Math.max(1.8, scale * 1.1);
+          ctx.beginPath();
+          ctx.moveTo(px, y - cityRad * 0.55);
+          ctx.lineTo(px + cityRad * 0.65, y - cityRad * 0.35);
+          ctx.lineTo(px + cityRad * 0.65, y + cityRad * 0.45);
+          ctx.stroke();
+          ctx.strokeStyle = '#8b7355';
+          ctx.lineWidth = 1.1;
+          for (const dy of [-cityRad * 0.25, 0, cityRad * 0.25]) {
+            ctx.beginPath();
+            ctx.moveTo(px - 2, y + dy);
+            ctx.lineTo(px + cityRad * 0.42, y + dy);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // 4. 战时野战机场土质/碎石跑道（重要城市与军事基地专属）
+        if (val >= 5 || city.terrain === 'fort') {
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.68;
+          const ax = x - cityRad * 1.25;
+          const ay = y - cityRad * 0.25;
+          ctx.translate(ax, ay);
+          ctx.rotate(((seed % 5) - 2) * 0.22);
+          ctx.fillStyle = 'rgba(138, 126, 98, 0.72)';
+          ctx.fillRect(-cityRad * 0.55, -2.5, cityRad * 1.1, 5);
+          ctx.strokeStyle = 'rgba(240, 232, 206, 0.7)';
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(-cityRad * 0.48, 0);
+          ctx.lineTo(cityRad * 0.48, 0);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+
+        // 5. 超近距（zoom >= 320）历史农田方格、松林丛与外围防御战壕
+        if (camera.zoom >= 320) {
+          const microAlpha = clamp((camera.zoom - 320) / 360, 0.12, 0.62);
+          ctx.save();
+          ctx.globalAlpha = microAlpha;
+          ctx.strokeStyle = 'rgba(116, 134, 86, 0.55)';
+          ctx.lineWidth = 0.8;
+          for (let k = 0; k < 6; k++) {
+            const ang = (k / 6) * Math.PI * 2 + (seed % 7) * 0.3;
+            const fx = x + Math.cos(ang) * cityRad * 1.75;
+            const fy = y + Math.sin(ang) * cityRad * 1.45;
+            ctx.strokeRect(fx - 12, fy - 8, 24, 16);
+          }
+          // 城郊环形防御战壕虚线
+          ctx.strokeStyle = 'rgba(92, 74, 52, 0.58)';
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.ellipse(x, y, cityRad * 1.38, cityRad * 1.12, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+
     function drawBase() {
       const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province, options.terrainBack].join('|');
       if (key === backgroundKey) return;
@@ -423,42 +686,35 @@
       shape(ctx, land);
       ctx.fillStyle = options.mode === 'contour' ? '#e3d7b7' : '#d3c9a7';
       ctx.fill();
-      if (options.mode === 'terrain' || options.mode === 'contour' || options.terrainBack) {
+      if (options.mode === 'terrain' || options.mode === 'terrain3d' || options.mode === 'contour' || options.terrainBack) {
         ctx.save();
         ctx.clip();
-        // 三大战区统一先铺全球 AWS Mapzen 卫星高程 DEM，再叠加东亚/中国/朝鲜 0.1° 超高清真实 SRTM 高程
-        for (const grid of worldGrids) {
-          const [a, b] = project(grid.west, grid.north);
-          const [x, y] = project(grid.east, grid.south);
-          if (x < 0 || a > width || y < 0 || b > height) continue;
-          ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
-          ctx.drawImage(grid.relief, a, b, x - a, y - b);
-        }
-        for (const grid of grids) {
-          const [a, b] = project(grid.west, grid.north);
-          const [x, y] = project(grid.east, grid.south);
-          if (x < 0 || a > width || y < 0 || b > height) continue;
-          ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
-          ctx.drawImage(grid.relief, a, b, x - a, y - b);
-        }
+        const demAlpha = options.mode === 'contour' ? .52 : .97;
+        // 视口精准裁剪绘制全球 AWS Mapzen DEM + 东亚 0.1° 超高清 SRTM DEM（支持 24000 倍超大缩放不卡顿不丢失）
+        for (const grid of worldGrids) drawCroppedGrid(ctx, grid, demAlpha);
+        for (const grid of grids) drawCroppedGrid(ctx, grid, demAlpha);
+        // 3D 立体地形光影与高地标高
+        drawTerrain3DRelief(ctx);
         // 叠加真实世界主要河流线
         const worldRivers = globalThis.CivilWarWorld?.rivers || [];
         if (worldRivers.length) {
           ctx.save();
-          ctx.strokeStyle = 'rgba(72, 118, 140, 0.55)';
-          ctx.lineWidth = Math.max(0.8, Math.min(2.0, camera.zoom * 0.04));
+          ctx.strokeStyle = 'rgba(72, 118, 140, 0.58)';
+          ctx.lineWidth = Math.max(0.85, Math.min(3.2, camera.zoom * 0.04));
           ctx.beginPath();
           for (const rv of worldRivers) trace(ctx, rv.pts, false);
           ctx.stroke();
           ctx.restore();
         }
+        // 1937–1953 历史年代微观城镇/铁路/海港/野战机场/农田细节
+        drawHistoricalMicroDetails(ctx);
         ctx.restore();
       }
       ctx.strokeStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#2a4654b8' : '#3a5d6699';
       ctx.lineWidth = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? 1.05 : .85;
       shape(ctx, land);
       ctx.stroke();
-      if (options.mode === 'contour') showContours(ctx);
+      if (options.mode === 'contour' || options.mode === 'terrain3d') showContours(ctx);
 
       if (options.province && worldGeo?.borders?.length) {
         ctx.save();
@@ -1027,7 +1283,7 @@
             pixels.data[offset] = parseInt(color.slice(1, 3), 16);
             pixels.data[offset + 1] = parseInt(color.slice(3, 5), 16);
             pixels.data[offset + 2] = parseInt(color.slice(5, 7), 16);
-            pixels.data[offset + 3] = data.theaterMode === 'ww2' ? 105 : 130;
+            pixels.data[offset + 3] = camera.zoom >= 400 ? 48 : camera.zoom >= 120 ? 78 : (data.theaterMode === 'ww2' ? 105 : 130);
           }
           territoryBrush.putImageData(pixels, 0, 0);
         }
@@ -2669,6 +2925,44 @@
         brush.restore();
       }
       drawPreviewTip();
+      drawScaleBar();
+    }
+
+    function drawScaleBar() {
+      // 谷歌地图级动态比例尺（1000km -> 100m 实时换算）
+      const kmPerDegLat = 111.1;
+      const kmPerPx = kmPerDegLat / Math.max(camera.zoom, 0.1);
+      const niceStepsKm = [1000, 500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05];
+      let chosenKm = 100;
+      for (const s of niceStepsKm) {
+        const px = s / kmPerPx;
+        if (px >= 56 && px <= 148) { chosenKm = s; break; }
+      }
+      const barPx = clamp(chosenKm / kmPerPx, 48, 152);
+      const label = chosenKm >= 1 ? chosenKm + ' km' : Math.round(chosenKm * 1000) + ' m';
+      const x0 = 14;
+      const y0 = height - 42;
+      brush.save();
+      brush.fillStyle = 'rgba(20, 26, 23, 0.74)';
+      brush.strokeStyle = 'rgba(214, 190, 134, 0.55)';
+      brush.lineWidth = 1;
+      brush.beginPath();
+      brush.roundRect(x0 - 6, y0 - 15, barPx + 74, 24, 4);
+      brush.fill();
+      brush.stroke();
+      brush.strokeStyle = '#f4e6be';
+      brush.lineWidth = 2;
+      brush.beginPath();
+      brush.moveTo(x0, y0 - 4);
+      brush.lineTo(x0, y0 + 2);
+      brush.lineTo(x0 + barPx, y0 + 2);
+      brush.lineTo(x0 + barPx, y0 - 4);
+      brush.stroke();
+      brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
+      brush.fillStyle = '#f5e7c2';
+      brush.textBaseline = 'middle';
+      brush.fillText(label, x0 + barPx + 7, y0 - 2);
+      brush.restore();
     }
 
     function resize() {
@@ -2688,7 +2982,7 @@
 
     function zoom(factor, x = width / 2, y = height / 2) {
       const [lon, lat] = unproject(x, y);
-      camera.zoom = clamp(camera.zoom * factor, 3.4, 5400);
+      camera.zoom = clamp(camera.zoom * factor, 3.4, 24000);
       const [afterLon, afterLat] = unproject(x, y);
       camera.lon += lon - afterLon;
       camera.lat += lat - afterLat;
@@ -2733,7 +3027,7 @@
       if (!city) return;
       camera.lon = city.lon;
       camera.lat = city.lat;
-      camera.zoom = Math.max(camera.zoom, 480);
+      camera.zoom = Math.max(camera.zoom, 620);
       draw();
     }
 
@@ -2783,7 +3077,7 @@
 
     canvas.addEventListener('wheel', (event) => {
       event.preventDefault();
-      zoom(Math.exp(-event.deltaY * .00145), ...coordinates(event));
+      zoom(Math.exp(-event.deltaY * .0018), ...coordinates(event));
     }, { passive: false });
     let drawFrontMode = false;
     canvas.addEventListener('pointerdown', (event) => {
