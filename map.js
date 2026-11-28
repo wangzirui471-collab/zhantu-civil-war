@@ -483,7 +483,7 @@
     // ── 🛰️ 多源全球高清地图瓦片引擎（卫星 / 国家地理地形 / 3D立体晕渲 / OpenTopoMap等高线，三战区通用、360°无限循环、零偏差重投影、离线无缝降级）──
     const TILE_PROVIDERS = {
       satellite: {
-        maxZ: 14,
+        maxZ: 17,
         dark: true,
         url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x,
       },
@@ -498,9 +498,15 @@
         url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/' + z + '/' + y + '/' + x,
       },
       contour: {
-        maxZ: 14,
+        maxZ: 17,
         dark: false,
         url: (z, x, y) => 'https://tile.opentopomap.org/' + z + '/' + x + '/' + y + '.png',
+      },
+      // 素图：Esri 浅灰矢量底图，全球到 z16，颜色极浅、无地形阴影与地名堆叠，兵力标记最清晰
+      clean: {
+        maxZ: 16,
+        dark: false,
+        url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/' + z + '/' + y + '/' + x,
       },
     };
     const satTileCache = new Map();
@@ -1258,19 +1264,21 @@
       if (key === backgroundKey) return;
       backgroundKey = key;
       const ctx = backdrop;
-      const activeTileStyle = options.mode === 'satellite' ? 'satellite'
+      const activeTileStyle = options.mode === 'clean' ? 'clean'
+        : options.mode === 'satellite' ? 'satellite'
         : options.mode === 'terrain' ? 'terrain'
         : options.mode === 'terrain3d' ? 'terrain3d'
         : options.mode === 'contour' ? 'contour'
         : options.satellite ? 'satellite' : (options.terrainBack ? 'terrain3d' : null);
       const useSatellite = Boolean(activeTileStyle);
       const isDarkTiles = activeTileStyle === 'satellite';
+      const isCleanTiles = activeTileStyle === 'clean';
       let satDrawn = false;
       if (activeTileStyle) {
         // 先铺离线高清世界图集作为底层兜底（瓦片加载中或离线时绝不黑屏），再无缝覆盖对应高清在线瓦片
-        ctx.fillStyle = isDarkTiles ? '#071527' : '#658a99';
+        ctx.fillStyle = isDarkTiles ? '#071527' : isCleanTiles ? '#eef1f3' : '#658a99';
         ctx.fillRect(0, 0, width, height);
-        if (camera.zoom < 45) {
+        if (camera.zoom < 45 && !isCleanTiles) {
           ensureWorldAtlas();
           blitWorldTexture(ctx, worldAtlas, worldAtlas.width, worldAtlas.height);
         }
@@ -1287,7 +1295,8 @@
           ctx.save();
           ctx.beginPath();
           for (const seg of worldGeo.borders) trace(ctx, seg, false);
-          ctx.strokeStyle = satDrawn ? 'rgba(255, 255, 255, 0.64)' : 'rgba(68, 76, 62, 0.56)';
+          ctx.strokeStyle = satDrawn ? 'rgba(255, 255, 255, 0.64)'
+            : isCleanTiles ? 'rgba(96, 106, 110, 0.42)' : 'rgba(68, 76, 62, 0.56)';
           ctx.lineWidth = satDrawn ? 0.95 : 0.85;
           ctx.stroke();
           ctx.restore();
@@ -1302,7 +1311,7 @@
           ctx.stroke();
           ctx.restore();
         }
-        if (camera.zoom >= 85) drawHistoricalMicroDetails(ctx);
+        if (camera.zoom >= 85 && !isCleanTiles) drawHistoricalMicroDetails(ctx);
       } else if (camera.zoom < 45 && options.mode !== 'contour') {
         // 宏观/全球/战区视角直接使用 WebGL GPU 着色器（或 4096×2048 纹理贴图）完成 360° 球形底图渲染！
         ensureWorldAtlas();
@@ -1434,7 +1443,8 @@
             ctx.strokeText(province.name, x, y);
             ctx.fillStyle = '#f2ecd6';
           } else {
-            ctx.fillStyle = options.mode === 'terrain' ? '#3b4a39b8' : '#5b614bbd';
+            ctx.fillStyle = options.mode === 'terrain' ? '#3b4a39b8'
+              : options.mode === 'clean' ? '#5d666bb0' : '#5b614bbd';
           }
           ctx.fillText(province.name, x, y);
         }
@@ -1948,7 +1958,7 @@
       const national = zoomLevel() === 'national';
       const supplyHeat = Boolean(options.supply);
       const factionMode = options.mode === 'faction';
-      const situationMode = options.mode === 'situation';
+      const situationMode = options.mode === 'situation' || options.mode === 'clean';
       const showFill = situationMode || factionMode || supplyHeat || national;
       const radius = national ? clamp(camera.zoom * 1.9, 16, 42) : clamp(camera.zoom * 1.05, 16, 54);
       if ((situationMode || factionMode) && !supplyHeat) {
@@ -1981,7 +1991,10 @@
           territoryCanvas.width = tw;
           territoryCanvas.height = th;
           const pixels = territoryBrush.createImageData(tw, th);
-          const alphaVal = camera.zoom >= 400 ? 48 : camera.zoom >= 120 ? 78 : (data.theaterMode === 'ww2' ? 105 : 130);
+          // 素图底子浅，势力色压薄一档，避免色块盖住部队标记
+          const alphaVal = options.mode === 'clean'
+            ? (camera.zoom >= 400 ? 34 : camera.zoom >= 120 ? 56 : 84)
+            : camera.zoom >= 400 ? 48 : camera.zoom >= 120 ? 78 : (data.theaterMode === 'ww2' ? 105 : 130);
 
           // 空间哈希网格索引：只查询当前像素周边 3×3 网格内城市，把单帧计算从 2000 万次降到 < 8 万次！
           const [vMinLon, vMaxLon, vMinLat, vMaxLat] = viewportGeoBounds();
@@ -3937,7 +3950,7 @@
       layer(mode) {
         options.mode = mode;
         const note = document.getElementById('territory-note');
-        if (note) note.hidden = !['situation', 'faction'].includes(mode);
+        if (note) note.hidden = !['situation', 'faction', 'clean'].includes(mode);
         const legend = document.getElementById('faction-key');
         if (legend && mode !== 'faction') legend.hidden = true;
         draw();
@@ -3946,7 +3959,7 @@
         options[id] = enabled;
         if (id === 'supply') {
           const note = document.getElementById('territory-note'), legend = document.getElementById('faction-key');
-          if (note) note.hidden = enabled || !['situation', 'faction'].includes(options.mode);
+          if (note) note.hidden = enabled || !['situation', 'faction', 'clean'].includes(options.mode);
           if (legend) legend.hidden = enabled || options.mode !== 'faction';
         }
         draw();

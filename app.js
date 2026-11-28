@@ -5583,7 +5583,7 @@
   });
   document.addEventListener('keydown', (event) => {
     if (!dialog.open && !event.target.closest('input,select,textarea')) {
-      const fMap = { F1: ['layer', 'situation'], F2: ['layer', 'terrain'], F3: ['overlay', 'supply'], F4: ['layer', 'faction'] };
+      const fMap = { F1: ['layer', 'situation'], F2: ['layer', 'terrain'], F3: ['overlay', 'supply'], F4: ['layer', 'faction'], F6: ['layer', 'clean'] };
       if (fMap[event.key]) {
         event.preventDefault();
         const [kind, val] = fMap[event.key];
