@@ -180,8 +180,7 @@
       pane = 'army';
       setMapHelp();
       render();
-      $('inspector-body').closest('aside').classList.add('is-open');
-      $('mobile-inspector').setAttribute('aria-expanded', 'true');
+      setInspectorOpen(true);
     },
   });
 
@@ -323,6 +322,7 @@
   // 全局画面与游戏参数设置（跨三大战区实时生效）
   globalThis.GameSettings = globalThis.GameSettings || {
     modelScale: 1.0,
+    vehicleScale: 1.0,
     maxModelsMacro: 4,
     labelScale: 1.0,
     uiFontScale: 1.0,
@@ -347,6 +347,8 @@
       + '<input type="range" id="set-ui-font" min="0.90" max="1.30" step="0.05" value="' + gs.uiFontScale + '" style="width:220px;"></label>'
       + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>3D 兵模大小缩放：<b id="set-scale-v">' + gs.modelScale.toFixed(2) + '×</b></span>'
       + '<input type="range" id="set-model-scale" min="0.6" max="1.8" step="0.05" value="' + gs.modelScale + '" style="width:220px;"></label>'
+      + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>重装备（坦克/飞机/军舰）大小：<b id="set-vehicle-v">' + (Number.isFinite(gs.vehicleScale) ? gs.vehicleScale : 1).toFixed(2) + '×</b></span>'
+      + '<input type="range" id="set-vehicle-scale" min="0.4" max="1.8" step="0.05" value="' + (Number.isFinite(gs.vehicleScale) ? gs.vehicleScale : 1) + '" style="width:220px;"></label>'
       + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>宏观视角每纵队最大兵模数：<b id="set-max-v">' + gs.maxModelsMacro + '</b></span>'
       + '<input type="range" id="set-max-macro" min="1" max="8" step="1" value="' + gs.maxModelsMacro + '" style="width:220px;"></label>'
       + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>战争音效音量：<b id="set-vol-v">' + Math.round(gs.audioVolume * 100) + '%</b></span>'
@@ -368,6 +370,11 @@
       body.querySelector('#set-scale-v').textContent = gs.modelScale.toFixed(2) + '×';
       sync();
     };
+    body.querySelector('#set-vehicle-scale').oninput = (ev) => {
+      gs.vehicleScale = Number(ev.target.value);
+      body.querySelector('#set-vehicle-v').textContent = gs.vehicleScale.toFixed(2) + '×';
+      sync();
+    };
     body.querySelector('#set-max-macro').oninput = (ev) => {
       gs.maxModelsMacro = Number(ev.target.value);
       body.querySelector('#set-max-v').textContent = String(gs.maxModelsMacro);
@@ -382,7 +389,7 @@
       sync();
     };
     body.querySelector('#set-reset-btn').onclick = () => {
-      Object.assign(gs, { modelScale: 1.0, maxModelsMacro: 4, labelScale: 1.0, uiFontScale: 1.0, audioVolume: 0.85, showRangeRings: true });
+      Object.assign(gs, { modelScale: 1.0, vehicleScale: 1.0, maxModelsMacro: 4, labelScale: 1.0, uiFontScale: 1.0, audioVolume: 0.85, showRangeRings: true });
       applyUiFontScale();
       openSettingsDialog();
       sync();
@@ -1046,6 +1053,8 @@
     if (!panel) return;
     panel.classList.toggle('is-hidden', !open);
     panel.classList.toggle('is-open', Boolean(open));
+    // 宽屏时抽屉占独立一列（挤压地图而不是盖住图层按钮），窄屏时退回浮层
+    panel.closest('.workspace')?.classList.toggle('inspector-open', Boolean(open));
     $('mobile-inspector')?.setAttribute('aria-expanded', String(Boolean(open)));
   }
 

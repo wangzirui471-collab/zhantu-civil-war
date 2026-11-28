@@ -1733,9 +1733,18 @@
       brush.restore();
     }
 
+    // 重装备统一放大：坦克/飞机/军舰默认明显大于单兵；玩家可在设置里下调 vehicleScale
+    function equipmentPx(soldierBase, kind) {
+      const gs = globalThis.GameSettings || {};
+      const user = Number(gs.vehicleScale);
+      const mul = Number.isFinite(user) ? Math.max(0.4, Math.min(2.2, user)) : 1.0;
+      const per = kind === 'artillery' ? 1.55 : kind === 'aircraft' ? 2.0 : kind === 'ship' ? 2.2 : 1.85;
+      return Math.round(soldierBase * per * mul * (Number(gs.modelScale) || 1));
+    }
+
     function drawFleet(x, y, side, mission, count) {
       const columns = Math.min(5, count);
-      const size = zoomLevel() === 'detail' ? 76 : zoomLevel() === 'national' ? 38 : 54;
+      const size = equipmentPx(zoomLevel() === 'detail' ? 56 : zoomLevel() === 'national' ? 30 : 42, 'ship');
       const color = side === 'ccp' ? '#f2b38e' : '#b4d9e7';
       const activeSea = mission && mission !== 'reserve';
       const action = mission === 'raid' || mission === 'invasion' ? 'attack' : activeSea ? 'march' : 'idle';
@@ -2573,14 +2582,28 @@
             const tanks = globalThis.CivilWarHuman3D.tankIcons(globalThis.CivilWarHuman3D.unitTanks(unit));
             const guns = globalThis.CivilWarHuman3D.artilleryIcons(globalThis.CivilWarHuman3D.unitArtillery(unit));
             const tankKind = unit.tankModel || 'tank';
-            const vSize = Math.round(34 * (gSet.modelScale || 1));
+            const soldierBase = national ? 22 : zoomLevel() === 'detail' ? 44 : 34;
+            // 重装备图标数量按缩放收敛：宏观只留 1 辆做兵种标识，放大后逐辆展开，避免挤出兵牌
+            const equipCap = camera.zoom < 40 ? 1 : zoomLevel() === 'detail' ? 6 : 3;
             let equipmentSlot = 0;
             for (const [kind, amount] of [[tankKind, tanks], ['artillery', guns]]) {
               if (!amount) continue;
+              const vSize = equipmentPx(soldierBase, kind === 'artillery' ? 'artillery' : 'tank');
+              const cols = vSize >= 52 ? 2 : 3;
               const vehicleAction = globalThis.CivilWarHuman3D.equipmentAction(action);
               const vehicle = humanRenderer.frame(unit.side, vehicleAction !== 'idle', now, kind, vehicleAction, unit.group || '');
-              for (let n = 0; n < amount; n++, equipmentSlot++) {
-                const px = ux + 40 + (equipmentSlot % 4) * (vSize * 0.74), py = uy - 26 - Math.floor(equipmentSlot / 4) * (vSize * 0.62);
+              const shown = Math.min(amount, equipCap - equipmentSlot);
+              for (let n = 0; n < shown; n++, equipmentSlot++) {
+                const col = equipmentSlot % cols, row = Math.floor(equipmentSlot / cols);
+                const px = ux + 24 + (col + 0.5) * vSize * 0.66;
+                const py = uy + 2 - vSize * 0.42 - row * vSize * 0.58;
+                // 与步兵一致的接地阴影，避免重装备看起来浮空
+                brush.save();
+                brush.fillStyle = 'rgba(0, 0, 0, 0.26)';
+                brush.beginPath();
+                brush.ellipse(px, py + vSize * 0.40, vSize * 0.32, vSize * 0.10, 0, 0, Math.PI * 2);
+                brush.fill();
+                brush.restore();
                 brush.drawImage(vehicle, px - vSize / 2, py - vSize / 2, vSize, vSize);
               }
             }
@@ -2765,7 +2788,7 @@
           const [x, y] = project(base.lon, base.lat);
           if (!inMap(x, y)) return;
           const drawIcons = share;
-          const sz = zoomLevel() === 'national' ? 28 : 38;
+          const sz = equipmentPx(zoomLevel() === 'national' ? 22 : 34, 'aircraft');
           for (let i = 0; i < drawIcons; i++) {
             const cols = Math.min(drawIcons, 8);
             const px = x + (i % cols - (cols - 1) / 2) * (sz * .5), py = y - 42 - Math.floor(i / cols) * (sz * .48);

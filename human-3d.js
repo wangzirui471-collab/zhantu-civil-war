@@ -1845,7 +1845,232 @@
     }
   }
 
+  // ==================== 外部 3D 模型库（.glb）接入 ====================
+  // 重装备不再在代码里单独建模：直接读取 models-3d.js 内嵌的 GLB（来源 model-review），
+  // 解析后转成与内置网格完全相同的 11 浮点顶点格式，交给同一套 WebGL 着色器出图。
+  // 好处：模型外观由外部资产决定，改模型不需要改代码；双击 index.html 离线也能用。
+  const GLB_ASSET = {
+    tank: 'tank', medium_tank: 'tank', t34: 'tank', sherman: 'tank',
+    light_tank: 'light_tank', chiha: 'light_tank',
+    heavy_tank: 'heavy_tank', m26: 'heavy_tank', tiger: 'heavy_tank', charb1: 'heavy_tank', churchill: 'heavy_tank',
+    artillery: 'artillery', katyusha: 'artillery', katysha: 'artillery', rocket: 'artillery',
+    self_propelled_artillery: 'self_propelled_artillery', self_propelled_at: 'self_propelled_artillery',
+    aircraft: 'aircraft', zero: 'aircraft', spitfire: 'aircraft', jet: 'aircraft', mig15: 'aircraft',
+    f86: 'aircraft', b29: 'aircraft', stuka: 'aircraft', il2: 'aircraft', p40: 'aircraft',
+    ship: 'warship', warship: 'warship', carrier: 'warship', battleship: 'warship', yamato: 'warship', uboat: 'warship',
+    armored_train: 'armored_train', mechanized: 'mechanized', motorized: 'motorized',
+  };
+  // 统一把外部模型缩放到各兵种的目标长度（内置模型的世界单位），保证取景一致
+  const GLB_SPAN = {
+    tank: 4.5, light_tank: 4.0, heavy_tank: 5.0,
+    artillery: 4.3, self_propelled_artillery: 4.2,
+    aircraft: 5.4, warship: 6.0, armored_train: 5.6, mechanized: 4.2, motorized: 4.0,
+  };
+  const GLB_TINT = { ccp: [1.30, 1.12, 0.66], roc: [0.92, 1.04, 1.22] };
+  const GLB_SKIP = /统一兵牌底座|底座|地台|Ground|ground/;
+
+  const glbMeshCache = new Map();
+
+  function b64ToBytes(b64) {
+    if (typeof atob === 'function') {
+      const bin = atob(b64);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(b64, 'base64'));
+    return null;
+  }
+
+  // 4x4 列主序矩阵：node.matrix 直接可用，否则由 TRS 合成
+  function glbNodeMatrix(node) {
+    if (node.matrix) return node.matrix.slice();
+    const t = node.translation || [0, 0, 0];
+    const s = node.scale || [1, 1, 1];
+    const q = node.rotation || [0, 0, 0, 1];
+    const [x, y, z, w] = q;
+    const x2 = x + x, y2 = y + y, z2 = z + z;
+    const xx = x * x2, xy = x * y2, xz = x * z2;
+    const yy = y * y2, yz = y * z2, zz = z * z2;
+    const wx = w * x2, wy = w * y2, wz = w * z2;
+    const [sx, sy, sz] = s;
+    return [
+      (1 - (yy + zz)) * sx, (xy + wz) * sx, (xz - wy) * sx, 0,
+      (xy - wz) * sy, (1 - (xx + zz)) * sy, (yz + wx) * sy, 0,
+      (xz + wy) * sz, (yz - wx) * sz, (1 - (xx + yy)) * sz, 0,
+      t[0], t[1], t[2], 1,
+    ];
+  }
+
+  function glbMul(a, b) {
+    const o = new Array(16).fill(0);
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+      let v = 0;
+      for (let k = 0; k < 4; k++) v += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = v;
+    }
+    return o;
+  }
+
+  function glbXform(m, p) {
+    return [
+      m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
+      m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+      m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14],
+    ];
+  }
+
+  function bakeGlb(asset, side) {
+    const lib = globalThis.CivilWarModels3D;
+    if (!lib || !lib[asset]) return null;
+    const bytes = b64ToBytes(lib[asset]);
+    if (!bytes || bytes.length < 20) return null;
+    const head = new DataView(bytes.buffer, bytes.byteOffset, 12);
+    if (head.getUint32(0, true) !== 0x46546C67) return null;
+    const total = head.getUint32(8, true);
+    let off = 12, json = null, bin = null;
+    while (off + 8 <= total) {
+      const view = new DataView(bytes.buffer, bytes.byteOffset + off, 8);
+      const clen = view.getUint32(0, true), ctype = view.getUint32(4, true);
+      const slice = bytes.subarray(off + 8, off + 8 + clen);
+      if (ctype === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(slice));
+      else if (ctype === 0x004E4942) bin = slice;
+      off += 8 + clen;
+    }
+    if (!json || !bin) return null;
+
+    const NC = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+    const readAccessor = (idx) => {
+      const a = json.accessors[idx];
+      const bv = json.bufferViews[a.bufferView];
+      const nc = NC[a.type];
+      const off0 = bin.byteOffset + (bv.byteOffset || 0) + (a.byteOffset || 0);
+      const view = new DataView(bin.buffer, off0, bv.byteLength - (a.byteOffset || 0));
+      const stride = bv.byteStride || nc * (a.componentType === 5126 ? 4 : a.componentType === 5125 ? 4 : a.componentType === 5123 || a.componentType === 5122 ? 2 : 1);
+      const out = new Float32Array(a.count * nc);
+      for (let i = 0; i < a.count; i++) {
+        const base = i * stride;
+        for (let c = 0; c < nc; c++) {
+          const p = base + c * (a.componentType === 5126 || a.componentType === 5125 ? 4 : a.componentType === 5123 || a.componentType === 5122 ? 2 : 1);
+          let v = 0;
+          switch (a.componentType) {
+            case 5126: v = view.getFloat32(p, true); break;
+            case 5125: v = view.getUint32(p, true); break;
+            case 5123: v = view.getUint16(p, true); break;
+            case 5122: v = view.getInt16(p, true); break;
+            case 5121: v = view.getUint8(p); break;
+            case 5120: v = view.getInt8(p); break;
+            default: v = 0;
+          }
+          out[i * nc + c] = v;
+        }
+      }
+      return out;
+    };
+
+    const tint = GLB_TINT[side] || [1, 1, 1];
+    const posOut = [], nrmOut = [], colOut = [], matOut = [];
+    const bb = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+    const materialCache = new Map();
+    const materialOf = (mi) => {
+      if (materialCache.has(mi)) return materialCache.get(mi);
+      const m = (json.materials || [])[mi] || {};
+      const pbr = m.pbrMetallicRoughness || {};
+      const bc = pbr.baseColorFactor || [0.62, 0.63, 0.58, 1];
+      const lum = bc[0] * 0.3 + bc[1] * 0.59 + bc[2] * 0.11;
+      // 履带/枪械这类近黑金属与舰艇灰保持原色，其余涂装件按阵营偏色（共军偏土黄、国军偏青灰）
+      const keep = lum < 0.2 || /舰|履带|枪|橡胶|玻璃|金属/.test(m.name || '');
+      const col = keep ? [bc[0], bc[1], bc[2]] : [
+        Math.min(1, bc[0] * tint[0]),
+        Math.min(1, bc[1] * tint[1]),
+        Math.min(1, bc[2] * tint[2]),
+      ];
+      const mat = { col, metal: pbr.metallicFactor ?? 0.25, rough: pbr.roughnessFactor ?? 0.7 };
+      materialCache.set(mi, mat);
+      return mat;
+    };
+
+    const walk = (nodeIdx, parent) => {
+      const node = json.nodes[nodeIdx];
+      if (!node) return;
+      const world = glbMul(parent, glbNodeMatrix(node));
+      const rot3 = (v) => vNorm([
+        world[0] * v[0] + world[4] * v[1] + world[8] * v[2],
+        world[1] * v[0] + world[5] * v[1] + world[9] * v[2],
+        world[2] * v[0] + world[6] * v[1] + world[10] * v[2],
+      ]);
+      if (node.mesh !== undefined && !GLB_SKIP.test(node.name || '')) {
+        for (const prim of json.meshes[node.mesh].primitives) {
+          if (prim.attributes.POSITION === undefined) continue;
+          const pos = readAccessor(prim.attributes.POSITION);
+          const nrm = prim.attributes.NORMAL !== undefined ? readAccessor(prim.attributes.NORMAL) : null;
+          const idx = prim.indices !== undefined ? readAccessor(prim.indices) : null;
+          const mtl = materialOf(prim.material);
+          const triCount = idx ? idx.length / 3 : pos.length / 9;
+          for (let t = 0; t < triCount; t++) {
+            const order = idx ? [idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]] : [t * 3, t * 3 + 1, t * 3 + 2];
+            // 面法线兜底（模型缺 normal 时）
+            const p0 = [pos[order[0] * 3], pos[order[0] * 3 + 1], pos[order[0] * 3 + 2]];
+            const p1 = [pos[order[1] * 3], pos[order[1] * 3 + 1], pos[order[1] * 3 + 2]];
+            const p2 = [pos[order[2] * 3], pos[order[2] * 3 + 1], pos[order[2] * 3 + 2]];
+            const fn = vNorm(vCross(vSub(p1, p0), vSub(p2, p0)));
+            for (const vi of order) {
+              const w = glbXform(world, [pos[vi * 3], pos[vi * 3 + 1], pos[vi * 3 + 2]]);
+              const n = nrm ? rot3([nrm[vi * 3], nrm[vi * 3 + 1], nrm[vi * 3 + 2]]) : fn;
+              posOut.push(w[0], w[1], w[2]);
+              nrmOut.push(n[0], n[1], n[2]);
+              colOut.push(mtl.col[0], mtl.col[1], mtl.col[2]);
+              matOut.push(mtl.metal, mtl.rough);
+              bb[0] = Math.min(bb[0], w[0]); bb[1] = Math.min(bb[1], w[1]); bb[2] = Math.min(bb[2], w[2]);
+              bb[3] = Math.max(bb[3], w[0]); bb[4] = Math.max(bb[4], w[1]); bb[5] = Math.max(bb[5], w[2]);
+            }
+          }
+        }
+      }
+      for (const c of node.children || []) walk(c, world);
+    };
+
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const scene = (json.scenes || [])[json.scene || 0] || { nodes: json.nodes.map((_, i) => i) };
+    for (const rootIdx of scene.nodes || []) walk(rootIdx, identity);
+    if (!posOut.length) return null;
+
+    const span = GLB_SPAN[asset] || 4.2;
+    const size = Math.max(bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]) || 1;
+    const s = span / size;
+    const cx = (bb[0] + bb[3]) / 2, cz = (bb[2] + bb[5]) / 2, y0 = bb[1];
+    const data = new Float32Array(posOut.length / 3 * 11);
+    for (let i = 0, v = 0; i < posOut.length; i += 3, v += 11) {
+      data[v] = (posOut[i] - cx) * s;
+      data[v + 1] = (posOut[i + 1] - y0) * s;
+      data[v + 2] = (posOut[i + 2] - cz) * s;
+      data[v + 3] = nrmOut[i];
+      data[v + 4] = nrmOut[i + 1];
+      data[v + 5] = nrmOut[i + 2];
+      data[v + 6] = colOut[i];
+      data[v + 7] = colOut[i + 1];
+      data[v + 8] = colOut[i + 2];
+      data[v + 9] = matOut[i / 3 * 2];
+      data[v + 10] = matOut[i / 3 * 2 + 1];
+    }
+    return { data, tris: data.length / 33 };
+  }
+
+  function glbMeshFor(kind, side) {
+    const asset = GLB_ASSET[kind];
+    if (!asset) return null;
+    const key = asset + '|' + side;
+    if (glbMeshCache.has(key)) return glbMeshCache.get(key);
+    let mesh = null;
+    try { mesh = bakeGlb(asset, side); } catch (err) { mesh = null; }
+    glbMeshCache.set(key, mesh);
+    return mesh;
+  }
+
   function buildKindScene(kind, side, action = 'idle', phase = 0, variant = '') {
+    // 重装备优先走外部模型库；模型缺失或解析失败时自动回落到内置建模
+    const glb = glbMeshFor(kind, side);
+    if (glb) return glb;
     const b = createBuilder();
     if (kind === 'carrier') buildCarrier(b, side, action, phase);
     else if (kind === 'battleship') buildBattleship(b, side, action, phase);
@@ -2154,7 +2379,9 @@
       const normalizedSide = side === 'ccp' ? 'ccp' : 'roc';
       const normalizedKind = kind === 'warship' ? 'ship' : kind;
       const isStatic = !moving && ['idle', 'hold'].includes(action);
-      const step = isStatic ? 0 : Math.floor((Math.max(0, Number(timeMs) || 0)) / 110) % 10;
+      // 外部模型库是静态网格：固定取第 0 帧，避免为同一模型渲染 10 张一模一样的图
+      const isGlbKind = Boolean(GLB_ASSET[normalizedKind] && globalThis.CivilWarModels3D);
+      const step = (isStatic || isGlbKind) ? 0 : Math.floor((Math.max(0, Number(timeMs) || 0)) / 110) % 10;
       const orbitStep = Math.round((Number(orbit) || 0) / (Math.PI / 4));
       const key = `${normalizedSide}|${variant}|${normalizedKind}|${action}|${step}|${orbitStep}`;
       if (spriteCache.has(key)) return spriteCache.get(key);
@@ -2162,6 +2389,25 @@
       const phase = step * (Math.PI * 2 / 10);
       const built = buildKindScene(normalizedKind, normalizedSide, action, phase, variant);
       const cam = cameraFor(normalizedKind, action, normalizedSide);
+      // 外部模型自动取景：不同资产的原始尺寸差别很大（军舰长、火炮矮），
+      // 统一按包围球把模型装进画面，避免被裁切或缩成小点；屏幕上的大小由地图层决定。
+      if (GLB_ASSET[normalizedKind] && built && built.data && built.data.length) {
+        const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < built.data.length; i += 11) {
+          for (let c = 0; c < 3; c++) {
+            const v = built.data[i + c];
+            if (v < lo[c]) lo[c] = v;
+            if (v > hi[c]) hi[c] = v;
+          }
+        }
+        const ctr = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+        const rad = 0.5 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;
+        const dx = cam.eye[0] - cam.center[0], dy = cam.eye[1] - cam.center[1], dz = cam.eye[2] - cam.center[2];
+        const len = Math.hypot(dx, dy, dz) || 1;
+        const dist = Math.max(1.4, rad / Math.sin(cam.fov * 0.5) * 1.1);
+        cam.center = ctr;
+        cam.eye = [ctr[0] + (dx / len) * dist, ctr[1] + (dy / len) * dist, ctr[2] + (dz / len) * dist];
+      }
       if (orbitStep) {
         const angle = orbitStep * Math.PI / 4, dx = cam.eye[0] - cam.center[0], dz = cam.eye[2] - cam.center[2];
         cam.eye[0] = cam.center[0] + dx * Math.cos(angle) + dz * Math.sin(angle);
