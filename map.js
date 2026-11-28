@@ -52,7 +52,9 @@
   function nearestTerritory(lon, lat, nodes, maximum = 3.5) {
     let nearest = null, best = maximum * maximum;
     for (const node of nodes) {
-      const dx = (lon - node.lon) * .76, dy = lat - node.lat;
+      let dLon = Math.abs(lon - node.lon);
+      if (dLon > 180) dLon = 360 - dLon;
+      const dx = dLon * .76, dy = lat - node.lat;
       const distance = dx * dx + dy * dy;
       if (distance < best) { best = distance; nearest = node; }
     }
@@ -338,24 +340,59 @@
       return camera.zoom < detailZoom ? 'theater' : 'detail';
     }
 
+    const normalizeLon = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
+    const wrapDeltaLon = (lon) => ((((lon - camera.lon + 180) % 360) + 360) % 360) - 180;
+
+    function visibleWorldOffsets() {
+      const halfDeg = (width / 2) / Math.max(camera.zoom * .76, 0.01) + 12;
+      const minLon = camera.lon - halfDeg;
+      const maxLon = camera.lon + halfDeg;
+      const offsets = [];
+      for (let off = -720; off <= 720; off += 360) {
+        if (180 + off >= minLon && -180 + off <= maxLon) offsets.push(off);
+      }
+      return offsets.length ? offsets : [0];
+    }
+
+    function projectAt(lon, lat, offset = 0) {
+      return [width / 2 + (lon + offset - camera.lon) * camera.zoom * .76, height / 2 - (lat - camera.lat) * camera.zoom];
+    }
+
     function project(lon, lat) {
-      return [width / 2 + (lon - camera.lon) * camera.zoom * .76, height / 2 - (lat - camera.lat) * camera.zoom];
+      return [width / 2 + wrapDeltaLon(lon) * camera.zoom * .76, height / 2 - (lat - camera.lat) * camera.zoom];
     }
 
     function unproject(x, y) {
-      return [camera.lon + (x - width / 2) / (camera.zoom * .76), camera.lat - (y - height / 2) / camera.zoom];
+      return [normalizeLon(camera.lon + (x - width / 2) / (camera.zoom * .76)), camera.lat - (y - height / 2) / camera.zoom];
+    }
+
+    function traceAt(ctx, points, close = false, offset = 0) {
+      if (!points?.length) return;
+      let curLon = points[0][0];
+      ctx.moveTo(...projectAt(curLon, points[0][1], offset));
+      for (let i = 1; i < points.length; i++) {
+        let nextLon = points[i][0];
+        if (!close) {
+          while (nextLon - curLon > 180) nextLon -= 360;
+          while (nextLon - curLon < -180) nextLon += 360;
+        }
+        curLon = nextLon;
+        ctx.lineTo(...projectAt(curLon, points[i][1], offset));
+      }
+      if (close) ctx.closePath();
     }
 
     function trace(ctx, points, close = false) {
       if (!points?.length) return;
-      ctx.moveTo(...project(...points[0]));
-      for (let i = 1; i < points.length; i++) ctx.lineTo(...project(...points[i]));
-      if (close) ctx.closePath();
+      for (const off of visibleWorldOffsets()) traceAt(ctx, points, close, off);
     }
 
     function shape(ctx, rings) {
       ctx.beginPath();
-      for (const ring of rings || []) trace(ctx, ring, true);
+      const offsets = visibleWorldOffsets();
+      for (const off of offsets) {
+        for (const ring of rings || []) traceAt(ctx, ring, true, off);
+      }
     }
 
     function showContours(ctx) {
@@ -411,7 +448,8 @@
       ctx.fillText('等高距 ' + step + ' 米', 15, height - 115);
     }
 
-    function sampleElevation(lon, lat) {
+    function sampleElevation(rawLon, lat) {
+      const lon = normalizeLon(rawLon);
       for (let i = grids.length - 1; i >= 0; i--) {
         const g = grids[i];
         if (lon >= g.west && lon <= g.east && lat <= g.north && lat >= g.south) {
@@ -440,25 +478,27 @@
     }
 
     function drawCroppedGrid(ctx, grid, alpha) {
-      const [a, b] = project(grid.west, grid.north);
-      const [x, y] = project(grid.east, grid.south);
-      if (x < 0 || a > width || y < 0 || b > height) return;
-      const fullW = x - a;
-      const fullH = y - b;
-      if (fullW <= 0 || fullH <= 0) return;
-      // 仅裁剪视口内可见区域绘制，避免深度放大至 zoom=24000 时超大目标矩形引发 Canvas/GPU 掉帧或裁切失效
-      const dx0 = Math.max(0, a);
-      const dy0 = Math.max(0, b);
-      const dx1 = Math.min(width, x);
-      const dy1 = Math.min(height, y);
-      if (dx1 <= dx0 || dy1 <= dy0) return;
-      const sx = ((dx0 - a) / fullW) * grid.width;
-      const sy = ((dy0 - b) / fullH) * grid.height;
-      const sw = ((dx1 - dx0) / fullW) * grid.width;
-      const sh = ((dy1 - dy0) / fullH) * grid.height;
-      ctx.globalAlpha = alpha;
-      ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(grid.relief, sx, sy, sw, sh, dx0, dy0, dx1 - dx0, dy1 - dy0);
+      for (const off of visibleWorldOffsets()) {
+        const [a, b] = projectAt(grid.west, grid.north, off);
+        const [x, y] = projectAt(grid.east, grid.south, off);
+        if (x < 0 || a > width || y < 0 || b > height) continue;
+        const fullW = x - a;
+        const fullH = y - b;
+        if (fullW <= 0 || fullH <= 0) continue;
+        // 仅裁剪视口内可见区域绘制，支持 360° 球形循环拼接与 24000 倍超大缩放
+        const dx0 = Math.max(0, a);
+        const dy0 = Math.max(0, b);
+        const dx1 = Math.min(width, x);
+        const dy1 = Math.min(height, y);
+        if (dx1 <= dx0 || dy1 <= dy0) continue;
+        const sx = ((dx0 - a) / fullW) * grid.width;
+        const sy = ((dy0 - b) / fullH) * grid.height;
+        const sw = ((dx1 - dx0) / fullW) * grid.width;
+        const sh = ((dy1 - dy0) / fullH) * grid.height;
+        ctx.globalAlpha = alpha;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(grid.relief, sx, sy, sw, sh, dx0, dy0, dx1 - dx0, dy1 - dy0);
+      }
     }
 
     function drawTerrain3DRelief(ctx) {
@@ -2577,20 +2617,19 @@
       }
       brush.lineWidth = 1.05;
       brush.setLineDash([5, 5]);
-      brush.strokeStyle = 'rgba(130, 204, 232, 0.34)';
+      brush.strokeStyle = 'rgba(130, 204, 232, 0.36)';
       for (const seg of GLOBAL_SEA_CORRIDORS) {
         brush.beginPath();
-        let started = false;
-        let prevLon = null;
-        for (const [lon, lat] of seg) {
-          const [px, py] = project(lon, lat);
-          if (!started || (prevLon !== null && Math.abs(lon - prevLon) > 160)) {
+        let prevX = null;
+        for (let i = 0; i < seg.length; i++) {
+          const [px, py] = project(seg[i][0], seg[i][1]);
+          // 球形循环投影下跨太平洋日界线天然连续；仅在跨越当前视口背面的反经线时断开
+          if (i === 0 || (prevX !== null && Math.abs(px - prevX) > width * 0.72)) {
             brush.moveTo(px, py);
-            started = true;
           } else {
             brush.lineTo(px, py);
           }
-          prevLon = lon;
+          prevX = px;
         }
         brush.stroke();
       }
@@ -2984,8 +3023,8 @@
       const [lon, lat] = unproject(x, y);
       camera.zoom = clamp(camera.zoom * factor, 3.4, 24000);
       const [afterLon, afterLat] = unproject(x, y);
-      camera.lon += lon - afterLon;
-      camera.lat += lat - afterLat;
+      camera.lon = normalizeLon(camera.lon + ((((lon - afterLon + 180) % 360) + 360) % 360 - 180));
+      camera.lat = clamp(camera.lat + lat - afterLat, -78, 82);
       draw();
       if (!animationFrame && !state?.winner && (hasVisibleOrders() || hasMovingUnits() || hasActiveBattles())) {
         animationFrame = requestAnimationFrame(animateBattle);
@@ -3121,8 +3160,8 @@
           draw();
           return;
         }
-        camera.lon = pointer.lon - dx / camera.zoom / .76;
-        camera.lat = pointer.lat + dy / camera.zoom;
+        camera.lon = normalizeLon(pointer.lon - dx / camera.zoom / .76);
+        camera.lat = clamp(pointer.lat + dy / camera.zoom, -78, 82);
         canvas.classList.add('dragging');
         draw();
         return;
@@ -3200,8 +3239,8 @@
       const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[event.key];
       if (delta) {
         event.preventDefault();
-        camera.lon += delta[0] * 45 / camera.zoom;
-        camera.lat += delta[1] * 45 / camera.zoom;
+        camera.lon = normalizeLon(camera.lon + delta[0] * 45 / camera.zoom);
+        camera.lat = clamp(camera.lat + delta[1] * 45 / camera.zoom, -78, 82);
         draw();
       } else if (event.key === '+' || event.key === '=') zoom(1.25);
       else if (event.key === '-') zoom(.8);
