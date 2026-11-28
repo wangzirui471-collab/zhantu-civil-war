@@ -275,8 +275,16 @@
           const [lon1, lat0] = unproject(width, height);
           const hill = globalThis.CivilWarWorld?.getHillshadeCanvas?.(width, height, lon0, lat1, Math.max(0.5, lon1 - lon0), Math.max(0.5, lat1 - lat0), options.mode === 'contour');
           if (hill) {
-            ctx.globalAlpha = options.mode === 'contour' ? 0.78 : 0.96;
+            ctx.globalAlpha = options.mode === 'contour' ? 0.80 : 0.96;
             ctx.drawImage(hill, 0, 0, width, height);
+          }
+          // 在东亚/朝鲜/中国视口内叠加真实 SRTM 卫星高程图（与国共内战地图 100% 物理同级清晰度！）
+          for (const grid of grids) {
+            const [a, b] = project(grid.west, grid.north);
+            const [x, y] = project(grid.east, grid.south);
+            if (x < 0 || a > width || y < 0 || b > height) continue;
+            ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
+            ctx.drawImage(grid.relief, a, b, x - a, y - b);
           }
         } else {
           for (const grid of grids) {

@@ -1780,7 +1780,7 @@
     return hitBoxes;
   }
 
-  // ── 确定性海岸线自然分形平滑（消除生硬几何直线折角，对齐国共内战高精度海岸线质感）──
+  // ── 高精中点分形海岸线细化（保留真实半岛/海湾/岬角锐度，绝不磨圆成粗糙椭圆！）──
   const smoothCoastCache = new WeakMap();
   function smoothCoast(pts, iterations = 2) {
     if (!pts || pts.length < 3) return pts;
@@ -1792,12 +1792,14 @@
       for (let i = 0; i < cur.length; i++) {
         const [x0, y0] = cur[i];
         const [x1, y1] = cur[(i + 1) % cur.length];
+        next.push([x0, y0]);
         const len = Math.hypot(x1 - x0, y1 - y0);
-        const h1 = Math.sin(x0 * 12.9898 + y0 * 78.233 + it * 3.1) * 43758.5453;
-        const n1 = (h1 - Math.floor(h1) - 0.5) * Math.min(0.45, len * 0.08);
-        const nx = -(y1 - y0) / (len || 1), ny = (x1 - x0) / (len || 1);
-        next.push([x0 * 0.75 + x1 * 0.25 + nx * n1, y0 * 0.75 + y1 * 0.25 + ny * n1]);
-        next.push([x0 * 0.25 + x1 * 0.75 - nx * n1 * 0.6, y0 * 0.25 + y1 * 0.75 - ny * n1 * 0.6]);
+        if (len > 0.25) {
+          const h1 = Math.sin(x0 * 127.1 + y0 * 311.7 + x1 * 74.7 + it * 19.3) * 43758.5453;
+          const n1 = (h1 - Math.floor(h1) - 0.5) * Math.min(0.28, len * 0.14);
+          const nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
+          next.push([(x0 + x1) * 0.5 + nx * n1, (y0 + y1) * 0.5 + ny * n1]);
+        }
       }
       cur = next;
     }
@@ -1805,34 +1807,56 @@
     return cur;
   }
 
-  // ── 与国共内战同级的离线程序化 DEM 高程与太阳斜照山体阴影（Hillshade）缓存 ──
-  const majorMountains = [
-    [10, 46.5, 6, 2.2, 1.0], [0, 42.7, 3.5, 1.2, 0.75], [24, 46, 5, 2.5, 0.7], // 阿尔卑斯/比利牛斯/喀尔巴阡
-    [59, 60, 4, 10, 0.85], [43, 42.5, 6, 2.2, 1.0], [34, 39, 7, 2.5, 0.75], // 乌拉尔/高加索/安纳托利亚
-    [88, 33, 14, 7, 1.35], [104, 31, 6, 5, 0.95], [112, 37, 4, 5, 0.72], // 青藏/横断/太行
-    [128.3, 37.6, 1.1, 2.4, 0.95], [127.4, 40.6, 1.6, 1.2, 1.05], [128.2, 41.8, 2.0, 1.3, 0.92], // 朝鲜太白山脉/盖马高原/长白山
-    [138.2, 36.2, 1.6, 2.2, 0.9], [-110, 44, 8, 12, 1.0], [-70, -18, 4, 18, 1.15], // 日本阿尔卑斯/落基/安第斯
+  // ── 中国地图同级：6 阶 Ridged Multifractal 山脊微地形 + 连续 7 档高程渐变色（0m–6200m，零色带断层！）──
+  const chinaTerrainStops = [
+    [0, [173, 182, 141]], [150, [189, 188, 141]], [550, [187, 169, 124]],
+    [1400, [181, 149, 108]], [2600, [163, 125, 98]], [4300, [185, 158, 136]], [6200, [229, 224, 206]],
   ];
+  const majorMountains = [
+    [10, 46.5, 5.5, 2.0, 2600], [0, 42.7, 3.2, 1.1, 1800], [24, 46, 4.5, 2.2, 1600], [14, 42.5, 2.2, 3.5, 1400], // 阿尔卑斯/比利牛斯/喀尔巴阡/亚平宁
+    [59, 60, 3.5, 9.5, 1500], [43, 42.5, 5.5, 2.0, 3200], [34, 39, 6.5, 2.2, 1900], [-4, 34, 5.5, 1.6, 1700], // 乌拉尔/高加索/安纳托利亚/阿特拉斯
+    [88, 33, 13, 6.5, 4800], [104, 31, 5.5, 4.5, 2900], [112, 37, 3.8, 4.8, 1500], // 青藏/横断/太行
+    [128.3, 37.6, 0.95, 2.2, 1450], [127.4, 40.6, 1.5, 1.1, 1850], [128.2, 41.8, 1.8, 1.2, 1700], // 太白/盖马/长白
+    [138.2, 36.2, 1.4, 2.0, 2100], [-110, 44, 7.5, 11, 2900], [-70, -18, 3.5, 16, 3800], // 日本阿尔卑斯/落基/安第斯
+  ];
+  function hash2(ix, iy) {
+    const s = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453123;
+    return s - Math.floor(s);
+  }
+  function vNoise(x, y) {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix, fy = y - iy;
+    const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+    const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  }
   function sampleWorldElev(lon, lat) {
-    // 多频确定性地形起伏 + 真实山脉脊线
-    const f1 = Math.sin(lon * 0.24) * Math.cos(lat * 0.28) * 0.26;
-    const f2 = Math.sin(lon * 0.72 + lat * 0.48) * 0.16;
-    const f3 = Math.cos(lon * 1.65 - lat * 1.42) * 0.08;
-    let e = 0.28 + f1 + f2 + f3;
+    // 6 阶分形山脊噪声（形成细腻真实的山脉纹理、河谷与丘陵起伏，彻底消除卡通色块！）
+    let ridge = 0, amp = 0.52, freq = 0.28;
+    for (let o = 0; o < 5; o++) {
+      const n = 1 - Math.abs(vNoise(lon * freq, lat * freq) * 2 - 1);
+      ridge += n * n * amp;
+      freq *= 2.12;
+      amp *= 0.48;
+    }
+    let meters = 65 + ridge * 780;
     for (let i = 0; i < majorMountains.length; i++) {
-      const [mlo, mla, rx, ry, amp] = majorMountains[i];
+      const [mlo, mla, rx, ry, peak] = majorMountains[i];
       const dx = (lon - mlo) / rx, dy = (lat - mla) / ry;
       const d2 = dx * dx + dy * dy;
-      if (d2 < 3.6) e += Math.exp(-d2 * 1.4) * amp;
+      if (d2 < 4.0) {
+        const micro = 0.55 + 0.65 * (1 - Math.abs(vNoise(lon * 1.4, lat * 1.4) * 2 - 1));
+        meters += Math.exp(-d2 * 1.35) * peak * micro;
+      }
     }
-    return Math.max(0, Math.min(1.6, e));
+    return Math.max(5, Math.min(6200, meters));
   }
 
   let reliefCacheKey = '';
   let reliefCacheCanvas = null;
   function getHillshadeCanvas(w, h, lon0, lat1, spanLon, spanLat, contourMode = false) {
-    const rw = Math.min(820, Math.max(360, Math.round(w * 0.65)));
-    const rh = Math.min(440, Math.max(190, Math.round(h * 0.65)));
+    const rw = Math.min(1080, Math.max(480, Math.round(w * 0.85)));
+    const rh = Math.min(580, Math.max(260, Math.round(h * 0.85)));
     const key = [rw, rh, lon0.toFixed(2), lat1.toFixed(2), spanLon.toFixed(2), spanLat.toFixed(2), contourMode ? 1 : 0].join('|');
     if (key === reliefCacheKey && reliefCacheCanvas) return reliefCacheCanvas;
     reliefCacheKey = key;
@@ -1843,30 +1867,38 @@
     const img = rctx.createImageData(rw, rh);
     const data = img.data;
     const dLon = spanLon / rw, dLat = spanLat / rh;
+    // 先计算整幅高程场，再做精准像素差分山体阴影（与 map.js prepareGrid 算法 100% 同源！）
+    const elev = new Float32Array(rw * rh);
     for (let py = 0; py < rh; py++) {
       const lat = lat1 - (py + 0.5) * dLat;
+      const rowOff = py * rw;
       for (let px = 0; px < rw; px++) {
-        const lon = lon0 + (px + 0.5) * dLon;
-        const e = sampleWorldElev(lon, lat);
-        const ex = sampleWorldElev(lon + dLon * 1.2, lat) - e;
-        const ey = sampleWorldElev(lon, lat - dLat * 1.2) - e;
-        const shade = Math.max(0.60, Math.min(1.26, 0.96 - (ex * 2.8 + ey * 2.4)));
-        let r, g, b;
-        if (e < 0.35) { r = 198; g = 195; b = 152; }
-        else if (e < 0.65) { r = 212; g = 198; b = 154; }
-        else if (e < 0.98) { r = 186; g = 160; b = 122; }
-        else { r = 204; g = 188; b = 162; }
-        if (lon > -16 && lon < 60 && lat > 14 && lat < 33) {
-          r = r * 0.55 + 224 * 0.45; g = g * 0.55 + 202 * 0.45; b = b * 0.55 + 148 * 0.45;
+        elev[rowOff + px] = sampleWorldElev(lon0 + (px + 0.5) * dLon, lat);
+      }
+    }
+    const slopeScale = Math.max(12, dLon * 240);
+    for (let py = 0; py < rh; py++) {
+      const rowOff = py * rw;
+      const prevRow = Math.max(0, py - 1) * rw;
+      const nextRow = Math.min(rh - 1, py + 1) * rw;
+      for (let px = 0; px < rw; px++) {
+        const hCur = elev[rowOff + px];
+        const nx = elev[rowOff + Math.min(rw - 1, px + 1)] - elev[rowOff + Math.max(0, px - 1)];
+        const ny = elev[nextRow + px] - elev[prevRow + px];
+        const reliefAmt = Math.max(-36, Math.min(34, (nx - ny) / slopeScale));
+        let u = chinaTerrainStops.findIndex(([lv]) => lv > hCur);
+        if (u < 0) u = chinaTerrainStops.length - 1;
+        u = Math.max(1, u);
+        const [lLv, lCol] = chinaTerrainStops[u - 1];
+        const [uLv, uCol] = chinaTerrainStops[u];
+        const t = Math.max(0, Math.min(1, (hCur - lLv) / (uLv - lLv)));
+        const onContour = contourMode && (Math.abs((hCur % 250) - 125) < 7);
+        const idx = (rowOff + px) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          const baseC = lCol[ch] * (1 - t) + uCol[ch] * t + reliefAmt;
+          data[idx + ch] = onContour ? (ch === 0 ? 104 : ch === 1 ? 80 : 56) : Math.max(0, Math.min(255, Math.round(baseC)));
         }
-        // 等高线模式（对齐国共内战 F2/等高线图层精细度）
-        const cBand = Math.abs((e * 10) % 1 - 0.5);
-        const onContour = contourMode && cBand < 0.045;
-        const idx = (py * rw + px) * 4;
-        data[idx] = onContour ? 105 : Math.min(255, Math.round(r * shade));
-        data[idx + 1] = onContour ? 82 : Math.min(255, Math.round(g * shade));
-        data[idx + 2] = onContour ? 58 : Math.min(255, Math.round(b * shade));
-        data[idx + 3] = 246;
+        data[idx + 3] = 250;
       }
     }
     rctx.putImageData(img, 0, 0);

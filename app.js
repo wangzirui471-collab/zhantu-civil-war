@@ -1205,10 +1205,10 @@
     const bar = $('hoi-battle-plans');
     if (!bar || !state) return;
     const airLabel = state.player === 'ccp' ? '⚡ 武工奇袭' : '🪂 空降奇袭';
+    // 已去除与底栏作战命令重复的【支援牵制/守港/后撤】，保持悬浮战略工具条精简无重复！
     bar.innerHTML =
       '<button type="button" class="hoi-bp-btn" data-bp-quick="drawfront" aria-pressed="' + civilDrawFront + '" title="HOI4 手绘进攻战线：点此按钮后在地图上按住左键拖向敌城，松手即刻吹号全线突击">' + (civilDrawFront ? '✏️ 正在画线(拖动)' : '✏️ 画进攻战线') + '</button>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="pincer" aria-pressed="' + (pendingMapTool === 'pincer') + '" title="HOI4 地图直接包抄：点此后再点地图上任意敌城，自动从多方向调兵钳形合围">🔄 钳形包抄</button>'
-      + '<button type="button" class="hoi-bp-btn" data-bp-cmd="support" aria-pressed="' + (pendingOrder === 'support') + '" title="HOI4 支援/牵制进攻（也可直接 Ctrl+右键 敌城）：协同开火锁定敌人，打赢后不离开原阵地">📌 支援牵制</button>'
       + '<span class="hoi-bp-sep"></span>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="scorched" aria-pressed="' + (pendingMapTool === 'scorched') + '" title="HOI4 撤退焦土：点此后再点己方城镇（15 政治点），炸毁铁路与工事 15 天">💣 焦土</button>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="sabotage" aria-pressed="' + (pendingMapTool === 'sabotage') + '" title="地图直接铁路破袭：点此后再点敌占城镇（15 点），瘫痪敌军补给 10 天">🔧 破袭</button>'
@@ -1217,8 +1217,6 @@
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="blitz" title="同步二战模式：装甲闪电总攻，选定/前线主力全线高速突击">⚡ 闪电战</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="naval3" title="同步二战模式：发动 HOI4 三排海战阵型决战">🚢 三排海战</button>'
       + '<span class="hoi-bp-sep"></span>'
-      + '<button type="button" class="hoi-bp-btn" data-bp-quick="port" title="一键派兵死守沿海港口并挖战壕">⚓ 守港</button>'
-      + '<button type="button" class="hoi-bp-btn" data-bp-quick="fallback" title="一键撤往河山防线挖壕固守">↩️ 后撤</button>'
       + '<button type="button" class="hoi-bp-btn exec" data-bp-quick="exec" title="开始/暂停推演（空格键）">' + (running ? '⏸ 暂停' : '▶ 执行') + '</button>';
   }
 
