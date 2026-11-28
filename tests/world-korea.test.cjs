@@ -205,3 +205,38 @@ test('抗美援朝 HOI4 全屏战略沙盘：5大剧本、18城铁路海运、�
   assert.ok(st.sides.dprk_coalition.completedFocuses.includes('kw_cross_yalu'));
   assert.ok(!Number.isNaN(st.sides.dprk_coalition.pp) && !Number.isNaN(st.sides.un_coalition.warScore));
 });
+
+test('二战欧洲与太平洋 HOI4 深度机制：计划准备加成、维希法国、乌拉尔内迁、雷达网、宪兵镇压、三排海战阵型、两栖筹备、B-29航程圈、神风与孤岛封锁', () => {
+  const Sim = World.WW2Sim;
+  // 欧洲战场：雷达、工业内迁、宪兵镇压、维希法国、计划蓄力
+  const eu = Sim.createWW2Game(WW2, 'ww2-1940', 'germany');
+  eu.nations.germany.pp = 200;
+  eu.nations.ussr.pp = 200;
+  assert.equal(Sim.buildRadarWW2(WW2, eu, 'germany', 'berlin').ok, true);
+  assert.ok(eu.radars.berlin >= 2);
+  assert.equal(Sim.relocateIndustryWW2(WW2, eu, 'ussr').ok, true);
+  assert.equal(eu.uralRelocated, true);
+  assert.equal(Sim.garrisonSuppressWW2(WW2, eu, 'germany', 'warsaw').ok, true);
+  assert.equal(Sim.triggerVichyFranceWW2(WW2, eu).ok, true);
+  assert.equal(eu.vichyTriggered, true);
+  const frontArmy = eu.armies.find((a) => a.nation === 'germany');
+  const beforePlan = frontArmy.planBonus || 0;
+  Sim.stepWW2Day(WW2, eu, 5);
+  assert.ok(eu.armies.some((a) => a.nation === 'germany' && (a.planBonus || 0) >= beforePlan));
+
+  // 太平洋战场：三排海战阵型、两栖筹备、孤岛封锁断粮、神风特攻、B-29航程圈校验
+  const pac = Sim.createWW2Game(WW2, 'ww2-1945-okinawa', 'usa');
+  pac.nations.usa.cp = 100; pac.nations.usa.pp = 100;
+  pac.nations.japan.pp = 100; pac.nations.japan.stock.planes = 200;
+  const navRes = Sim.pacificNavalAirBattle(WW2, pac, 'usa', 'tokyo');
+  assert.equal(navRes.ok, true);
+  assert.ok(pac.lastNavalBattle && pac.lastNavalBattle.atk && pac.lastNavalBattle.def);
+  const blk = Sim.blockadeIslandWW2(WW2, pac, 'usa', 'tokyo');
+  assert.equal(blk.ok, true);
+  assert.equal(Sim.citySupplyLevel(WW2, pac, 'tokyo'), 10);
+  const usArmy = pac.armies.find((a) => a.nation === 'usa');
+  assert.equal(Sim.planAmphibiousWW2(WW2, pac, usArmy.id, 'tokyo').ok, true);
+  assert.equal(usArmy.amphibPrep, 100);
+  assert.equal(Sim.kamikazeStrikeWW2(WW2, pac, 'japan', 'usa').ok, true);
+  assert.equal(Sim.launchAtomicBombWW2(WW2, pac, 'usa', 'tokyo').ok, true);
+});

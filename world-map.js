@@ -407,6 +407,8 @@
           artillery: c.artillery,
           org: 100,
           entrench: 2,
+          planBonus: 12, // HOI4 作战计划准备加成 0–45%
+          amphibPrep: 0, // HOI4 两栖登陆筹备进度 0–100%
           vet: 0, // 老兵经验 0–3 星（与国内内战一致）
           traits: [], // 将领养成特质列表
           order: 'defend', // defend | rest | attack | support | siege | intercept | move
@@ -415,6 +417,17 @@
         });
       }
     }
+
+    // 史实特混舰队（三排海战阵型：前排驱逐 DD / 中排主力 BB+CA / 后排航母 CV + 潜艇 SS）
+    const taskForces = {
+      usa: { name: 'TF58 快速航母特混舰队', cv: 6, bb: 6, ca: 10, dd: 42, ss: 18 },
+      japan: { name: '第一航空舰队（南云机动部队）', cv: 5, bb: 5, ca: 9, dd: 32, ss: 14 },
+      uk: { name: '皇家本土与远东特混舰队', cv: 4, bb: 6, ca: 10, dd: 36, ss: 12 },
+      germany: { name: '公海舰队与大西洋 U 艇狼群', cv: 0, bb: 3, ca: 5, dd: 16, ss: 34 },
+      ussr: { name: '波罗的海与黑海红旗舰队', cv: 0, bb: 2, ca: 4, dd: 18, ss: 16 },
+      france: { name: '地中海与大西洋分舰队', cv: 1, bb: 3, ca: 6, dd: 20, ss: 10 },
+      china: { name: '江海防巡防舰队', cv: 0, bb: 0, ca: 1, dd: 4, ss: 0 },
+    };
 
     return {
       scenarioId: sc.id,
@@ -432,6 +445,12 @@
       owners,
       initialOwners: { ...owners },
       forts,
+      radars: { london: 2, berlin: 1, tokyo: 1, pearl_harbor: 2 },
+      blockaded: {},
+      vichyTriggered: false,
+      uralRelocated: false,
+      taskForces,
+      lastNavalBattle: null,
       resistance: {},
       railDamaged: {},
       barraged: {},
@@ -515,6 +534,7 @@
   }
 
   function citySupplyLevel(WW2, state, cityId) {
+    if ((state.blockaded?.[cityId] || 0) > 0) return 10; // HOI4 太平洋孤岛海运封锁断粮！
     if ((state.railDamaged?.[cityId] || 0) > 0) return 30;
     const owner = state.owners[cityId];
     const motorBonus = (state.nations[owner]?.supplyMotor || 0) * 12;
@@ -717,24 +737,67 @@
     ns.cp -= 20;
     const defNation = state.owners[tgt];
     const dns = state.nations[defNation];
-    const screenMult = fleetScreenRatio(ns) < 70 ? 0.65 : 1.05; // 舰队屏卫不足受鱼雷重创！
-    const defScreenMult = fleetScreenRatio(dns) < 70 ? 0.65 : 1.0;
-    const winRatio = ((ns.navalPower + ns.airPower) * screenMult) / Math.max(20, ((dns?.navalPower || 30) + (dns?.airPower || 30)) * defScreenMult);
+    const atkTF = state.taskForces?.[nationId] || { name: ns.short + '特混舰队', cv: 2, bb: 2, ca: 4, dd: 16, ss: 6 };
+    const defTF = state.taskForces?.[defNation] || { name: (dns?.short || defNation) + '守备舰队', cv: 1, bb: 2, ca: 3, dd: 12, ss: 5 };
+
+    // HOI4 三排海战阵型精确结算：第1排屏卫 DD → 第2排主力 BB/CA → 第3排航母舰载机 CV
+    const atkScreenPct = Math.min(100, Math.round((atkTF.dd / Math.max(1, (atkTF.cv + atkTF.bb + atkTF.ca) * 2.5)) * 100));
+    const defScreenPct = Math.min(100, Math.round((defTF.dd / Math.max(1, (defTF.cv + defTF.bb + defTF.ca) * 2.5)) * 100));
+    const atkCarrierOverload = atkTF.cv > 4 ? 0.88 : 1.0; // HOI4 超过 4 艘航母触发舰载机调度超载惩罚
+    const atkPow = (atkTF.cv * 28 * atkCarrierOverload + atkTF.bb * 18 + atkTF.ca * 9 + atkTF.dd * 3 + ns.airPower * 0.4) * (atkScreenPct < 70 ? 0.72 : 1.06);
+    const defPow = (defTF.cv * 26 + defTF.bb * 17 + defTF.ca * 8 + defTF.dd * 3 + (dns?.airPower || 30) * 0.35) * (defScreenPct < 70 ? 0.72 : 1.0);
+    const winRatio = atkPow / Math.max(20, defPow);
+
+    const defLostDD = Math.min(defTF.dd, Math.max(1, Math.round(3 * winRatio)));
+    const defLostCA = Math.min(defTF.ca, winRatio > 0.9 ? 1 : 0);
+    const defLostBB = Math.min(defTF.bb, defScreenPct < 75 && winRatio > 1.0 ? 1 : 0);
+    const defLostCV = Math.min(defTF.cv, winRatio > 1.25 ? 1 : 0);
+    const atkLostDD = Math.min(atkTF.dd, Math.max(0, Math.round(2 / Math.max(0.5, winRatio))));
+    const atkLostCA = Math.min(atkTF.ca, winRatio < 0.85 ? 1 : 0);
+    defTF.dd -= defLostDD; defTF.ca -= defLostCA; defTF.bb -= defLostBB; defTF.cv -= defLostCV;
+    atkTF.dd -= atkLostDD; atkTF.ca -= atkLostCA;
+
     if (dns) {
-      dns.stock.ships = Math.max(0, dns.stock.ships - Math.max(1, Math.round(3 * winRatio)));
-      dns.screenShips = Math.max(0, (dns.screenShips || 0) - Math.max(1, Math.round(2 * winRatio)));
-      if (fleetScreenRatio(dns) < 70 && dns.capitalShips > 0) dns.capitalShips -= 1; // 屏卫不足主力舰被鱼雷击沉！
-      dns.stock.planes = Math.max(0, dns.stock.planes - Math.max(8, Math.round(28 * winRatio)));
+      dns.stock.ships = Math.max(0, dns.stock.ships - (defLostDD + defLostCA + defLostBB + defLostCV));
+      dns.screenShips = Math.max(0, (dns.screenShips || 0) - defLostDD);
+      dns.capitalShips = Math.max(0, (dns.capitalShips || 0) - (defLostBB + defLostCV));
+      dns.stock.planes = Math.max(0, dns.stock.planes - Math.max(10, Math.round(30 * winRatio)));
     }
+    const shoreBombard = atkTF.bb >= 2 ? 25 : atkTF.ca >= 3 ? 12 : 0;
     for (const d of state.armies.filter((u) => u.city === tgt && u.strength > 0)) {
-      d.org = Math.max(10, d.org - 22);
+      d.org = Math.max(8, d.org - (20 + Math.round(shoreBombard * 0.4)));
     }
-    state.railDamaged[tgt] = 8; // 跳岛封锁切断该岛海运补给
+    state.blockaded = state.blockaded || {};
+    state.blockaded[tgt] = 10; // 跳岛封锁切断该岛海运补给
+    state.railDamaged[tgt] = 8;
+    const cName = WW2.cities.find((c) => c.id === tgt)?.name || tgt;
+    state.lastNavalBattle = {
+      date: formatDate(state.date),
+      cityId: tgt,
+      cityName: cName,
+      winner: winRatio >= 1 ? nationId : defNation,
+      shoreBombard,
+      atk: { nation: nationId, name: atkTF.name, screenPct: atkScreenPct, overload: atkTF.cv > 4, cv: atkTF.cv, bb: atkTF.bb, ca: atkTF.ca, dd: atkTF.dd, ss: atkTF.ss, lost: { cv: 0, bb: 0, ca: atkLostCA, dd: atkLostDD } },
+      def: { nation: defNation, name: defTF.name, screenPct: defScreenPct, cv: defTF.cv, bb: defTF.bb, ca: defTF.ca, dd: defTF.dd, ss: defTF.ss, lost: { cv: defLostCV, bb: defLostBB, ca: defLostCA, dd: defLostDD } },
+    };
     state.effects = state.effects || [];
     state.effects.push({ type: 'naval_air', from: myPort.id, to: tgt, startMs: Date.now(), durationMs: 4800 });
-    const cName = WW2.cities.find((c) => c.id === tgt)?.name || tgt;
-    state.log.push(`${formatDate(state.date)} · 🚢✈️ 【太平洋海空决战 & 跳岛封锁】${ns.short}航母特混舰队与舰载机群激战 ${cName} 海域，重创敌舰机并切断岛屿补给！`);
-    return { ok: true, target: tgt };
+    state.log.push(`${formatDate(state.date)} · 🚢✈️ 【三排海空决战】${atkTF.name} 在 ${cName} 海域激战 ${defTF.name}，击沉敌舰(CV:${defLostCV} BB:${defLostBB} CA:${defLostCA} DD:${defLostDD})，战列舰岸轰 -${shoreBombard}% 并封锁孤岛！`);
+    return { ok: true, target: tgt, battle: state.lastNavalBattle };
+  }
+
+  function findAirbaseInRange(WW2, state, nationId, targetCityId, maxDeg = 42) {
+    const tgt = WW2.cities.find((c) => c.id === targetCityId);
+    if (!tgt) return null;
+    const ownCities = WW2.cities.filter((c) => state.owners[c.id] === nationId);
+    let best = null, bestDist = Infinity;
+    for (const c of ownCities) {
+      let dLon = Math.abs(c.lon - tgt.lon);
+      if (dLon > 180) dLon = 360 - dLon;
+      const dist = Math.hypot(dLon, c.lat - tgt.lat);
+      if (dist < bestDist) { bestDist = dist; best = c; }
+    }
+    return best && bestDist <= maxDeg ? { base: best, dist: bestDist } : null;
   }
 
   function launchAtomicBombWW2(WW2, state, nationId, targetCityId) {
@@ -748,11 +811,15 @@
       ? targetCityId
       : (inViewHostile?.id || WW2.cities.find((c) => isHostile(WW2, nationId, state.owners[c.id], state))?.id);
     if (!tgt) return { ok: false, error: '未找到敌方战略目标城市。' };
+    // HOI4 岛屿/前线机场 B-29 航程圈校验（42° 约 4,400 km 作战半径）
+    const inRange = findAirbaseInRange(WW2, state, nationId, tgt, 45);
+    if (!inRange) {
+      const tName = WW2.cities.find((c) => c.id === tgt)?.name || tgt;
+      return { ok: false, error: `B-29 航程不足！请先通过跳岛作战夺取距离 ${tName} 较近的前线岛屿机场（如冲绳/硫磺岛/塞班/英国本土）。` };
+    }
     if (!ns.techs.includes('atomic_proj')) ns.techs.push('atomic_proj');
     ns.pp = Math.max(0, ns.pp - 35);
-    const launchBase = WW2.cities.find((c) => c.theater === state.theater && state.owners[c.id] === nationId)
-      || WW2.cities.find((c) => c.port && state.owners[c.id] === nationId)
-      || WW2.cities.find((c) => state.owners[c.id] === nationId) || WW2.cities[0];
+    const launchBase = inRange.base;
 
     state.forts[tgt] = 0;
     state.railDamaged[tgt] = 30;
@@ -770,8 +837,118 @@
     state.effects = state.effects || [];
     state.effects.push({ type: 'nuke', from: launchBase.id, to: tgt, startMs: Date.now(), durationMs: 5600 });
     const cName = WW2.cities.find((c) => c.id === tgt)?.name || tgt;
-    state.log.push(`${formatDate(state.date)} · ☢️ 【原子弹发射轰炸！】${ns.short} B-29 战略轰炸机自 ${launchBase.name} 起飞，向 ${cName} 投下原子弹！蘑菇云遮天蔽日，守军与要塞瞬间摧毁！`);
+    state.log.push(`${formatDate(state.date)} · ☢️ 【原子弹发射轰炸！】${ns.short} B-29 战略轰炸机自前进机场 ${launchBase.name} 起飞，向 ${cName} 投下原子弹！蘑菇云遮天蔽日，守军与要塞瞬间摧毁！`);
     return { ok: true, from: launchBase.id, to: tgt };
+  }
+
+  function buildRadarWW2(WW2, state, nationId, cityId) {
+    const ns = state.nations[nationId];
+    if (!ns) return { ok: false, error: '国家不存在。' };
+    const tgt = (cityId && state.owners[cityId] === nationId) ? cityId : WW2.cities.find((c) => state.owners[c.id] === nationId)?.id;
+    if (!tgt) return { ok: false, error: '未找到本国控制城市。' };
+    if (ns.pp < 15) return { ok: false, error: '建设防空雷达站需要 15 政治点。' };
+    ns.pp -= 15;
+    state.radars = state.radars || {};
+    state.radars[tgt] = Math.min(4, (state.radars[tgt] || 0) + 1);
+    ns.airPower = Math.min(100, ns.airPower + 6);
+    const cName = WW2.cities.find((c) => c.id === tgt)?.name || tgt;
+    state.log.push(`${formatDate(state.date)} · 📡 ${ns.short}在 ${cName} 建成 ${state.radars[tgt]} 级防空雷达网（不列颠/本土空域截击 +28%）！`);
+    return { ok: true, cityId: tgt, level: state.radars[tgt] };
+  }
+
+  function garrisonSuppressWW2(WW2, state, nationId, cityId) {
+    const ns = state.nations[nationId];
+    if (!ns) return { ok: false, error: '国家不存在。' };
+    if (ns.pp < 10) return { ok: false, error: '宪兵治安镇压需要 10 政治点。' };
+    ns.pp -= 10;
+    state.resistance = state.resistance || {};
+    if (cityId) state.resistance[cityId] = 0;
+    else {
+      for (const cid of Object.keys(state.resistance)) {
+        if (state.owners[cid] === nationId) state.resistance[cid] = Math.max(0, state.resistance[cid] - 45);
+      }
+    }
+    state.log.push(`${formatDate(state.date)} · 👮 ${ns.short}派遣装甲宪兵师镇压占领区游击队，抵抗度大幅下降！`);
+    return { ok: true };
+  }
+
+  function relocateIndustryWW2(WW2, state, nationId) {
+    const ns = state.nations[nationId];
+    if (!ns) return { ok: false, error: '国家不存在。' };
+    if (state.uralRelocated && nationId === 'ussr') return { ok: false, error: '乌拉尔大后方工业内迁已经执行过。' };
+    if (ns.pp < 20) return { ok: false, error: '大后方工业内迁需要 20 政治点。' };
+    ns.pp -= 20;
+    ns.mil += 14; ns.civ += 8; ns.stock.tanks += 120;
+    if (nationId === 'ussr') state.uralRelocated = true;
+    state.log.push(`${formatDate(state.date)} · 🏭 【乌拉尔/大后方工业内迁】${ns.short}将前线重工抢运至战略大后方（军工 +14、民工 +8、坦克 +120）！`);
+    return { ok: true };
+  }
+
+  function triggerVichyFranceWW2(WW2, state) {
+    if (state.vichyTriggered) return { ok: false, error: '维希法国与自由法国分治事件已触发。' };
+    state.vichyTriggered = true;
+    if (state.owners.marseille === 'france') state.owners.marseille = 'germany';
+    if (state.nations.france) state.nations.france.exileGov = true;
+    state.log.push(`${formatDate(state.date)} · 🏛️ 【维希法国成立 & 自由法国流亡】巴黎陷落后法国南部转入轴心控制，戴高乐在海外组建自由法国继续抗战！`);
+    return { ok: true };
+  }
+
+  function planAmphibiousWW2(WW2, state, armyId, targetCityId) {
+    const a = state.armies.find((u) => u.id === armyId && u.strength > 0);
+    if (!a) return { ok: false, error: '请先选中一支我方集团军。' };
+    const ns = state.nations[a.nation];
+    if (ns.cp < 15) return { ok: false, error: '两栖登陆规划筹备需要 15 指挥点。' };
+    ns.cp -= 15;
+    a.amphibPrep = 100;
+    a.planBonus = Math.min(45, (a.planBonus || 0) + 20);
+    if (targetCityId && isHostile(WW2, a.nation, state.owners[targetCityId], state)) {
+      const adj = buildAdjacency(WW2);
+      if ((adj.get(a.city) || []).some((l) => l.to === targetCityId)) {
+        a.order = 'attack'; a.target = targetCityId; a.progress = 0;
+      }
+    }
+    state.log.push(`${formatDate(state.date)} · ⚓ 【两栖登陆筹备就绪】${a.name} 完成陆战队抢滩训练与战列舰岸轰协同（登陆准备 100% · 计划加成 +20%）！`);
+    return { ok: true, amphibPrep: a.amphibPrep };
+  }
+
+  function blockadeIslandWW2(WW2, state, nationId, targetCityId) {
+    const ns = state.nations[nationId];
+    if (!ns) return { ok: false, error: '国家不存在。' };
+    if (ns.cp < 15) return { ok: false, error: '孤岛潜艇封锁需要 15 指挥点。' };
+    const tgt = (targetCityId && isHostile(WW2, nationId, state.owners[targetCityId], state))
+      ? targetCityId
+      : WW2.cities.find((c) => c.port && c.theater === state.theater && isHostile(WW2, nationId, state.owners[c.id], state))?.id
+        || WW2.cities.find((c) => c.port && isHostile(WW2, nationId, state.owners[c.id], state))?.id;
+    if (!tgt) return { ok: false, error: '未找到可封锁的敌方岛屿或港口。' };
+    ns.cp -= 15;
+    state.blockaded = state.blockaded || {};
+    state.blockaded[tgt] = 14;
+    const cName = WW2.cities.find((c) => c.id === tgt)?.name || tgt;
+    state.log.push(`${formatDate(state.date)} · 🦈 【太平洋孤岛封锁断粮】${ns.short}潜艇与特混舰队彻底切断 ${cName} 海运补给线 14 天（岛上守军补给暴跌至 10%）！`);
+    return { ok: true, target: tgt };
+  }
+
+  function kamikazeStrikeWW2(WW2, state, nationId, targetNationId) {
+    const ns = state.nations[nationId];
+    if (!ns) return { ok: false, error: '国家不存在。' };
+    if (ns.pp < 25 || ns.stock.planes < 80) return { ok: false, error: '神风特攻需要 25 政治点与 80 架战机。' };
+    const enemy = targetNationId && isHostile(WW2, nationId, targetNationId, state)
+      ? targetNationId
+      : Object.keys(state.nations).find((id) => isHostile(WW2, nationId, id, state) && (state.nations[id].navalPower || 0) >= 40);
+    if (!enemy) return { ok: false, error: '当前没有正在交战的海上敌国。' };
+    ns.pp -= 25;
+    ns.stock.planes -= 80;
+    const dns = state.nations[enemy];
+    const dtf = state.taskForces?.[enemy];
+    if (dtf) {
+      if (dtf.cv > 0) dtf.cv -= 1;
+      else if (dtf.bb > 0) dtf.bb -= 1;
+      dtf.dd = Math.max(0, dtf.dd - 3);
+    }
+    dns.navalPower = Math.max(15, dns.navalPower - 18);
+    dns.capitalShips = Math.max(0, (dns.capitalShips || 0) - 1);
+    state.log.push(`${formatDate(state.date)} · 🌸 【神风特攻队突袭】${ns.short}投入 80 架战机饱和冲撞 ${dns.short}特混舰队，重创 1 艘航母/主力舰并削弱敌制海权 -18！`);
+    return { ok: true, targetNation: enemy };
   }
 
   function fallbackLineWW2(WW2, state, nationId) {
@@ -1203,6 +1380,34 @@
         }
       }
 
+      // 1.5 孤岛封锁衰减、占领区逐城抵抗度演化与维希法国自动触发
+      state.blockaded = state.blockaded || {};
+      for (const cid of Object.keys(state.blockaded)) {
+        if (state.blockaded[cid] > 0) state.blockaded[cid] -= 1;
+      }
+      state.resistance = state.resistance || {};
+      if (state.dayCount % 3 === 0) {
+        for (const c of WW2.cities) {
+          const cur = state.owners[c.id];
+          const orig = state.initialOwners?.[c.id];
+          if (cur && orig && cur !== orig) {
+            const hasGarrison = state.armies.some((u) => u.city === c.id && u.nation === cur && u.strength > 0);
+            const delta = hasGarrison ? 0.5 : 3.2;
+            state.resistance[c.id] = Math.min(100, (state.resistance[c.id] || 0) + delta);
+            if (state.resistance[c.id] >= 75) {
+              state.railDamaged[c.id] = Math.max(state.railDamaged[c.id] || 0, 5);
+              state.resistance[c.id] = 45;
+              state.log.push(`${formatDate(state.date)} · 🔥 【占领区游击破袭】${c.name} 抵抗组织炸毁当地铁路补给线！`);
+            }
+          } else if (state.resistance[c.id]) {
+            state.resistance[c.id] = Math.max(0, state.resistance[c.id] - 6);
+          }
+        }
+      }
+      if (!state.vichyTriggered && state.owners.paris === 'germany' && state.initialOwners?.paris === 'france') {
+        triggerVichyFranceWW2(WW2, state);
+      }
+
       // 2. 非玩家列强（或玩家开启委任总参谋部时）HOI4 战略 AI 决策
       if (state.dayCount % 3 === 1) {
         for (const a of state.armies) {
@@ -1247,8 +1452,17 @@
           const sup = citySupplyLevel(WW2, state, a.city) / 100;
           const restMult = a.order === 'rest' ? 1.85 : 1.0;
           a.entrench = a.order === 'defend' ? Math.min(10, a.entrench + 0.45) : a.entrench;
-          a.org = Math.min(100, a.org + 3.5 * sup * restMult);
-          if (a.strength < a.maxStrength && ns.stock.infantry > 20) {
+          // HOI4 作战计划准备加成：位于前线待命/掘壕每日积攒计划条
+          const onFront = (adj.get(a.city) || []).some((l) => isHostile(WW2, a.nation, state.owners[l.to], state));
+          const maxPlan = ns.doctrineId === 'grand' ? 45 : 35;
+          if (onFront) a.planBonus = Math.min(maxPlan, (a.planBonus || 0) + 2.5);
+          // 孤岛封锁断粮扣组织度，正常补给恢复组织度
+          if ((state.blockaded?.[a.city] || 0) > 0) {
+            a.org = Math.max(8, a.org - 4.5);
+          } else {
+            a.org = Math.min(100, a.org + 3.5 * sup * restMult);
+          }
+          if (a.strength < a.maxStrength && ns.stock.infantry > 20 && !(state.blockaded?.[a.city] > 0)) {
             const heal = Math.min(a.maxStrength - a.strength, Math.round(3500 * sup * restMult));
             a.strength += heal;
             ns.stock.infantry -= 8;
@@ -1300,12 +1514,19 @@
         const fuelMult = (ns.fuel || 0) < 20 ? 0.62 : 1.0; // 缺油坦克与机械化战力暴跌！
         const traitMult = 1 + ((a.traits || []).includes('panzer_leader') ? 0.16 : 0) + ((a.traits || []).includes('field_marshal') ? 0.12 : 0);
         const weatherMult = weather.atkPen;
+        const planMult = 1 + Math.min(45, a.planBonus || 0) / 100; // HOI4 作战计划准备加成
+        a.planBonus = Math.max(0, (a.planBonus || 0) - 1.5);
+        // HOI4 两栖登陆筹备与战列舰岸轰支持
+        if (link.kind === 'sea' && (a.amphibPrep || 0) < 100) a.amphibPrep = Math.min(100, (a.amphibPrep || 0) + 25);
+        const amphibMult = link.kind === 'sea' ? ((a.amphibPrep || 0) >= 100 ? 1.0 : 0.72) : 1.0;
+        const shoreBombardNerf = (link.kind === 'sea' && (state.taskForces?.[a.nation]?.bb || 0) >= 2) ? 0.75 : 1.0;
+        const radarDefBonus = 1 + Math.min(0.28, (state.radars?.[a.target] || 0) * 0.08);
         const siegeBonus = a.order === 'siege' ? 1.16 : 1.0;
         if (a.order === 'siege' && (state.forts[a.target] || 0) > 0 && state.dayCount % 4 === 0) {
           state.forts[a.target] = Math.max(0, state.forts[a.target] - 1);
         }
         const atkPower = (a.strength / 1000 + a.tanks * 0.28 * atkDoc.armorMult * (1 + atkTech.armor) * fuelMult + a.artillery * 0.22)
-          * (0.4 + 0.6 * a.org / 100) * airBonus * Math.min(1.0, seaMult + atkTech.sea) * atkDoc.atkMult * (1 + atkTech.atk) * atkBurst * vetMult * siegeBonus * traitMult * weatherMult;
+          * (0.4 + 0.6 * a.org / 100) * airBonus * Math.min(1.0, seaMult + atkTech.sea) * amphibMult * planMult * atkDoc.atkMult * (1 + atkTech.atk) * atkBurst * vetMult * siegeBonus * traitMult * weatherMult;
         ns.warScore = (ns.warScore || 0) + 1.5;
         const defTotal = defenders.reduce((s, d) => {
           const dns = state.nations[d.nation];
@@ -1313,7 +1534,7 @@
           const intelNerf = 1 - Math.min(0.25, (ns.intel?.network || 0) * 0.0025);
           const terrMult = tgtCity?.terrain === 'mountain' || tgtCity?.terrain === 'urban' || tgtCity?.terrain === 'fort' ? 1.32 : 1.08;
           const fortMult = 1 + (fortLvl * 0.11 + d.entrench * 0.03) * intelNerf;
-          return s + (d.strength / 1000 + d.tanks * 0.25 + d.artillery * 0.24) * (0.4 + 0.6 * d.org / 100) * terrMult * fortMult * defDoc.defMult * (1 + (dns?.techBonus?.def || 0)) * (1 + (d.vet || 0) * 0.08);
+          return s + (d.strength / 1000 + d.tanks * 0.25 + d.artillery * 0.24) * (0.4 + 0.6 * d.org / 100) * terrMult * fortMult * radarDefBonus * shoreBombardNerf * defDoc.defMult * (1 + (dns?.techBonus?.def || 0)) * (1 + (d.vet || 0) * 0.08);
         }, 1);
 
         // HOI4 装甲金盾阈值检查
@@ -1673,7 +1894,18 @@
 
       const fort = state.forts[c.id] || 0;
       const nuked = state.nukedCities?.[c.id];
-      const label = (nuked ? '☢️' : '') + c.name + (fort > 0 ? ` 🛡${fort}` : '') + (c.port ? ' ⚓' : '');
+      const radar = state.radars?.[c.id] || 0;
+      const block = (state.blockaded?.[c.id] || 0) > 0;
+      const resLv = Math.round(state.resistance?.[c.id] || 0);
+      if (radar > 0) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(116, 224, 198, 0.36)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.arc(x, y, 24 + radar * 10, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+      const label = (nuked ? '☢️' : '') + c.name + (fort > 0 ? ` 🛡${fort}` : '') + (radar > 0 ? ` 📡${radar}` : '') + (block ? ' 🦈封锁' : '') + (resLv >= 45 ? ` 🔥${resLv}%` : '') + (c.port ? ' ⚓' : '');
       ctx.font = (c.vp >= 20 ? 'bold 10.5px' : '9.5px') + ' "Microsoft YaHei", sans-serif';
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = isSelected ? 'rgba(84, 62, 18, 0.92)' : 'rgba(14, 20, 18, 0.78)';
@@ -1684,7 +1916,29 @@
       cityHits.push({ id: c.id, city: c, x: x - 16, y: y - 12, w: 32, h: 32 });
     }
 
-    // 4. HOI4 进攻箭头 & 交战火花
+    // 4. HOI4 进攻箭头 & 交战火花 & B-29 前线机场航程圈
+    if (opts.showAirRange) {
+      const airBase = (opts.selectedCity && state.owners[opts.selectedCity] === state.player && cityMap.get(opts.selectedCity))
+        || WW2.cities.find((c) => c.theater === state.theater && state.owners[c.id] === state.player && c.port)
+        || WW2.cities.find((c) => c.theater === state.theater && state.owners[c.id] === state.player);
+      if (airBase) {
+        const [ax, ay] = proj(airBase.lon, airBase.lat);
+        const [rx] = proj(airBase.lon + 36, airBase.lat);
+        const rad = Math.max(48, Math.min(340, Math.abs(rx - ax)));
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255, 224, 118, 0.72)';
+        ctx.fillStyle = 'rgba(255, 224, 118, 0.06)';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([7, 5]);
+        ctx.beginPath(); ctx.arc(ax, ay, rad, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#ffe994';
+        ctx.font = '700 11px "Microsoft YaHei UI", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`🛫 B-29/战略空军作战半径（基地：${airBase.name}）`, ax, ay - rad + 16);
+        ctx.restore();
+      }
+    }
     for (const a of state.armies) {
       if (a.strength <= 0 || !a.target) continue;
       const ca = cityMap.get(a.city), cb = cityMap.get(a.target);
@@ -1729,14 +1983,20 @@
       ctx.fillText(Math.min(99, Math.max(5, Math.round(b.ratio * 50))), x, y - 0.5);
     }
 
-    // 5. HOI4 集团军兵牌（带兵力、坦克数、组织度绿条、国旗色）
+    // 5. HOI4 集团军兵牌（防重叠防穿模排版引擎 + 地面接触阴影 + 独立站位 3D 兵模）
     const armyHits = [];
+    const placedBoxes = cityHits.map((ch) => ({ x: ch.x - 4, y: ch.y + 18, w: 58, h: 16 }));
+    const overlaps = (ax, ay, aw, ah) => placedBoxes.some((b) => ax < b.x + b.w && ax + aw > b.x && ay < b.y + b.h && ay + ah > b.y);
     const byCity = new Map();
     for (const a of state.armies) {
       if (a.strength <= 0) continue;
       if (!byCity.has(a.city)) byCity.set(a.city, []);
       byCity.get(a.city).push(a);
     }
+    const offsetRing = [
+      [0, -28], [48, -28], [-48, -28], [0, -64], [52, 12], [-52, 12],
+      [48, -64], [-48, -64], [84, -28], [-84, -28], [0, 32],
+    ];
     for (const [cid, list] of byCity.entries()) {
       const c = cityMap.get(cid);
       if (!c) continue;
@@ -1744,39 +2004,74 @@
       if (cx < -30 || cx > w + 30 || cy < -30 || cy > h + 30) continue;
       list.forEach((a, idx) => {
         const fac = WW2.factions[a.nation] || { color: '#555', border: '#ccc', flag: '★', short: a.nation };
-        const bx = cx - 22 + idx * 14;
-        const by = cy - 26 - idx * 12;
-        const selected = opts.selectedArmy === a.id;
-        ctx.fillStyle = fac.color;
-        ctx.fillRect(bx, by, 46, 18);
-        ctx.strokeStyle = selected ? '#ffe680' : fac.border;
-        ctx.lineWidth = selected ? 2.4 : 1.2;
-        ctx.strokeRect(bx, by, 46, 18);
-        // 组织度绿条
-        ctx.fillStyle = '#141916';
-        ctx.fillRect(bx + 2, by + 13.5, 42, 3);
-        ctx.fillStyle = a.org > 45 ? '#66e088' : '#f07154';
-        ctx.fillRect(bx + 2, by + 13.5, 42 * Math.max(0, Math.min(1, a.org / 100)), 3);
-        // 兵力千人标签 + 老兵星级 + 德军/装甲集群多坦克微标 + 可选地图各国专属 3D 兵模叠加！
-        const vetStars = '★'.repeat(Math.floor(a.vet || 0));
-        ctx.fillStyle = '#fff9e6';
-        ctx.font = 'bold 9.5px "Microsoft YaHei", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${fac.flag}${Math.round(a.strength / 1000)}K${vetStars}`, bx + 23, by + 10.5);
-        if (a.tanks >= 600) {
-          const tankCount = Math.min(4, Math.max(2, Math.floor(a.tanks / 500)));
-          ctx.fillStyle = '#ffd966';
-          ctx.font = 'bold 8.5px sans-serif';
-          ctx.fillText('▪'.repeat(tankCount) + '坦', bx + 23, by - 2);
+        const has3D = Boolean(opts.show3D && opts.renderer3D && idx === 0);
+        const boxH = has3D ? 44 : 20;
+        let bx = cx - 23, by = cy - 28;
+        let chosen = false;
+        for (let k = idx; k < offsetRing.length + idx; k++) {
+          const [ox, oy] = offsetRing[k % offsetRing.length];
+          const tx = Math.max(8, Math.min(w - 54, cx - 23 + ox));
+          const ty = Math.max(has3D ? 36 : 10, Math.min(h - 24, cy + oy));
+          if (!overlaps(tx - 2, ty - (has3D ? 28 : 2), 50, boxH)) {
+            bx = tx; by = ty; chosen = true; break;
+          }
         }
-        if (opts.show3D && opts.renderer3D && idx === 0) {
+        if (!chosen) {
+          bx = Math.max(8, Math.min(w - 54, cx - 23 + idx * 50));
+          by = Math.max(36, Math.min(h - 24, cy - 28 - idx * 24));
+        }
+        placedBoxes.push({ x: bx - 2, y: by - (has3D ? 28 : 2), w: 50, h: boxH });
+
+        // 若因避让穿模产生偏移，画细金定位引导线连回所属城市圆心
+        if (Math.hypot(bx + 23 - cx, by + 9 - cy) > 36) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(230, 206, 146, 0.42)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(bx + 23, by + 18); ctx.stroke();
+          ctx.restore();
+        }
+
+        // 先画正上方独立站位 3D 兵模与接触阴影（绝不遮挡兵牌文字！）
+        if (has3D) {
           const sKind = a.tanks >= 1000
             ? ({ germany: 'tiger', ussr: 't34', usa: 'sherman', uk: 'churchill', france: 'charb1', japan: 'chiha', china: 'sherman' }[a.nation] || 'sherman')
             : ({ usa: 'soldier_usa', ussr: 'soldier_ussr', uk: 'soldier_uk', france: 'soldier_france', japan: 'soldier_japan', germany: 'soldier_germany', china: 'soldier_china_ww2' }[a.nation] || 'soldier_usa');
           const sSide = a.nation === 'ussr' ? 'ccp' : 'roc';
           const sAct = a.order === 'attack' || a.order === 'siege' ? 'fire' : a.order === 'move' ? 'march' : state.nightMode ? 'sleep' : 'idle';
           const spr = opts.renderer3D.frame(sSide, sAct !== 'idle', opts.nowMs || 0, sKind, sAct, '', 0);
-          ctx.drawImage(spr, bx - 22, by - 14, 30, 30);
+          ctx.save();
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
+          ctx.beginPath(); ctx.ellipse(bx + 23, by - 1, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          ctx.drawImage(spr, bx + 7, by - 31, 32, 32);
+        }
+
+        const selected = opts.selectedArmy === a.id;
+        ctx.fillStyle = fac.color;
+        ctx.fillRect(bx, by, 46, 18);
+        ctx.strokeStyle = selected ? '#ffe680' : fac.border;
+        ctx.lineWidth = selected ? 2.4 : 1.2;
+        ctx.strokeRect(bx, by, 46, 18);
+        // 组织度绿条 + HOI4 作战计划蓄力蓝条
+        ctx.fillStyle = '#141916';
+        ctx.fillRect(bx + 2, by + 13.5, 42, 3);
+        ctx.fillStyle = a.org > 45 ? '#66e088' : '#f07154';
+        ctx.fillRect(bx + 2, by + 13.5, 42 * Math.max(0, Math.min(1, a.org / 100)), 3);
+        if ((a.planBonus || 0) > 2) {
+          ctx.fillStyle = '#52c8ff';
+          ctx.fillRect(bx + 2, by + 1, 42 * Math.min(1, a.planBonus / 45), 2);
+        }
+        const vetStars = '★'.repeat(Math.floor(a.vet || 0));
+        ctx.fillStyle = '#fff9e6';
+        ctx.font = 'bold 9.5px "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${fac.flag}${Math.round(a.strength / 1000)}K${vetStars}`, bx + 23, by + 10.5);
+        if (a.tanks >= 600 && !has3D) {
+          const tankCount = Math.min(4, Math.max(2, Math.floor(a.tanks / 500)));
+          ctx.fillStyle = '#ffd966';
+          ctx.font = 'bold 8.5px sans-serif';
+          ctx.fillText('▪'.repeat(tankCount) + '坦', bx + 23, by - 2);
         }
         armyHits.push({ id: a.id, army: a, x: bx, y: by, w: 46, h: 18 });
       });
@@ -2033,6 +2328,14 @@
     blitzkriegStrikeWW2,
     pacificNavalAirBattle,
     launchAtomicBombWW2,
+    findAirbaseInRange,
+    buildRadarWW2,
+    garrisonSuppressWW2,
+    relocateIndustryWW2,
+    triggerVichyFranceWW2,
+    planAmphibiousWW2,
+    blockadeIslandWW2,
+    kamikazeStrikeWW2,
     fallbackLineWW2,
     declareWarWW2,
     proposePeaceWW2,
@@ -2468,8 +2771,11 @@
       cityHits.push({ id: c.id, city: c, x: x - 16, y: y - 12, w: 32, h: 32 });
     }
 
-    // 6. 军团推进箭头、3D 兵模与兵牌
+    // 6. 军团推进箭头、防穿模 3D 兵模与兵牌
     const armyHits = [];
+    const placedKw = cityHits.map((ch) => ({ x: ch.x - 14, y: ch.y + 18, w: 72, h: 18 }));
+    const kwOverlaps = (ax, ay, aw, ah) => placedKw.some((b) => ax < b.x + b.w && ax + aw > b.x && ay < b.y + b.h && ay + ah > b.y);
+    const kwOffsets = [[0, -24], [56, -24], [-56, -24], [0, -64], [58, 16], [-58, 16], [96, -24], [-96, -24]];
     const byCity = new Map();
     for (const a of st.armies) {
       if (a.strength <= 0) continue;
@@ -2481,8 +2787,6 @@
       if (!c) continue;
       const [bx, by] = proj(c.lon, c.lat);
       list.forEach((a, idx) => {
-        const ox = (idx - (list.length - 1) / 2) * 34;
-        const x = bx + ox, y = by - 22;
         if (a.target && cityMap.has(a.target)) {
           const tc = cityMap.get(a.target);
           const [tx, ty] = proj(tc.lon, tc.lat);
@@ -2493,12 +2797,33 @@
           ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
           ctx.restore();
         }
-        if (opts.show3D && opts.renderer3D) {
+        const has3D = Boolean(opts.show3D && opts.renderer3D);
+        let x = bx, y = by - 24;
+        for (let k = idx; k < kwOffsets.length + idx; k++) {
+          const [ox, oy] = kwOffsets[k % kwOffsets.length];
+          const tx = Math.max(30, Math.min(W - 30, bx + ox));
+          const ty = Math.max(has3D ? 44 : 18, Math.min(H - 18, by + oy));
+          if (!kwOverlaps(tx - 26, ty - (has3D ? 38 : 10), 52, has3D ? 50 : 20)) {
+            x = tx; y = ty; break;
+          }
+        }
+        placedKw.push({ x: x - 26, y: y - (has3D ? 38 : 10), w: 52, h: has3D ? 50 : 20 });
+        if (Math.hypot(x - bx, y - by) > 36) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(230, 206, 146, 0.42)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(x, y + 8); ctx.stroke();
+          ctx.restore();
+        }
+        if (has3D) {
           const modelKind = a.tanks >= 35 ? (a.side === 'dprk_coalition' ? 't34' : 'm26') : 'human';
           const renderSide = a.side === 'dprk_coalition' ? 'ccp' : 'roc';
           const nationVar = a.factionId === 'pva' ? 'china' : a.factionId === 'usa' ? 'usa' : a.factionId === 'commonwealth' ? 'uk' : a.factionId === 'kpa' ? 'ussr' : 'usa';
           const spr = opts.renderer3D.frame(renderSide, a.order === 'attack', now, modelKind, a.order === 'attack' ? 'attack' : 'idle', nationVar, (now * 0.0004) % (Math.PI * 2));
-          if (spr) ctx.drawImage(spr, x - 20, y - 30, 40, 40);
+          ctx.save();
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
+          ctx.beginPath(); ctx.ellipse(x, y - 9, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          if (spr) ctx.drawImage(spr, x - 17, y - 41, 34, 34);
         }
         const sel = opts.selectedArmy === a.id;
         ctx.fillStyle = a.side === 'dprk_coalition' ? '#9c261f' : '#1f538a';

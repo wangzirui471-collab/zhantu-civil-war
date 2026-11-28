@@ -1571,10 +1571,18 @@
         if (isFiring) b.cyl(tx + bx, ty + 0.12, tz + sgn * 0.86, tx + bx, ty + 0.17, tz + sgn * 1.26, 0.10, 0.025, MAT.flameOuter, 8);
       }
     }
-    // 舷侧 155mm 副炮与 127mm 高平两用炮群
-    for (const sx of [-0.36, 0.36]) for (const pz of [-0.18, 0.18, -0.54]) {
-      b.box(sx, 0.56, pz, 0.14, 0.10, 0.14, MAT.navalLight);
+    // 舷侧 155mm 副炮、127mm 高平两用炮群、救生艇、舰桥观测窗、21号雷达网与舰尾水上侦察机
+    b.box(0, 1.18, 0.33, 0.28, 0.055, 0.03, MAT.glass); // 舰桥全景防弹观测窗
+    b.box(0, 1.54, 0.15, 0.24, 0.12, 0.03, MAT.brass); // 21号电探对空雷达栅格
+    for (const sx of [-0.36, 0.36]) {
+      for (const pz of [-0.18, 0.18, -0.54]) {
+        b.box(sx, 0.56, pz, 0.14, 0.10, 0.14, MAT.navalLight);
+        b.cyl(sx, 0.58, pz, sx + (sx > 0 ? 0.18 : -0.18), 0.62, pz, 0.015, 0.012, MAT.gunmetal, 6);
+      }
+      b.ellipsoid(sx * 1.04, 0.52, -0.82, 0.055, 0.04, 0.16, MAT.eyeWhite); // 舰侧救生艇
     }
+    b.box(0, 0.54, -1.78, 0.18, 0.04, 0.42, MAT.gunmetal); // 舰尾水上机弹射滑轨
+    b.box(0, 0.60, -1.76, 0.32, 0.025, 0.08, MAT.armorGrn); // 停放零式水侦机翼
   }
 
   function buildPropFighter(b, kind = 'zero', action = 'idle', phase = 0) {
@@ -1583,36 +1591,45 @@
     const bank = Math.sin(phase) * 0.08;
     const bodyMat = isZero ? MAT.navalLight : MAT.armorGrn;
     const wingMat = isZero ? MAT.navalLight : MAT.armorSov;
-    // 流线活塞机身 + 引擎整流罩 + 旋转三叶螺旋桨
+    // 流线活塞机身 + 引擎整流罩 + 旋转三叶螺旋桨 + 侧面排气管
     b.cyl(0, 0.84, -1.05, 0, 0.84, 0.96, 0.12, 0.17, bodyMat, 14);
     b.cyl(0, 0.84, 0.96, 0, 0.84, 1.12, 0.16, 0.06, isZero ? MAT.rubber : MAT.brass, 12);
+    for (const sx of [-0.15, 0.15]) {
+      b.box(sx, 0.84, 0.68, 0.03, 0.04, 0.28, MAT.gunmetal); // 发动机侧面排气歧管
+    }
     const spin = phase * 3.5;
     for (let k = 0; k < 3; k++) {
       const a = spin + k * (Math.PI * 2 / 3);
       b.cyl(0, 0.84, 1.13, Math.cos(a) * 0.42, 0.84 + Math.sin(a) * 0.42, 1.14, 0.028, 0.012, MAT.gunmetal, 6);
     }
-    // 气泡水滴座舱盖
+    // 气泡水滴座舱盖 + 金属座舱框架条 + 无线电桅杆
     b.ellipsoid(0, 0.99, 0.05, 0.11, 0.11, 0.34, MAT.glass);
-    // 主翼：零战长直微后掠翼+日之丸红日；喷火经典椭圆翼
+    b.box(0, 1.07, 0.12, 0.14, 0.018, 0.03, MAT.armorDark);
+    b.cyl(0, 1.04, -0.26, 0, 1.24, -0.30, 0.012, 0.008, MAT.gunmetal, 6);
+    // 主翼：零战长直微后掠翼+日之丸红日；喷火经典椭圆翼 + 翼前缘机炮管 + 翼尖航行灯
     b.box(0, 0.80, 0.16, isZero ? 2.48 : 2.30, 0.045, isZero ? 0.48 : 0.56, wingMat, 0, 0, bank);
     if (!isZero) {
-      // 喷火椭圆翼尖收弧
       b.ellipsoid(-1.05, 0.80, 0.16, 0.32, 0.032, 0.22, wingMat);
       b.ellipsoid(1.05, 0.80, 0.16, 0.32, 0.032, 0.22, wingMat);
     }
-    // 机翼国徽标志（零战日之丸红日 / 喷火黄蓝靶标）
+    const tipX = isZero ? 1.24 : 1.32;
+    b.ellipsoid(-tipX, 0.80, 0.16, 0.032, 0.024, 0.032, MAT.hullRed); // 左翼尖红航行灯
+    b.ellipsoid( tipX, 0.80, 0.16, 0.032, 0.024, 0.032, MAT.armorGrn); // 右翼尖绿航行灯
+    for (const sx of [-0.48, 0.48]) {
+      b.cyl(sx, 0.80, 0.38, sx, 0.80, 0.58, 0.016, 0.013, MAT.bluedSteel, 6); // 翼前缘20mm航炮炮管
+    }
     for (const sx of [-0.72, 0.72]) {
       b.cyl(sx, 0.828, 0.16, sx, 0.842, 0.16, 0.14, 0.14, isZero ? MAT.hullRed : MAT.brass, 12);
       if (!isZero) b.cyl(sx, 0.838, 0.16, sx, 0.848, 0.16, 0.075, 0.075, MAT.hullRed, 10);
     }
-    // 水平尾翼与垂直尾翼 + 机腹副油箱
+    // 水平尾翼与垂直尾翼 + 尾轮 + 机腹副油箱
     b.box(0, 0.86, -0.96, 0.84, 0.035, 0.24, wingMat, 0, 0, bank);
     b.box(0, 1.04, -0.96, 0.04, 0.34, 0.28, bodyMat);
+    b.cyl(0, 0.74, -0.94, 0, 0.66, -0.94, 0.022, 0.022, MAT.rubber, 6); // 尾轮
     if (isZero) b.cyl(0, 0.68, -0.10, 0, 0.68, 0.42, 0.065, 0.055, MAT.navalGrey, 10);
-    // 机翼 20mm 航炮与开火弹道
     if (isFiring) {
-      for (const sx of [-0.46, 0.46]) {
-        b.cyl(sx, 0.80, 0.44, sx, 0.80, 1.38, 0.032, 0.012, MAT.flameOuter, 8);
+      for (const sx of [-0.48, 0.48]) {
+        b.cyl(sx, 0.80, 0.58, sx, 0.80, 1.44, 0.032, 0.012, MAT.flameOuter, 8);
       }
     }
   }
@@ -1623,33 +1640,42 @@
     const isTiger = kind === 'tiger';
     const isCharB1 = kind === 'charb1';
     const bodyMat = isTiger ? MAT.navalGrey : isCharB1 ? MAT.armorSov : MAT.armorGrn;
-    // 履带与负重轮
+    // 履带、负重轮与侧裙护泥板
     for (const sx of [-0.48, 0.48]) {
       b.box(sx, 0.20 + bounce, 0, isTiger ? 0.26 : 0.20, 0.26, isCharB1 ? 1.72 : 1.54, MAT.rubber);
+      b.box(sx, 0.35 + bounce, 0, isTiger ? 0.29 : 0.23, 0.045, isCharB1 ? 1.74 : 1.58, bodyMat); // 侧裙翼子板
       const wheels = isTiger ? 6 : 5;
       for (let w = 0; w < wheels; w++) {
         const wz = -0.58 + w * (1.16 / (wheels - 1));
         b.cyl(sx - 0.11, 0.16 + bounce, wz, sx + 0.11, 0.16 + bounce, wz, isTiger ? 0.14 : 0.12, isTiger ? 0.14 : 0.12, MAT.armorDark, 10);
+        b.cyl(sx - 0.12, 0.16 + bounce, wz, sx + 0.12, 0.16 + bounce, wz, 0.045, 0.045, MAT.gunmetal, 8); // 轮毂盖
       }
     }
+    // 前照大灯与车尾发动机散热格栅 + 鞭状无线电天线
+    b.cyl(-0.34, 0.48 + bounce, 0.75, -0.34, 0.48 + bounce, 0.82, 0.042, 0.042, MAT.brass, 8);
+    b.box(0, 0.56 + bounce, -0.52, 0.58, 0.03, 0.34, MAT.armorDark); // 发动机百叶散热栅
+    b.cyl(-0.32, 0.56 + bounce, -0.58, -0.36, 1.38 + bounce, -0.68, 0.008, 0.004, MAT.gunmetal, 6); // 鞭状天线
     if (isCharB1) {
-      // 法军夏尔 B1 bis：菱形高大侧板 + 车体前右 75mm 榴弹炮 + 顶部偏置单人小炮塔 47mm 炮
       b.box(0, 0.40 + bounce, 0.0, 0.82, 0.34, 1.62, bodyMat);
-      b.cyl(0.22, 0.38 + bounce, 0.72, 0.22, 0.38 + bounce, 1.12, 0.046, 0.042, MAT.bluedSteel, 8); // 车体75mm榴弹炮
-      b.cyl(-0.08, 0.56 + bounce, 0.16, -0.08, 0.82 + bounce, 0.16, 0.26, 0.22, bodyMat, 12); // APX1 单人炮塔
-      b.cyl(-0.08, 0.70 + bounce, 0.36, -0.08, 0.70 + bounce, 1.04, 0.032, 0.026, MAT.bluedSteel, 8); // 47mm SA35 主炮
+      b.cyl(0.22, 0.38 + bounce, 0.72, 0.22, 0.38 + bounce, 1.12, 0.046, 0.042, MAT.bluedSteel, 8);
+      b.cyl(-0.08, 0.56 + bounce, 0.16, -0.08, 0.82 + bounce, 0.16, 0.26, 0.22, bodyMat, 12);
+      b.box(-0.08, 0.70 + bounce, 0.36, 0.18, 0.14, 0.08, MAT.armorDark); // 炮盾
+      b.cyl(-0.08, 0.70 + bounce, 0.36, -0.08, 0.70 + bounce, 1.04, 0.032, 0.026, MAT.bluedSteel, 8);
     } else if (isTiger) {
-      // 德军虎式 I：方正垂直装甲车体 + 马蹄形重型炮塔 + 88mm L/56 主炮与炮口制退器
       b.box(0, 0.40 + bounce, 0.0, 1.06, 0.32, 1.52, bodyMat);
       b.box(0, 0.68 + bounce, 0.06, 0.68, 0.28, 0.74, bodyMat);
-      b.cyl(0, 0.68 + bounce, 0.42, 0, 0.68 + bounce, 1.68, 0.044, 0.036, MAT.bluedSteel, 10);
-      b.box(0, 0.68 + bounce, 1.70, 0.11, 0.09, 0.12, MAT.gunmetal); // 虎式88炮双室制退器
+      b.box(0, 0.68 + bounce, 0.44, 0.54, 0.18, 0.10, MAT.armorDark); // 虎式厚重防盾
+      b.cyl(-0.18, 0.82 + bounce, -0.06, -0.18, 0.92 + bounce, -0.06, 0.12, 0.11, MAT.armorDark, 10); // 车长指挥塔
+      for (const ex of [-0.26, 0.26]) b.cyl(ex, 0.36 + bounce, -0.78, ex, 0.58 + bounce, -0.78, 0.052, 0.048, MAT.gunmetal, 8); // 虎式双排气管
+      b.cyl(0, 0.68 + bounce, 0.46, 0, 0.68 + bounce, 1.68, 0.044, 0.036, MAT.bluedSteel, 10);
+      b.box(0, 0.68 + bounce, 1.70, 0.11, 0.09, 0.12, MAT.gunmetal);
     } else {
-      // 美军 M4 谢尔曼：高大圆润倾斜车体 + 铸造圆弧炮塔 + 76mm 主炮 + 车顶 .50 机枪
       b.box(0, 0.42 + bounce, 0.0, 0.88, 0.36, 1.48, bodyMat);
       b.box(0, 0.38 + bounce, 0.72, 0.84, 0.26, 0.30, bodyMat, 0.48, 0, 0);
       b.ellipsoid(0, 0.72 + bounce, 0.08, 0.34, 0.20, 0.40, bodyMat);
-      b.cyl(0, 0.72 + bounce, 0.38, 0, 0.72 + bounce, 1.44, 0.038, 0.032, MAT.bluedSteel, 10);
+      b.box(0, 0.72 + bounce, 0.44, 0.32, 0.16, 0.09, MAT.armorDark); // 谢尔曼铸造炮盾
+      b.cyl(-0.12, 0.88 + bounce, -0.02, -0.12, 0.96 + bounce, -0.02, 0.10, 0.10, MAT.armorDark, 10); // 车长舱盖
+      b.cyl(0, 0.72 + bounce, 0.44, 0, 0.72 + bounce, 1.44, 0.038, 0.032, MAT.bluedSteel, 10);
       b.cyl(0.14, 0.86 + bounce, -0.10, 0.14, 0.96 + bounce, 0.18, 0.015, 0.012, MAT.gunmetal, 6);
     }
     if (isFiring) {
@@ -1671,19 +1697,25 @@
       }
       b.box(0, 0.38 + bounce, 0.0, 0.78, 0.34, 1.54, MAT.ukBrodie);
       b.box(0, 0.70 + bounce, 0.08, 0.56, 0.30, 0.62, MAT.ukBrodie);
-      b.cyl(0, 0.70 + bounce, 0.38, 0, 0.70 + bounce, 1.38, 0.036, 0.030, MAT.bluedSteel, 8);
+      b.box(0, 0.70 + bounce, 0.40, 0.34, 0.16, 0.08, MAT.armorDark); // 丘吉尔厚炮盾
+      b.cyl(-0.14, 0.85 + bounce, 0.0, -0.14, 0.93 + bounce, 0.0, 0.11, 0.10, MAT.armorDark, 10); // 车长指挥塔
+      b.cyl(-0.26, 0.54 + bounce, -0.58, -0.30, 1.32 + bounce, -0.66, 0.008, 0.004, MAT.gunmetal, 6); // 无线电天线
+      b.cyl(0, 0.70 + bounce, 0.42, 0, 0.70 + bounce, 1.38, 0.036, 0.030, MAT.bluedSteel, 8);
       if (isFiring) b.cyl(0, 0.70 + bounce, 1.40, 0, 0.70 + bounce, 1.82, 0.12, 0.025, MAT.flameOuter, 8);
     } else if (kind === 'chiha') {
-      // 日本九七式中战车改（Chi-Ha）：低矮铆接车体 + 标志性炮塔环绕式马蹄无线电天线 + 47mm高速炮
+      // 日本九七式中战车改（Chi-Ha）：低矮铆接车体 + 标志性炮塔环绕式马蹄无线电天线 + 47mm高速炮 + 炮盾与车尾油桶
       for (const sx of [-0.42, 0.42]) {
         b.box(sx, 0.18 + bounce, 0, 0.18, 0.22, 1.44, MAT.rubber);
+        b.box(sx, 0.31 + bounce, 0, 0.20, 0.035, 1.46, MAT.jpnHelm);
         for (let w = 0; w < 6; w++) b.cyl(sx - 0.10, 0.14 + bounce, -0.52 + w * 0.21, sx + 0.10, 0.14 + bounce, -0.52 + w * 0.21, 0.10, 0.10, MAT.armorDark, 8);
       }
       b.box(0, 0.36 + bounce, 0, 0.76, 0.26, 1.38, MAT.jpnHelm);
       b.box(0, 0.58 + bounce, 0.04, 0.48, 0.24, 0.56, MAT.jpnHelm);
-      // 九七式标志性环绕马蹄无线电框形天线
-      b.box(0, 0.76 + bounce, -0.02, 0.58, 0.022, 0.64, MAT.brass);
-      b.cyl(0, 0.58 + bounce, 0.30, 0, 0.58 + bounce, 1.24, 0.028, 0.022, MAT.bluedSteel, 8);
+      b.box(0, 0.58 + bounce, 0.33, 0.24, 0.14, 0.07, MAT.armorDark); // 炮盾
+      b.cyl(0, 0.70 + bounce, 0.0, 0, 0.78 + bounce, 0.0, 0.10, 0.10, MAT.armorDark, 8); // 指挥塔
+      b.cyl(-0.22, 0.40 + bounce, -0.72, 0.22, 0.40 + bounce, -0.72, 0.08, 0.08, MAT.armorDark, 8); // 车尾圆柱备用油桶
+      b.box(0, 0.80 + bounce, -0.02, 0.58, 0.022, 0.64, MAT.brass);
+      b.cyl(0, 0.58 + bounce, 0.34, 0, 0.58 + bounce, 1.24, 0.028, 0.022, MAT.bluedSteel, 8);
       if (isFiring) b.cyl(0, 0.58 + bounce, 1.26, 0, 0.58 + bounce, 1.62, 0.10, 0.02, MAT.flameOuter, 8);
     } else if (kind === 'stuka' || kind === 'il2' || kind === 'p40') {
       const bank = Math.sin(phase) * 0.08;
@@ -1923,9 +1955,9 @@
     ]);
   }
 
-  function createRenderer({ resolution = 160 } = {}) {
+  function createRenderer({ resolution = 224 } = {}) {
     if (typeof document === 'undefined') return null;
-    const SPRITE = Math.max(64, Math.min(640, Math.round(Number(resolution) || 160)));
+    const SPRITE = Math.max(64, Math.min(640, Math.round(Number(resolution) || 224)));
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = SPRITE;
     const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false });

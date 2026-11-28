@@ -3932,6 +3932,7 @@
     let showRail = true;
     let showSupply = false;
     let show3D = true;
+    let showAirRange = true;
     let drawFrontMode = false;
     let drawnArrow = null;
     let pendingOrderMode = 'attack'; // attack | support | siege | intercept
@@ -3992,6 +3993,7 @@
       + '<button type="button" id="ww2-rail-toggle" aria-pressed="true" style="font-size:11px;padding:3px 6px;">🛤️ 铁路</button>'
       + '<button type="button" id="ww2-supply-toggle" aria-pressed="false" style="font-size:11px;padding:3px 6px;">🚂 补给</button>'
       + '<button type="button" id="ww2-3d-toggle" aria-pressed="true" style="font-size:11px;padding:3px 6px;">🎖️ 3D兵模</button>'
+      + '<button type="button" id="ww2-airrange-toggle" aria-pressed="true" style="font-size:11px;padding:3px 6px;">🛫 航程圈</button>'
       + '<button type="button" id="ww2-night-toggle" aria-pressed="' + Boolean(st.nightMode) + '" style="font-size:11px;padding:3px 6px;">🌙 夜间</button>'
       + '<button type="button" id="ww2-layer-toggle" style="font-size:11px;padding:3px 6px;">🗺️ 地形</button>'
       + '<button type="button" id="ww2-ai-toggle" aria-pressed="' + Boolean(st.aiDelegate) + '" style="font-size:11px;padding:3px 6px;">🤖 委任AI</button>'
@@ -4194,22 +4196,43 @@
         subPanel.querySelectorAll('[data-ww2-motor]').forEach((b) => b.onclick = () => { ns.supplyMotor = Number(b.dataset.ww2Motor); notify('补给枢纽运力档位已切换！'); redrawAll(); });
         subPanel.querySelectorAll('[data-ww2-fort-city]').forEach((b) => b.onclick = () => { const r = Sim.fortifyWW2City(WW2, st, st.player, b.dataset.ww2FortCity); if (!r.ok) notify(r.error); else redrawAll(); });
       } else if (curTab === 'airnavy') {
-        subPanel.innerHTML = '<div class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">✈️ 战区空军任务指派（战机库存 ' + ns.stock.planes + ' · 制空战力 ' + ns.airPower + '）</strong></header>'
+        const myTF = st.taskForces?.[st.player] || { name: ns.short + '特混舰队', cv: 2, bb: 2, ca: 4, dd: 16, ss: 6 };
+        const lb = st.lastNavalBattle;
+        const navalLineHtml = (title, tf, lost) => '<div style="padding:8px;border-radius:5px;border:1px solid #6b5b3c;background:#18211d;">'
+          + '<strong style="color:#ffe494;font-size:12px;">' + escape(title) + '</strong>'
+          + '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px;text-align:center;font-size:11px;">'
+          + '<div style="padding:5px;border-radius:4px;background:#1f2e28;border:1px solid #4c7061;"><b>第1排·屏卫排</b><br>🚢 驱逐 DD: <b>' + tf.dd + '</b>' + (lost ? ' <span style="color:#ff8470;">(-' + lost.dd + ')</span>' : '') + '<br>🦈 潜艇 SS: <b>' + tf.ss + '</b></div>'
+          + '<div style="padding:5px;border-radius:4px;background:#262c22;border:1px solid #7d704a;"><b>第2排·主力战列</b><br>⚓ 战列 BB: <b>' + tf.bb + '</b>' + (lost ? ' <span style="color:#ff8470;">(-' + lost.bb + ')</span>' : '') + '<br>🛥 巡洋 CA: <b>' + tf.ca + '</b>' + (lost ? ' <span style="color:#ff8470;">(-' + lost.ca + ')</span>' : '') + '</div>'
+          + '<div style="padding:5px;border-radius:4px;background:#2e2420;border:1px solid #96644c;"><b>第3排·航母航空</b><br>🛩 航母 CV: <b>' + tf.cv + '</b>' + (lost ? ' <span style="color:#ff8470;">(-' + lost.cv + ')</span>' : '') + '<br>' + (tf.cv > 4 ? '<span style="color:#ffb76b;">⚠ 超载惩罚</span>' : '✅ 调度正常') + '</div>'
+          + '</div></div>';
+        subPanel.innerHTML = '<div class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">✈️ 战区空军任务、防空雷达网与 B-29 航程（战机 ' + ns.stock.planes + ' · 制空 ' + ns.airPower + '）</strong></header>'
           + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
           + [['air_superiority', '✈️ 夺取制空权'], ['cas', '🎯 近距对地支援 (+18%攻)'], ['strat_bomb', '💣 战略轰炸工业'], ['logistic', '🚂 后勤铁路绞杀']].map(([k, l]) =>
             '<button type="button" data-ww2-air="' + k + '" aria-pressed="' + (ns.airMission === k) + '">' + l + '</button>').join('')
+          + '<button type="button" class="gold" id="ww2-build-radar-sub">📡 建设本土防空雷达网(15政)</button>'
           + '</div></div>'
-          + '<div class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">⚓ 海军特混舰队编成与屏卫率（主力舰 ' + (ns.capitalShips || 0) + ' · 屏卫驱逐舰 ' + (ns.screenShips || 0) + ' · 屏卫率 ' + Sim.fleetScreenRatio(ns) + '%）</strong></header>'
-          + '<p class="subtext" style="margin:4px 0;">屏卫率低于 70% 时，航母与战列舰极易遭潜艇与鱼雷重创；每 1 艘主力舰需 3 艘屏卫驱逐舰达到 100% 满屏卫。</p>'
+          + '<div class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">⚓ HOI4 三排海战阵型与特混舰队（' + escape(myTF.name) + ' · 屏卫率 ' + Sim.fleetScreenRatio(ns) + '%）</strong></header>'
+          + '<div style="margin:6px 0;">' + navalLineHtml('本国主力特混舰队：' + myTF.name, myTF, null) + '</div>'
+          + (lb ? '<div style="margin:6px 0;padding:8px;border:1px solid #b59758;border-radius:5px;background:#121a1f;">'
+            + '<div style="color:#ffe494;font-weight:700;margin-bottom:6px;">⚔️ 最近一次三排海空决战战报：' + escape(lb.cityName) + ' 海域（' + lb.date + '）· 战列舰岸轰 -' + lb.shoreBombard + '% · 胜方：' + escape(WW2.factions[lb.winner]?.short || lb.winner) + '</div>'
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+            + navalLineHtml('攻方：' + lb.atk.name + ' (屏卫 ' + lb.atk.screenPct + '%)', lb.atk, lb.atk.lost)
+            + navalLineHtml('守方：' + lb.def.name + ' (屏卫 ' + lb.def.screenPct + '%)', lb.def, lb.def.lost)
+            + '</div></div>' : '<p class="subtext" style="margin:4px 0;">在战场沙盘点击【🚢✈️ 海空跳岛战】即可触发三排海战阵型实机结算与战损明细！</p>')
           + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
           + [['strike_force', '🚢 航母特混主力决战'], ['convoy_raid', '🦈 潜艇破交封锁'], ['escort', '🛡 两栖登陆护航']].map(([k, l]) =>
             '<button type="button" data-ww2-navy="' + k + '" aria-pressed="' + (ns.navalMission === k) + '">' + l + '</button>').join('')
           + '<button type="button" class="gold" id="ww2-build-screen">⚓ 建造6艘屏卫驱逐舰(15政)</button>'
-          + '<button type="button" class="gold" id="ww2-port-guard-sub">⚓ 一键沿海港口专守防登陆</button>'
+          + '<button type="button" class="gold" id="ww2-blockade-sub">🦈 潜艇孤岛封锁断粮(15指)</button>'
+          + '<button type="button" class="gold" id="ww2-kamikaze-sub">🌸 神风特攻突袭(25政/80机)</button>'
+          + '<button type="button" id="ww2-port-guard-sub">⚓ 一键沿海港口专守</button>'
           + '</div></div>';
         subPanel.querySelectorAll('[data-ww2-air]').forEach((b) => b.onclick = () => { ns.airMission = b.dataset.ww2Air; redrawAll(); });
         subPanel.querySelectorAll('[data-ww2-navy]').forEach((b) => b.onclick = () => { ns.navalMission = b.dataset.ww2Navy; redrawAll(); });
-        subPanel.querySelector('#ww2-build-screen')?.addEventListener('click', () => { const r = Sim.buildEscortScreenWW2(st, st.player); if (!r.ok) notify(r.error); else { notify('屏卫驱逐舰编队已入列！'); redrawAll(); } });
+        subPanel.querySelector('#ww2-build-radar-sub')?.addEventListener('click', () => { const r = Sim.buildRadarWW2(WW2, st, st.player, selectedCityId); if (!r.ok) notify(r.error); else { WarAudio.click(); notify('📡 防空雷达站已建成！'); redrawAll(); } });
+        subPanel.querySelector('#ww2-build-screen')?.addEventListener('click', () => { const r = Sim.buildEscortScreenWW2(st, st.player); if (!r.ok) notify(r.error); else { if (st.taskForces?.[st.player]) st.taskForces[st.player].dd += 6; notify('屏卫驱逐舰编队已入列！'); redrawAll(); } });
+        subPanel.querySelector('#ww2-blockade-sub')?.addEventListener('click', () => { const r = Sim.blockadeIslandWW2(WW2, st, st.player, selectedCityId); if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('🦈 孤岛海运封锁已生效！'); redrawAll(); } });
+        subPanel.querySelector('#ww2-kamikaze-sub')?.addEventListener('click', () => { const r = Sim.kamikazeStrikeWW2(WW2, st, st.player); if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('🌸 神风特攻队已重创敌主力舰队！'); redrawAll(); } });
         subPanel.querySelector('#ww2-port-guard-sub')?.addEventListener('click', () => { const r = Sim.portGarrisonWW2(WW2, st, st.player); if (!r.ok) notify(r.error); else { notify('沿海各港驻军已转入掘壕死守！'); redrawAll(); } });
       } else if (curTab === 'intel') {
         subPanel.innerHTML = '<div class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">🕵️ 隐蔽战线情报网 & 无线电密码破译（La Résistance）</strong></header>'
@@ -4262,7 +4285,7 @@
         + '<header style="display:flex;justify-content:space-between;align-items:center;"><strong style="color:#f5e1b0;">🎖️ 集团军全套战术命令（与国内内战 100% 同步）</strong>'
         + '<span class="subtext">' + (selCityObj ? escape(selCityObj.name) + ' · 补给 ' + selSup + '%' : '') + '</span></header>'
         + (selA ? '<p class="subtext" style="margin:4px 0;"><b>' + escape(selA.name) + '</b>（' + escape(selA.commander) + '）· 兵 ' + format(selA.strength) + ' · 坦 ' + selA.tanks + ' · 炮 ' + selA.artillery
-          + ' · 组织度 ' + Math.round(selA.org) + '% · 堑壕 ' + selA.entrench.toFixed(1) + '</p>'
+          + ' · 组织度 ' + Math.round(selA.org) + '% · 堑壕 ' + selA.entrench.toFixed(1) + ' · <span style="color:#6ed4ff;">计划 +' + Math.round(selA.planBonus || 0) + '%</span> · 两栖筹备 ' + Math.round(selA.amphibPrep || 0) + '%</p>'
           + '<div class="unit-actions" style="margin-bottom:5px;">'
           + '<button type="button" data-ww2-mode="attack" aria-pressed="' + (pendingOrderMode === 'attack') + '">⚔ 强攻</button>'
           + '<button type="button" data-ww2-mode="support" aria-pressed="' + (pendingOrderMode === 'support') + '">🤝 牵制</button>'
@@ -4282,6 +4305,12 @@
         + '<button type="button" class="gold" id="ww2-v2-btn" title="发射超音速 V-2 弹道导弹远程轰击敌城（20政点）">🚀 V-2导弹(20政)</button>'
         + '<button type="button" class="gold" id="ww2-railgun-btn" title="800mm 古斯塔夫重型列车炮摧毁 2 级要塞（20指点）">🚂 列车炮(20指)</button>'
         + '<button type="button" id="ww2-fortify-btn">🏰 筑要塞(15政)</button>'
+        + '<button type="button" id="ww2-radar-btn">📡 建雷达(15政)</button>'
+        + '<button type="button" id="ww2-suppress-btn">👮 宪兵镇压(10政)</button>'
+        + '<button type="button" id="ww2-relocate-btn">🏭 工业内迁(20政)</button>'
+        + '<button type="button" id="ww2-amphib-btn">⚓ 两栖筹备(15指)</button>'
+        + '<button type="button" id="ww2-blockade-btn">🦈 孤岛封锁(15指)</button>'
+        + '<button type="button" id="ww2-kamikaze-btn">🌸 神风特攻(25政)</button>'
         + '<button type="button" id="ww2-scorch-btn">🔥 炸铁路(15政)</button>'
         + '<button type="button" id="ww2-airborne-btn">🪂 敌后空降(25指)</button>'
         + '<button type="button" id="ww2-barrage-btn">💣 炮火覆盖(20指)</button>'
@@ -4323,6 +4352,31 @@
         const tgt = Sim.isHostile(WW2, st.player, st.owners[selectedCityId], st) ? selectedCityId : null;
         const r = Sim.fireRailwayGunWW2(WW2, st, st.player, tgt);
         if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('🚂 800mm 古斯塔夫列车炮已轰塌敌城要塞！'); redrawAll(); }
+      });
+      cmdPanel.querySelector('#ww2-radar-btn')?.addEventListener('click', () => {
+        const r = Sim.buildRadarWW2(WW2, st, st.player, selectedCityId);
+        if (!r.ok) notify(r.error); else { WarAudio.click(); notify('📡 防空雷达网已建成！'); redrawAll(); }
+      });
+      cmdPanel.querySelector('#ww2-suppress-btn')?.addEventListener('click', () => {
+        const r = Sim.garrisonSuppressWW2(WW2, st, st.player, selectedCityId);
+        if (!r.ok) notify(r.error); else { WarAudio.click(); notify('👮 装甲宪兵已镇压占领区抵抗！'); redrawAll(); }
+      });
+      cmdPanel.querySelector('#ww2-relocate-btn')?.addEventListener('click', () => {
+        const r = Sim.relocateIndustryWW2(WW2, st, st.player);
+        if (!r.ok) notify(r.error); else { WarAudio.click(); notify('🏭 乌拉尔/大后方工业内迁完成！'); redrawAll(); }
+      });
+      cmdPanel.querySelector('#ww2-amphib-btn')?.addEventListener('click', () => {
+        const r = Sim.planAmphibiousWW2(WW2, st, selectedArmy, selectedCityId);
+        if (!r.ok) notify(r.error); else { WarAudio.bugle(); notify('⚓ 两栖登陆筹备 100% + 战列舰岸轰就绪！'); redrawAll(); }
+      });
+      cmdPanel.querySelector('#ww2-blockade-btn')?.addEventListener('click', () => {
+        const tgt = Sim.isHostile(WW2, st.player, st.owners[selectedCityId], st) ? selectedCityId : null;
+        const r = Sim.blockadeIslandWW2(WW2, st, st.player, tgt);
+        if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('🦈 孤岛海运补给已彻底封锁！'); redrawAll(); }
+      });
+      cmdPanel.querySelector('#ww2-kamikaze-btn')?.addEventListener('click', () => {
+        const r = Sim.kamikazeStrikeWW2(WW2, st, st.player);
+        if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('🌸 神风特攻队已重创敌特混舰队！'); redrawAll(); }
       });
       cmdPanel.querySelector('#ww2-fortify-btn')?.addEventListener('click', () => { const r = Sim.fortifyWW2City(WW2, st, st.player, selectedCityId); if (!r.ok) notify(r.error); else redrawAll(); });
       cmdPanel.querySelector('#ww2-scorch-btn')?.addEventListener('click', () => { const r = Sim.scorchedEarthWW2(WW2, st, st.player, selectedCityId); if (!r.ok) notify(r.error); else redrawAll(); });
@@ -4433,7 +4487,7 @@
         }
         hits = Sim.renderWW2Canvas(mapCanvas, WW2, st, {
           theater: st.theater, layer: mapLayer, zoom: mapZoom,
-          showRail, showSupply, show3D, renderer3D: preview3DRenderer, drawnArrow, nowMs: Date.now(),
+          showRail, showSupply, show3D, showAirRange, renderer3D: preview3DRenderer, drawnArrow, nowMs: Date.now(),
           selectedArmy, selectedCity: selectedCityId,
         });
         requestAnimationFrame(tickFx);
@@ -4446,7 +4500,7 @@
       if (curTab === 'sim') {
         hits = Sim.renderWW2Canvas(mapCanvas, WW2, st, {
           theater: st.theater, layer: mapLayer, zoom: mapZoom,
-          showRail, showSupply, show3D, renderer3D: preview3DRenderer, drawnArrow, nowMs: Date.now(),
+          showRail, showSupply, show3D, showAirRange, renderer3D: preview3DRenderer, drawnArrow, nowMs: Date.now(),
           selectedArmy, selectedCity: selectedCityId,
         });
         renderCmdPanel();
@@ -4527,6 +4581,11 @@
     body.querySelector('#ww2-3d-toggle')?.addEventListener('click', (ev) => {
       show3D = !show3D;
       ev.currentTarget.setAttribute('aria-pressed', String(show3D));
+      redrawAll();
+    });
+    body.querySelector('#ww2-airrange-toggle')?.addEventListener('click', (ev) => {
+      showAirRange = !showAirRange;
+      ev.currentTarget.setAttribute('aria-pressed', String(showAirRange));
       redrawAll();
     });
     body.querySelector('#ww2-ai-toggle')?.addEventListener('click', (ev) => {

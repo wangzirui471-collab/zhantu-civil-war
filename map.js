@@ -1213,13 +1213,22 @@
           if (show3D && strength > 0) {
             const battle = state.battles?.[unit.order?.target] || state.battles?.[unit.city];
             const action = globalThis.CivilWarHuman3D.orderAction(unit, Boolean(battle), nightMode);
-            const size = national ? 21 : zoomLevel() === 'detail' ? 43 : 34;
-            const count = globalThis.CivilWarHuman3D.iconCount(strength);
-            const columns = Math.min(count, 5);
+            const size = national ? 22 : zoomLevel() === 'detail' ? 44 : 34;
+            const rawCount = globalThis.CivilWarHuman3D.iconCount(strength);
+            // 全国宏观视角防密集穿模：每纵队清爽展示最多 4 个代表兵模，战区/局部放大后自动展开完整人数阵型
+            const count = national ? Math.min(rawCount, 4) : rawCount;
+            const columns = Math.min(count, 4);
             const sprite = humanRenderer.frame(unit.side, !['idle', 'hold', 'sleep'].includes(action), now, 'human', action, unit.group || '');
             for (let n = 0; n < count; n++) {
-              const px = ux + (n % columns - (columns - 1) / 2) * size * .45;
-              const py = uy - size - 10 - Math.floor(n / columns) * size * .45;
+              const px = ux + (n % columns - (columns - 1) / 2) * size * .58;
+              const py = uy - size - 12 - Math.floor(n / columns) * size * .54;
+              // 柔和椭圆形地面接触阴影，杜绝浮空与前后排视觉粘连
+              brush.save();
+              brush.fillStyle = 'rgba(0, 0, 0, 0.28)';
+              brush.beginPath();
+              brush.ellipse(px, py + size * 0.90, size * 0.24, size * 0.08, 0, 0, Math.PI * 2);
+              brush.fill();
+              brush.restore();
               drawCroppedSprite(sprite, px - size / 2, py, size, size);
               hitCards.push({ unit, stack: [unit.id], figureHit: true, spriteHit: true, left: px - size * .23, top: py + size * .12, width: size * .46, height: size * .77 });
             }
