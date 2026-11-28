@@ -328,7 +328,7 @@
       policies: { recruit: 'normal', industry: 'normal', supply: 'normal' },
       historicalEvents: {},
       plans: [], forts: {}, works: [], logistics: null, battles: {},
-      capitals: {}, warSupport: { ccp: 82, roc: 58 },
+      capitals: {}, warSupport: { ccp: 78, roc: 68 },
       leaderTransfers: {},
       foreign: {
         usa: { support: 0, embargo: 0, pressure: 0 },
@@ -869,6 +869,8 @@
   }
 
   function assignOrder(map, state, unit, type, target, automated = false, orderUnit = unit.id, route) {
+    const prevOrder = unit.order;
+    const prevDays = unit.orderDays;
     unit.order = { type, target, ...(Array.isArray(route) ? { route: [...route] } : {}) };
     delete unit.battleRecoveryDays;
     unit.automatedOrder = automated;
@@ -880,8 +882,14 @@
     const firstStop = planned?.[1] ?? (type === 'intercept' && planned?.length === 1 ? target : null);
     const legType = type === 'move' || stationaryFriendlyOrders.has(type) || (planned?.length ?? 0) > 2
       || type === 'intercept' && (planned?.length ?? 0) > 1 ? 'move' : type;
-    unit.orderDays = type === 'hold' || !firstStop ? 0
+    const freshDays = type === 'hold' || !firstStop ? 0
       : deploymentDays(map, legType, unit, firstStop, unit.city, state);
+    // 重申同一条命令（type 与 target 都相同）不应重置行军/整队进度，
+    // 否则玩家每次调整部署都会把该部队的进攻倒计时清零，导致其永远打不响。
+    const sameOrder = prevOrder && prevOrder.type === type && prevOrder.target === target;
+    unit.orderDays = sameOrder && prevDays > 0 && freshDays > 0
+      ? Math.min(prevDays, freshDays)
+      : freshDays;
   }
 
   function commandContext(data, state, unitId) {
@@ -3466,7 +3474,7 @@
       const current = state.political[side] ?? {};
       state.political[side] = { points: num(current.points, 20), cooldowns: current.cooldowns ?? {} };
     }
-    state.warSupport ??= { ccp: 82, roc: 58 };
+    state.warSupport ??= { ccp: 78, roc: 68 };
     state.capitals ??= {};
   }
 
@@ -5268,7 +5276,11 @@
       // 全国地图上的一城失守不应令仍控制大片地区的一方立即投降。
       // 小型测试地图保留原规则；全国局需同时出现严重领土丧失（不足 15%）与支持度危机。
       const territorialCrisis = data.cities.length <= 40 || share < 0.15;
-      const collapse = ((capitalLost && support < 25) || support < 8) && territorialCrisis
+      // 支持度跌破 10 视为政权失去一切合法性，不再受国土门闩保护，
+      // 否则"支持度崩了但地图上还画着大片地盘"的局面永远不会投降。
+      const collapse = support < 10
+        || (((capitalLost && support < 25) || support < 8)
+            && territorialCrisis)
         || (data.cities.length > 40 && share < 0.1 && support < 25);
       if (!collapse) continue;
       state.winner = other;
