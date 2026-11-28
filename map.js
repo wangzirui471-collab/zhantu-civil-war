@@ -128,7 +128,13 @@
       } else {
         land = geography?.land?.length ? geography.land : data.land;
       }
-      important = new Set([...(data.battleLayers || []).flatMap((layer) => layer.points || []), ...mapNames, ...(data.theaterMode ? data.cities.map((c) => c.id) : [])]);
+      // 二战全球 435+ 城按重要度分级显示：宏观显示首都/大枢纽，缩放放大逐级展开全部州府、省会、港口与铁路站点（与中国 410 城一致）
+      const theaterImportant = data.theaterMode === 'ww2'
+        ? data.cities.filter((c) => (c.value || 0) >= 6 || c.port && (c.value || 0) >= 5).map((c) => c.id)
+        : data.theaterMode === 'korea'
+          ? data.cities.map((c) => c.id)
+          : [];
+      important = new Set([...(data.battleLayers || []).flatMap((layer) => layer.points || []), ...mapNames, ...theaterImportant]);
       outlets = new Map();
       for (const [a, b] of (data.links || [])) {
         if (data.routeTypes?.[linkKey(a, b)] !== 'rail') continue;

@@ -133,6 +133,7 @@
 
   function buildWW2CivilData(WW2, World) {
     if (!WW2) return null;
+    if (typeof globalThis.applyWorldCitiesExt === 'function') globalThis.applyWorldCitiesExt(WW2);
     const regions = {
       europe: '西欧与地中海',
       east: '苏德东线战场',
