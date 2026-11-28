@@ -1233,9 +1233,75 @@
     }
   }
 
+  function buildCarrier(b, side, action = 'idle', phase = 0) {
+    const bob = action === 'march' ? Math.sin(phase) * 0.03 : 0;
+    const hull = MAT.navalGrey;
+    const deck = MAT.deckDark;
+    const redHull = MAT.hullRed;
+    const lineCol = MAT.eyeWhite;
+    const planeCol = side === 'ccp' ? MAT.brightStl : MAT.navalLight;
+    // 舰体吃水线与船身
+    b.box(0, 0.14 + bob, 0, 0.62, 0.18, 2.55, redHull);
+    b.box(0, 0.32 + bob, 0, 0.68, 0.24, 2.65, hull);
+    // 宽大直通飞行甲板
+    b.box(0, 0.49 + bob, 0, 0.86, 0.09, 2.85, deck);
+    // 飞行甲板白色中线与起降标线
+    b.box(-0.08, 0.54 + bob, 0, 0.04, 0.015, 2.55, lineCol);
+    b.box(-0.08, 0.54 + bob, 1.18, 0.32, 0.015, 0.06, lineCol);
+    b.box(-0.08, 0.54 + bob, -1.18, 0.32, 0.015, 0.06, lineCol);
+    // 右舷埃塞克斯级舰岛 + 烟囱 + 雷达桅杆
+    b.box(0.32, 0.72 + bob, -0.05, 0.18, 0.38, 0.78, MAT.navalLight);
+    b.box(0.33, 0.96 + bob, 0.12, 0.16, 0.22, 0.26, MAT.gunmetal);
+    b.box(0.33, 1.02 + bob, -0.18, 0.14, 0.34, 0.22, MAT.rubber); // 烟囱
+    b.box(0.33, 1.24 + bob, 0.10, 0.04, 0.36, 0.04, MAT.brightStl); // 主桅杆
+    b.box(0.33, 1.36 + bob, 0.10, 0.24, 0.04, 0.08, MAT.brass); // 雷达横桁
+    // 两舷防空炮位
+    for (const z of [-0.95, 0.85]) {
+      b.box(-0.46, 0.46 + bob, z, 0.12, 0.08, 0.18, MAT.gunmetal);
+      b.box(0.46, 0.46 + bob, z, 0.12, 0.08, 0.18, MAT.gunmetal);
+    }
+    // 停放在飞行甲板上的 3 架舰载机（F4U / 喷气舰载机示意）
+    for (const [px, pz] of [[-0.14, -0.78], [-0.14, -0.15], [-0.14, 0.55]]) {
+      b.box(px, 0.59 + bob, pz, 0.08, 0.06, 0.30, planeCol);
+      b.box(px, 0.59 + bob, pz + 0.02, 0.34, 0.025, 0.09, planeCol);
+      b.box(px, 0.63 + bob, pz - 0.12, 0.11, 0.07, 0.04, planeCol);
+    }
+  }
+
+  function buildJetFighter(b, side, action = 'idle', phase = 0) {
+    const hover = 0.88 + Math.sin(phase * 1.5) * 0.06;
+    const body = MAT.brightStl;
+    const trim = side === 'ccp' ? MAT.hullRed : MAT.brass; // 米格-15 红鼻 / F-86 佩刀黄带
+    const canopy = MAT.glass;
+    // 流线型喷气机身 + 机头进气道 + 尾喷口
+    b.box(0, hover, 0, 0.24, 0.24, 1.58, body);
+    b.box(0, hover, 0.76, 0.22, 0.22, 0.14, trim);
+    b.box(0, hover, 0.84, 0.13, 0.13, 0.04, MAT.rubber); // 机头进气口
+    b.box(0, hover, -0.82, 0.16, 0.16, 0.08, MAT.gunmetal); // 尾喷口
+    if (action !== 'idle') {
+      b.box(0, hover, -0.96, 0.11, 0.11, 0.22, MAT.flameOuter); // 喷气尾焰
+    }
+    // 水滴形气泡座舱盖
+    b.box(0, hover + 0.15, 0.20, 0.14, 0.12, 0.42, canopy);
+    // 标志性 35° 后掠主翼（分段后掠）
+    for (let s = 1; s <= 4; s++) {
+      const x = s * 0.22, z = 0.16 - s * 0.14;
+      b.box(x, hover - 0.02, z, 0.24, 0.04, 0.34 - s * 0.04, body);
+      b.box(-x, hover - 0.02, z, 0.24, 0.04, 0.34 - s * 0.04, body);
+    }
+    // 翼尖涂装带
+    b.box(0.88, hover - 0.01, -0.38, 0.12, 0.045, 0.18, trim);
+    b.box(-0.88, hover - 0.01, -0.38, 0.12, 0.045, 0.18, trim);
+    // 高耸后掠垂尾 + 水平尾翼
+    b.box(0, hover + 0.28, -0.62, 0.04, 0.44, 0.32, body);
+    b.box(0, hover + 0.42, -0.66, 0.66, 0.035, 0.16, body);
+  }
+
   function buildKindScene(kind, side, action = 'idle', phase = 0, variant = '') {
     const b = createBuilder();
-    if (kind === 'ship' || kind === 'warship') buildWarship(b, side, action, phase);
+    if (kind === 'carrier') buildCarrier(b, side, action, phase);
+    else if (kind === 'jet') buildJetFighter(b, side, action, phase);
+    else if (kind === 'ship' || kind === 'warship') buildWarship(b, side, action, phase);
     else if (kind === 'tank') buildMapTank(b, side, action, phase);
     else if (kind === 'artillery') buildMapArtillery(b, side, action, phase);
     else if (kind === 'aircraft') buildMapAircraft(b, side, action, phase);
@@ -1494,6 +1560,12 @@
 
     function cameraFor(kind, action, side) {
       const dir = side === 'ccp' ? 1 : -1;
+      if (kind === 'carrier') {
+        return { eye: [dir * 3.8, 2.3, 3.9], center: [0, 0.62, 0.0], fov: 0.98 };
+      }
+      if (kind === 'jet' || kind === 'aircraft') {
+        return { eye: [dir * 3.5, 2.4, 3.4], center: [0, 0.86, 0.02], fov: 1.0 };
+      }
       if (kind === 'ship' || kind === 'warship') {
         return { eye: [dir * 3.4, 1.9, 3.5], center: [0, 0.56, 0.06], fov: 0.98 };
       }

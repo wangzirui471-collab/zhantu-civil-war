@@ -802,6 +802,7 @@
         outliner.innerHTML = html;
       }
     }
+    renderBattlePlansBar();
     renderGeneralDock();
     const unit = inspectUnit();
     orderPreviews = permitted(unit) ? Engine.previewOrders(Data, state, unit.id) : {};
@@ -888,8 +889,105 @@
     if (jump) map.jump(unit.city);
   }
 
+  let pendingMapTool = null;
+  const mapToolInfo = {
+    pincer: { label: '🔄 钳形包抄', hint: '【地图直点模式】点击任意敌城：自动调集多方向纵队钳形合围 + 侧翼牵制！' },
+    scorched: { label: '💣 焦土炸桥', hint: '【地图直点模式】点击己方城镇（15 政治点）：撤退前炸毁铁路与工事，令敌军 15 天断补！' },
+    sabotage: { label: '🔧 铁路破袭', hint: '【地图直点模式】点击敌占城镇（15 点）：派游击破袭队切断敌方铁路补给 10 天！' },
+    airborne: { label: '⚡ 敌后奇袭', hint: '【地图直点模式】点击敌后城镇（25 指挥点）：空城直接夺占，有守军则重创组织度并断路！' },
+    barrage: { label: '🎯 炮火准备', hint: '【地图直点模式】点击交战/敌占城镇（30 指挥点）：集中重炮轰击，削弱守军防御 5 天！' },
+  };
+
+  function setMapTool(tool) {
+    pendingMapTool = pendingMapTool === tool ? null : tool;
+    if (pendingMapTool) pendingOrder = undefined;
+    document.querySelector('.map-workspace')?.classList.toggle('is-targeting', Boolean(pendingMapTool));
+    setMapHelp();
+    renderBattlePlansBar();
+  }
+
+  function applyMapTool(tool, city) {
+    if (tool === 'scorched') {
+      if (action('scorchedEarth', [city])) { saveAuto(true); notify(cityName(city) + ' 已实施焦土炸桥（铁路瘫痪 15 天）！'); }
+    } else if (tool === 'sabotage') {
+      if (action('sabotageRail', [city])) { saveAuto(true); notify(cityName(city) + ' 铁路破袭成功（敌军补给中断 10 天）！'); }
+    } else if (tool === 'airborne') {
+      if (action('airborneInfiltrate', [city])) { saveAuto(true); notify('对 ' + cityName(city) + ' 的敌后奇袭行动已执行！'); }
+    } else if (tool === 'barrage') {
+      if (action('commandAbility', ['barrage', { city }])) { saveAuto(true); notify('已对 ' + cityName(city) + ' 发动炮火准备！'); }
+    } else if (tool === 'pincer') {
+      if (state.owners[city] === state.player) { notify('钳形包抄请选择敌方城镇！'); return; }
+      const pool = selectedUnits.size > 1
+        ? [...selectedUnits].map((id) => state.units.find((u) => u.id === id)).filter((u) => permitted(u))
+        : Engine.activeUnits(state).filter((u) => !u.parent && permitted(u));
+      const targetObj = citiesById.get(city);
+      const sorted = pool.slice().sort((a, b) => {
+        const ca = citiesById.get(a.city), cb = citiesById.get(b.city);
+        const da = ca && targetObj ? Math.hypot(ca.lon - targetObj.lon, ca.lat - targetObj.lat) : 99;
+        const db = cb && targetObj ? Math.hypot(cb.lon - targetObj.lon, cb.lat - targetObj.lat) : 99;
+        return da - db;
+      });
+      // Pick up to 4 units preferring distinct origin cities for true HOI4 pincer!
+      const picked = [];
+      const usedOrigins = new Set();
+      for (const u of sorted) {
+        if (picked.length >= 4) break;
+        if (!usedOrigins.has(u.city) || picked.length < 2) {
+          if (Engine.previewOrder(Data, state, u.id, 'advance', city)?.ok) {
+            picked.push(u);
+            usedOrigins.add(u.city);
+          }
+        }
+      }
+      if (!picked.length) { notify('周边暂无可直达 ' + cityName(city) + ' 的己方纵队。'); return; }
+      const before = { state: Engine.snapshot(state), timeline: structuredClone(timeline) };
+      let issued = 0;
+      picked.forEach((u, idx) => {
+        // Last flank unit pins with support-attack if >= 3 units, others advance to encircle!
+        const cmd = picked.length >= 3 && idx === picked.length - 1 ? 'support' : 'advance';
+        const res = Timeline.apply(timeline, Engine, Data, state, 'order', [u.id, cmd, city]);
+        if (res?.ok !== false) issued += 1;
+      });
+      if (state.battles?.[city]) Timeline.apply(timeline, Engine, Data, state, 'setBattlePosture', [city, 'envelop']);
+      if (issued) {
+        undoStack.push(before);
+        if (undoStack.length > undoLimit) undoStack.shift();
+        selectedUnits = new Set(picked.map((u) => u.id));
+        selectedUnit = picked[0].id;
+        saveAuto(true);
+        notify('🔄 钳形包抄就绪！已从 ' + usedOrigins.size + ' 个方向调动 ' + issued + ' 支纵队合围 ' + cityName(city) + '（按空格开始推演）！');
+      }
+    }
+    pendingMapTool = null;
+    document.querySelector('.map-workspace')?.classList.remove('is-targeting');
+    setMapHelp();
+    render();
+  }
+
+  function renderBattlePlansBar() {
+    const bar = $('hoi-battle-plans');
+    if (!bar || !state) return;
+    const airLabel = state.player === 'ccp' ? '⚡ 武工奇袭' : '🪂 空降奇袭';
+    bar.innerHTML =
+      '<button type="button" class="hoi-bp-btn" data-map-tool="pincer" aria-pressed="' + (pendingMapTool === 'pincer') + '" title="HOI4 地图直接包抄：点此后再点地图上任意敌城，自动从多方向调兵钳形合围">🔄 钳形包抄</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-cmd="support" aria-pressed="' + (pendingOrder === 'support') + '" title="HOI4 支援/牵制进攻（也可直接 Ctrl+右键 敌城）：协同开火锁定敌人，打赢后不离开原阵地">📌 支援牵制</button>'
+      + '<span class="hoi-bp-sep"></span>'
+      + '<button type="button" class="hoi-bp-btn" data-map-tool="scorched" aria-pressed="' + (pendingMapTool === 'scorched') + '" title="HOI4 撤退焦土：点此后再点己方城镇（15 政治点），炸毁铁路与工事 15 天">💣 焦土</button>'
+      + '<button type="button" class="hoi-bp-btn" data-map-tool="sabotage" aria-pressed="' + (pendingMapTool === 'sabotage') + '" title="地图直接铁路破袭：点此后再点敌占城镇（15 点），瘫痪敌军补给 10 天">🔧 破袭</button>'
+      + '<button type="button" class="hoi-bp-btn" data-map-tool="airborne" aria-pressed="' + (pendingMapTool === 'airborne') + '" title="地图直接敌后奇袭（25 指挥点）：空城直接夺占，有守军则重创组织度并断路">' + airLabel + '</button>'
+      + '<button type="button" class="hoi-bp-btn" data-map-tool="barrage" aria-pressed="' + (pendingMapTool === 'barrage') + '" title="地图直接炮火准备（30 指挥点）：削弱目标守军防御 5 天">🎯 炮火</button>'
+      + '<span class="hoi-bp-sep"></span>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="port" title="一键派兵死守沿海港口并挖战壕">⚓ 守港</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="fallback" title="一键撤往河山防线挖壕固守">↩️ 后撤</button>'
+      + '<button type="button" class="hoi-bp-btn exec" data-bp-quick="exec" title="开始/暂停推演（空格键）">' + (running ? '⏸ 暂停' : '▶ 执行') + '</button>';
+  }
+
   function selectCity(city, useOrder = false, jump = false) {
     if (!citiesById.has(city)) return;
+    if (useOrder && pendingMapTool) {
+      applyMapTool(pendingMapTool, city);
+      return;
+    }
     if (useOrder && pendingOrder && selectedUnit) {
       issue(pendingOrder, city);
       return;
@@ -935,13 +1033,15 @@
   }
 
   function setMapHelp() {
-    $('map-help').textContent = pendingOrder
-      ? (pendingOrder === 'bombard' ? '战略轰炸 · 点击空军半径内敌城' : enemyCommands.has(pendingOrder)
-        ? '战役命令 · 点击任一可达敌城，部队会沿陆路逐站推进；铁路可加快调动'
-        : '命令目标 · 点击有己方陆路通道的城镇')
-      : selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支 · 选命令后点目标，可让多路部队同时行动'
-        : permitted(inspectUnit()) ? '浅蓝为调动 · 暖色为进攻 · 悬停查看时间 · Ctrl 点击多选'
-          : '点击部队牌选中 · 右键或拖到城镇下令 · 滚轮缩放';
+    $('map-help').textContent = pendingMapTool
+      ? (mapToolInfo[pendingMapTool]?.hint || '点击目标城镇执行战术（ESC 取消）')
+      : pendingOrder
+        ? (pendingOrder === 'bombard' ? '战略轰炸 · 点击空军半径内敌城' : enemyCommands.has(pendingOrder)
+          ? '战役命令 · 点击任一可达敌城，部队会沿陆路逐站推进；铁路可加快调动'
+          : '命令目标 · 点击有己方陆路通道的城镇')
+        : selectedUnits.size > 1 ? '已选 ' + selectedUnits.size + ' 支 · 右键进攻 · Ctrl+右键支援牵制 · 或点下方「🔄 钳形包抄」'
+          : permitted(inspectUnit()) ? '右键敌城进攻 · Ctrl+右键支援牵制（不占格） · Shift+左键框选多军'
+            : '点击部队牌或将领头像选中 · 右键敌城进攻 · Ctrl+右键牵制';
   }
 
   function issue(type, target) {
@@ -998,11 +1098,14 @@
       ? (preview.days ? '约 ' + preview.days + ' 天' : '可在当前位置执行') : preview.error);
   }
 
-  function quickOrder(target, unitId) {
+  function quickOrder(target, unitId, mods = {}) {
+    if (pendingMapTool) { setMapTool(null); notify('已取消地图战术瞄准。'); return; }
     if (unitId && unitId !== selectedUnit) selectUnit(unitId, false);
     const unit = inspectUnit();
-    if (!permitted(unit)) { notify('先点击地图上的己方部队牌。'); return; }
-    const type = pendingOrder || (state.owners[target] === state.player ? 'move' : 'advance');
+    if (!permitted(unit)) { notify('先点击地图上的己方部队牌或底部将领头像。'); return; }
+    const isEnemy = state.owners[target] !== state.player;
+    const type = pendingOrder
+      || (isEnemy && mods.ctrl ? 'support' : isEnemy && mods.alt ? 'siege' : isEnemy ? 'advance' : 'move');
     issue(type, target);
   }
 
@@ -1177,18 +1280,42 @@
         + '<div class="hoi-faction-flag" style="background:' + p.flag + '">' + p.emblem + '</div>'
         + img + '<strong>' + escape(sides[side]) + '</strong><small>' + escape(p.leader) + '</small></button>';
     }).join('') + '</div>';
+    const initScope = (['full', 'war1946'].includes(scenario.id) || scenario.defaultScope === 'national') ? 'national' : 'theater';
+    const initDiff = state.difficulty || 'normal';
+    const initGoal = scenario.defaultGoal || state.goal;
     const body = showDialog('选择剧本与统帅阵营 · ' + scenario.title,
       tabsHtml + factionCardsHtml + '<div id="hoi-dossier-slot">' + renderDossier(pickedSide) + '</div>'
-      + '<form id="start-form" style="margin-top:10px;"><div class="form-grid">'
-      + '<label>剧本<select name="scenario">' + Data.scenarios.map((item) => option(item.id, item.title, scenario.id)).join('') + '</select></label>'
-      + '<label>开局日期<input required type="date" name="date" min="1945-08-15" max="1951-12-31" value="' + startDate + '"></label>'
-      + '<label>接管阵营<select name="side">' + Object.entries(sides).map((item) => option(...item, pickedSide)).join('') + '</select></label>'
-      + '<label>指挥范围<select name="scope">' + option('theater', '当前战区', (['full', 'war1946'].includes(scenario.id) || scenario.defaultScope === 'national') ? 'national' : 'theater') + option('national', '全国', (['full', 'war1946'].includes(scenario.id) || scenario.defaultScope === 'national') ? 'national' : 'theater') + '</select></label>'
-      + '<label>游戏难度<select name="difficulty">' + option('normal', '普通 · 双方战力正常', state.difficulty || 'normal') + option('hard', '困难 · 对手战力 +15%', state.difficulty || 'normal') + option('devil', '魔鬼 · 对手战力 +35%', state.difficulty || 'normal') + '</select></label>'
-      + '<label>历史AI模式<select name="historyMode">' + option('historical', '历史事件优先', state.historyMode) + option('dynamic', '随局势推演', state.historyMode) + '</select></label>'
-      + '<label>统一目标<select name="goal">' + option('mainland', '统一大陆', scenario.defaultGoal || state.goal) + option('all', '统一大陆及台湾', scenario.defaultGoal || state.goal) + '</select></label>'
-      + '</div><div class="dialog-actions"><button class="gold" type="submit" style="min-width:150px;font-size:14px;padding:9px 20px;">⚔ 开始指挥</button>'
-      + '<button type="button" id="back-scenarios">返回剧本列表</button></div></form>');
+      + '<form id="start-form" style="margin-top:8px;">'
+      + '<div class="hoi-start-switches">'
+      + '<div class="hoi-seg-group"><span>指挥范围</span><div class="hoi-seg-pills">'
+      + '<button type="button" data-seg-field="scope" data-seg-val="theater" aria-pressed="' + (initScope === 'theater') + '">战区指挥</button>'
+      + '<button type="button" data-seg-field="scope" data-seg-val="national" aria-pressed="' + (initScope === 'national') + '">全国总览</button>'
+      + '</div></div>'
+      + '<div class="hoi-seg-group"><span>游戏难度</span><div class="hoi-seg-pills">'
+      + '<button type="button" data-seg-field="difficulty" data-seg-val="normal" aria-pressed="' + (initDiff === 'normal') + '">普通</button>'
+      + '<button type="button" data-seg-field="difficulty" data-seg-val="hard" aria-pressed="' + (initDiff === 'hard') + '">困难 +15%</button>'
+      + '<button type="button" data-seg-field="difficulty" data-seg-val="devil" aria-pressed="' + (initDiff === 'devil') + '">魔鬼 +35%</button>'
+      + '</div></div>'
+      + '<div class="hoi-seg-group"><span>推演模式</span><div class="hoi-seg-pills">'
+      + '<button type="button" data-seg-field="historyMode" data-seg-val="historical" aria-pressed="' + (state.historyMode === 'historical') + '">历史进程</button>'
+      + '<button type="button" data-seg-field="historyMode" data-seg-val="dynamic" aria-pressed="' + (state.historyMode === 'dynamic') + '">动态推演</button>'
+      + '</div></div>'
+      + '<div class="hoi-seg-group"><span>战略目标</span><div class="hoi-seg-pills">'
+      + '<button type="button" data-seg-field="goal" data-seg-val="mainland" aria-pressed="' + (initGoal === 'mainland') + '">统一大陆</button>'
+      + '<button type="button" data-seg-field="goal" data-seg-val="all" aria-pressed="' + (initGoal === 'all') + '">大陆及台湾</button>'
+      + '</div></div>'
+      + '<div class="hoi-seg-group"><span>开局日期</span><input required type="date" name="date" min="1945-08-15" max="1951-12-31" value="' + startDate + '"></div>'
+      + '</div>'
+      + '<div class="hoi-hidden-form">'
+      + '<select name="scenario">' + Data.scenarios.map((item) => option(item.id, item.title, scenario.id)).join('') + '</select>'
+      + '<select name="side">' + Object.entries(sides).map((item) => option(...item, pickedSide)).join('') + '</select>'
+      + '<select name="scope">' + option('theater', '当前战区', initScope) + option('national', '全国', initScope) + '</select>'
+      + '<select name="difficulty">' + option('normal', '普通', initDiff) + option('hard', '困难', initDiff) + option('devil', '魔鬼', initDiff) + '</select>'
+      + '<select name="historyMode">' + option('historical', '历史事件优先', state.historyMode) + option('dynamic', '随局势推演', state.historyMode) + '</select>'
+      + '<select name="goal">' + option('mainland', '统一大陆', initGoal) + option('all', '统一大陆及台湾', initGoal) + '</select>'
+      + '</div>'
+      + '<div class="dialog-actions" style="margin-top:10px;"><button class="gold" type="submit" style="min-width:170px;font-size:15px;padding:10px 24px;letter-spacing:.08em;">⚔ 开始指挥</button>'
+      + '<button type="button" id="back-scenarios">全部战役列表</button></div></form>');
     const form = body.querySelector('form');
     const syncSide = (side) => {
       pickedSide = side;
@@ -1197,6 +1324,14 @@
       const slot = body.querySelector('#hoi-dossier-slot');
       if (slot) slot.innerHTML = renderDossier(side);
     };
+    body.querySelectorAll('[data-seg-field]').forEach((btn) => {
+      btn.onclick = () => {
+        const field = btn.dataset.segField, val = btn.dataset.segVal;
+        if (form.elements[field]) form.elements[field].value = val;
+        body.querySelectorAll('[data-seg-field="' + field + '"]').forEach((el) =>
+          el.setAttribute('aria-pressed', String(el.dataset.segVal === val)));
+      };
+    });
     body.querySelectorAll('[data-hoi-side]').forEach((btn) => { btn.onclick = () => syncSide(btn.dataset.hoiSide); });
     body.querySelectorAll('[data-hoi-scenario]').forEach((btn) => { btn.onclick = () => chooseScenario(btn.dataset.hoiScenario); });
     form.elements.side.addEventListener('change', () => syncSide(form.elements.side.value));
@@ -3176,10 +3311,166 @@
     else if (btn.dataset.openPanel === 'supply') logisticsPanel();
     else if (btn.dataset.openPanel === 'intel') defensePanel('intel');
   });
+  function openWorldMapPanel(initialMode = 'hybrid', selectedId = 'china') {
+    const World = globalThis.CivilWarWorld;
+    if (!World) { notify('世界态势图模块未加载。'); return; }
+    let mode = initialMode;
+    let picked = selectedId;
+    const legendHtml = Object.values(World.blocs).map((b) =>
+      '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ded6be;"><i style="width:10px;height:10px;border-radius:2px;background:' + b.color + ';border:1px solid ' + b.border + ';display:inline-block;"></i>' + escape(b.name) + '</span>').join('');
+    const body = showDialog('🌍 1946–1953 世界势力与全球地形态势图',
+      '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;">'
+      + '<div class="hoi-seg-pills">'
+      + '<button type="button" data-wm-mode="factions" aria-pressed="' + (mode === 'factions') + '">冷战势力范围</button>'
+      + '<button type="button" data-wm-mode="terrain" aria-pressed="' + (mode === 'terrain') + '">全球地形图</button>'
+      + '<button type="button" data-wm-mode="hybrid" aria-pressed="' + (mode === 'hybrid') + '">势力 + 地形叠加</button>'
+      + '</div>'
+      + '<button type="button" class="gold" id="wm-open-korea">🇰🇵 直达《抗美援朝 · 朝鲜战争》作战库</button>'
+      + '</div>'
+      + '<canvas id="world-map-canvas" width="940" height="450" style="width:100%;height:auto;border-radius:5px;border:1px solid #8f7a52;cursor:pointer;display:block;"></canvas>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin:8px 0;">' + legendHtml + '</div>'
+      + '<div id="wm-dossier" class="hoi-parchment" style="margin-top:4px;"></div>');
+
+    const canvas = body.querySelector('#world-map-canvas');
+    const dossier = body.querySelector('#wm-dossier');
+    let hitBoxes = [];
+    const renderDossier = (nid) => {
+      const n = World.nations.find((x) => x.id === nid) || World.nations[0];
+      const b = World.blocs[n.bloc] || {};
+      dossier.innerHTML = '<h4>' + escape(n.name) + ' · 首都/枢纽：' + escape(n.capital) + '（' + escape(b.name || '') + '）</h4>'
+        + '<p>' + escape(n.summary) + '</p>'
+        + (n.clickableKorea ? '<div style="margin-top:6px;"><button type="button" class="gold" id="wm-korea-inline">⚔ 进入朝鲜战争参战国编制与 3D 武器/航母库</button></div>' : '');
+      dossier.querySelector('#wm-korea-inline')?.addEventListener('click', () => openKoreanWarPanel('pva', 'carrier'));
+    };
+    const redraw = () => {
+      hitBoxes = World.renderWorldCanvas(canvas, mode, picked);
+      renderDossier(picked);
+    };
+    redraw();
+    body.querySelectorAll('[data-wm-mode]').forEach((btn) => {
+      btn.onclick = () => {
+        mode = btn.dataset.wmMode;
+        body.querySelectorAll('[data-wm-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+        redraw();
+      };
+    });
+    body.querySelector('#wm-open-korea').onclick = () => openKoreanWarPanel('pva', 'carrier');
+    canvas.onclick = (ev) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
+      const y = (ev.clientY - rect.top) * (canvas.height / rect.height);
+      const hit = hitBoxes.find((h) => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+      if (hit) {
+        picked = hit.id;
+        redraw();
+        if (hit.nation.clickableKorea) notify('已选中朝鲜半岛：可点击下方按钮进入《抗美援朝》参战国与航母/喷气机武器库。');
+      }
+    };
+  }
+
+  function openKoreanWarPanel(factionId = 'pva', previewKind = 'carrier') {
+    const Korea = globalThis.KoreanWarData;
+    if (!Korea) { notify('朝鲜战争数据模块未加载。'); return; }
+    const f = Korea.factions[factionId] || Korea.factions.pva;
+    const tabsHtml = '<div class="hoi-start-tabs">' + Object.values(Korea.factions).map((item) =>
+      '<button type="button" data-kw-faction="' + item.id + '" aria-pressed="' + (item.id === f.id) + '">'
+      + item.flag + ' ' + escape(item.name) + '</button>').join('') + '</div>';
+    const scaleIcons = (n, per) => Math.max(1, Math.ceil(n / per));
+    const corpsRows = f.corps.map((c) => '<tr><td><strong>' + escape(c.name) + '</strong></td><td>' + escape(c.commander)
+      + '</td><td>' + format(c.strength) + ' 人（' + scaleIcons(c.strength, 5000) + '兵标）</td><td>'
+      + escape(c.divisions.join('、')) + '</td><td>' + escape(c.role) + '</td></tr>').join('');
+    const equipTable = (title, list, cols, per) => '<h4 style="margin:10px 0 4px;color:#f4dfaa;">' + title + '</h4>'
+      + '<table class="dialog-table"><thead><tr>' + cols.map((c) => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>'
+      + list.map((item) => '<tr><td><strong>' + escape(item.name) + '</strong></td><td>' + format(item.qty)
+        + (per ? '（' + scaleIcons(item.qty, per) + '标）' : '') + '</td><td>' + escape(item.caliber || item.armor || item.speed || item.class || '')
+        + (item.gun ? ' / ' + escape(item.gun) : '') + '</td><td>' + escape(item.role) + '</td></tr>').join('') + '</tbody></table>';
+    const previewTabs = [
+      ['carrier', '🚢 埃塞克斯级航母'],
+      ['jet', '✈️ 米格-15 / F-86 喷气机'],
+      ['tank', '🚜 主力坦克'],
+      ['artillery', '💣 重型火炮'],
+      ['ship', '⚓ 战列舰/驱逐舰'],
+      ['human', '🎖️ 步兵兵模'],
+    ];
+    const scenarioCards = '<h4 style="margin:12px 0 6px;color:#f4dfaa;">朝鲜战争 5 大历史战役节点（1950–1953）</h4><div class="hoi-doctrine-grid">'
+      + Korea.scenarios.map((sc) => '<article class="hoi-doctrine-card"><strong style="color:#f5e1b0;">' + escape(sc.title)
+        + ' · ' + escape(sc.date) + '</strong><p class="subtext" style="margin:0;">' + escape(sc.summary) + '</p></article>').join('') + '</div>';
+
+    const body = showDialog('🇰🇵 抗美援朝 · 朝鲜战争（1950–1953）参战国全编制与装备库',
+      tabsHtml
+      + '<div style="display:grid;grid-template-columns:230px minmax(0,1fr);gap:12px;align-items:start;margin:6px 0 10px;">'
+      + '<div style="padding:8px;border-radius:6px;border:1px solid #8f7a52;background:#161d19;text-align:center;">'
+      + '<canvas id="kw-3d-canvas" width="210" height="210" style="width:100%;height:auto;border-radius:4px;background:#101715;display:block;"></canvas>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;justify-content:center;">'
+      + previewTabs.map(([k, lbl]) => '<button type="button" data-kw-model="' + k + '" aria-pressed="' + (previewKind === k)
+        + '" style="font-size:10.5px;padding:3px 6px;">' + lbl + '</button>').join('')
+      + '</div></div>'
+      + '<div class="hoi-parchment">'
+      + '<h4>' + escape(f.name) + ' · 最高统帅：' + escape(f.commander) + '</h4>'
+      + '<p><b>峰值参战总兵力：</b>' + format(f.totalPeakPersonnel) + ' 人（首批投入 ' + format(f.initialEntryPersonnel) + ' 人）</p>'
+      + '<p><b>核心作战学说：</b>' + escape(f.doctrine) + '</p>'
+      + '<p><b>步兵主战轻武器：</b>' + escape(f.arsenal.infantryWeapons.join(' · ')) + '</p>'
+      + '<p style="margin-top:4px;">' + escape(f.summary) + '</p>'
+      + '</div></div>'
+      + '<h4 style="margin:6px 0 4px;color:#f4dfaa;">核心军/师级作战编制（按 5,000 人 = 1 兵标换算）</h4>'
+      + '<table class="dialog-table"><thead><tr><th>部队番号</th><th>主官</th><th>兵力 / 图标</th><th>下辖师/团</th><th>作战定位</th></tr></thead><tbody>' + corpsRows + '</tbody></table>'
+      + equipTable('⚓ 航空母舰与海军舰艇（1 舰 = 1 标）', f.arsenal.navy, ['舰级名称', '数量 / 标', '舰种', '任务定位'], 1)
+      + equipTable('✈️ 喷气战机与作战飞机（3 机 = 1 标）', f.arsenal.aircraft, ['机型', '数量 / 标', '极速', '作战角色'], 3)
+      + equipTable('🚜 坦克与装甲车辆（5 辆 = 1 标）', f.arsenal.tanks, ['车型', '数量 / 标', '装甲 / 主炮', '作战角色'], 5)
+      + equipTable('💣 重炮、火箭炮与火炮', f.arsenal.artillery, ['火炮型号', '数量', '口径', '火力定位'], 0)
+      + scenarioCards);
+
+    body.querySelectorAll('[data-kw-faction]').forEach((btn) => {
+      btn.onclick = () => openKoreanWarPanel(btn.dataset.kwFaction, previewKind);
+    });
+    let activeModel = previewKind;
+    body.querySelectorAll('[data-kw-model]').forEach((btn) => {
+      btn.onclick = () => {
+        activeModel = btn.dataset.kwModel;
+        body.querySelectorAll('[data-kw-model]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      };
+    });
+    const kwCanvas = body.querySelector('#kw-3d-canvas');
+    if (kwCanvas && preview3DRenderer) {
+      const kctx = kwCanvas.getContext('2d');
+      const renderSide = f.side === 'dprk_coalition' ? 'ccp' : 'roc';
+      const spin = (t) => {
+        if (!document.body.contains(kwCanvas) || !dialog.open) return;
+        kctx.clearRect(0, 0, kwCanvas.width, kwCanvas.height);
+        const orbit = (t * 0.00055) % (Math.PI * 2);
+        kctx.drawImage(preview3DRenderer.frame(renderSide, true, t, activeModel, activeModel === 'jet' ? 'march' : 'idle', '', orbit), 0, 0, kwCanvas.width, kwCanvas.height);
+        requestAnimationFrame(spin);
+      };
+      requestAnimationFrame(spin);
+    }
+  }
+
+  $('world-map-btn')?.addEventListener('click', () => openWorldMapPanel('hybrid', 'china'));
+  $('korean-war-btn')?.addEventListener('click', () => openKoreanWarPanel('usa', 'carrier'));
   $('hoi-theaters')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-hoi-theater]');
     if (!btn) return;
     changeScope('theater', btn.dataset.hoiTheater);
+  });
+  $('hoi-battle-plans')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('button');
+    if (!btn) return;
+    const d = btn.dataset;
+    if (d.mapTool) {
+      setMapTool(d.mapTool);
+      if (pendingMapTool) notify(mapToolInfo[pendingMapTool].hint);
+    } else if (d.bpCmd) {
+      chooseCommand(d.bpCmd);
+    } else if (d.bpQuick === 'port') {
+      const ids = selectedUnits.size ? [...selectedUnits] : selectedUnit ? [selectedUnit] : [];
+      if (action('portGarrisonOrder', [ids])) { saveAuto(true); render(); notify('⚓ 已下达死守沿海港口并挖战壕指令！'); }
+    } else if (d.bpQuick === 'fallback') {
+      const ids = selectedUnits.size ? [...selectedUnits] : selectedUnit ? [selectedUnit] : [];
+      if (action('fallbackLineOrder', [ids])) { saveAuto(true); render(); notify('↩️ 已依托河山建立后撤防线并掘壕固守！'); }
+    } else if (d.bpQuick === 'exec') {
+      setRun(!running);
+      renderBattlePlansBar();
+    }
   });
   document.querySelector('#sys-menu')?.addEventListener('click', (event) => {
     if (event.target.closest('button')) event.currentTarget.open = false;

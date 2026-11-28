@@ -1868,6 +1868,20 @@
               label: '缴获成功！步枪+' + rifles + (art ? ' 火炮+' + art : ''),
               startedAt: now,
             });
+          } else if (entry.type === 'sabotage' && entry.city) {
+            commandEffects.push({
+              city: entry.city,
+              color: '#ff7b6b',
+              label: '💣 铁路瘫痪！',
+              startedAt: now,
+            });
+          } else if (entry.type === 'airborne' && entry.city) {
+            commandEffects.push({
+              city: entry.city,
+              color: '#ffe066',
+              label: entry.captured ? '⚡ 奇袭夺城！' : '⚡ 敌后破袭！',
+              startedAt: now,
+            });
           }
         }
       }
@@ -2168,7 +2182,7 @@
       event.preventDefault();
       const xy = coordinates(event);
       const target = nearest(...xy, 25) || places.get(cardAt(...xy)?.city);
-      if (target) handlers.quickOrder(target.id);
+      if (target) handlers.quickOrder(target.id, undefined, { ctrl: event.ctrlKey || event.metaKey, alt: event.altKey });
     });
     canvas.addEventListener('keydown', (event) => {
       const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[event.key];

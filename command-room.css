@@ -506,3 +506,159 @@ dialog { background: rgba(22, 26, 24, 0.92); border: 1px solid #8c7853; backdrop
 .hoi-cipher-bar { height: 9px; border-radius: 4px; background: #121714; border: 1px solid #485449; overflow: hidden; }
 .hoi-cipher-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3b82c4, #6cd4ff); }
 @media (max-width: 980px) { .hoi-theaters { display: none; } }
+
+/* ==================== HOI4 Paradox 铆钉黄铜沙盘视觉大升级 ==================== */
+/* 全局消灭浏览器原生表单丑样式 */
+dialog {
+  background: linear-gradient(180deg, rgba(28, 33, 30, 0.97), rgba(17, 21, 19, 0.98)) !important;
+  border: 2px solid #8f7a52 !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 236, 184, 0.22), inset 0 0 0 1px rgba(0, 0, 0, 0.65) !important;
+  border-radius: 6px !important;
+}
+.dialog-heading {
+  background: linear-gradient(180deg, #323934 0%, #202622 100%) !important;
+  border-bottom: 2px solid #7d6a46 !important;
+  padding: 11px 16px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 236, 184, 0.16);
+}
+.dialog-heading h2 {
+  font-family: var(--serif), "Songti SC", Georgia, serif !important;
+  color: #f6e4b6 !important;
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+button, .hoi-core-btn {
+  background: linear-gradient(180deg, #343d37 0%, #222924 100%);
+  border: 1px solid #6b5e43;
+  box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.12), 0 1px 3px rgba(0, 0, 0, 0.45);
+  color: #efe7d1;
+  transition: border-color .14s, background .14s, transform .08s, box-shadow .14s;
+}
+button:hover:not(:disabled) {
+  border-color: #d6b66f;
+  background: linear-gradient(180deg, #434d44 0%, #2b332c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 244, 210, 0.2), 0 0 8px rgba(214, 182, 111, 0.25);
+}
+button.gold {
+  background: linear-gradient(180deg, #b89242 0%, #836324 100%) !important;
+  border: 1px solid #f0d084 !important;
+  color: #fff9e6 !important;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.35), 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+}
+button.gold:hover:not(:disabled) {
+  background: linear-gradient(180deg, #cca44e 0%, #96722b 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 248, 220, 0.45), 0 0 12px rgba(240, 208, 132, 0.4) !important;
+}
+select, input[type="text"], input[type="number"], input[type="date"] {
+  background: #171c19 !important;
+  border: 1px solid #6b5e43 !important;
+  color: #f0e6cc !important;
+  border-radius: 4px !important;
+  padding: 5px 8px !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+select:focus, input:focus { outline: none; border-color: #e6c67e !important; box-shadow: 0 0 0 2px rgba(230, 198, 126, 0.22); }
+
+/* 顶部 HOI4 金属栏升级 */
+.rail {
+  background: linear-gradient(180deg, #1f2521 0%, #161b18 100%) !important;
+  border-right: 2px solid #6b5d42 !important;
+  box-shadow: inset -1px 0 0 rgba(0, 0, 0, 0.65);
+}
+.scenario-card {
+  background: linear-gradient(180deg, #2a322d 0%, #1e2420 100%) !important;
+  border: 1px solid #59503d !important;
+  box-shadow: inset 0 1px 0 rgba(255, 236, 184, 0.1), 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+.scenario-card[aria-pressed="true"] {
+  border-color: #e8c675 !important;
+  background: linear-gradient(180deg, #423925 0%, #2a2518 100%) !important;
+  box-shadow: 0 0 10px rgba(232, 198, 117, 0.28), inset 0 1px 0 rgba(255, 242, 200, 0.22) !important;
+}
+
+/* HOI4 标志性悬浮「作战计划与地图战术工具条」（悬停在将领头像栏正上方） */
+.hoi-battle-plans {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  border: 1px solid #8f7a52;
+  background: linear-gradient(180deg, rgba(35, 41, 37, 0.94), rgba(20, 24, 21, 0.96));
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.68), inset 0 1px 0 rgba(255, 238, 190, 0.18);
+  backdrop-filter: blur(6px);
+  max-width: calc(100% - 260px);
+  overflow-x: auto;
+}
+.hoi-bp-sep { width: 1px; height: 22px; background: #5a503c; margin: 0 3px; flex-shrink: 0; }
+.hoi-bp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid #59503d;
+  background: linear-gradient(180deg, #303933, #202622);
+  color: #efe6cd;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hoi-bp-btn:hover { border-color: #e6c67e; color: #fff8de; }
+.hoi-bp-btn[aria-pressed="true"] {
+  border-color: #ffd86b !important;
+  background: linear-gradient(180deg, #6e5520, #473612) !important;
+  color: #fff6d1 !important;
+  box-shadow: 0 0 12px rgba(255, 216, 107, 0.48), inset 0 1px 0 rgba(255, 248, 220, 0.3);
+}
+.hoi-bp-btn.exec {
+  border-color: #65b867;
+  background: linear-gradient(180deg, #2d5e32, #1c3d20);
+  color: #dcffd8;
+}
+.hoi-bp-btn.exec:hover { border-color: #93f095; background: linear-gradient(180deg, #39753f, #244f29); }
+.map-workspace.is-targeting canvas#map { cursor: crosshair !important; }
+
+/* 开局界面的 HOI4 分段军用开关条（取代丑陋下拉框） */
+.hoi-hidden-form { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); opacity: 0; pointer-events: none; }
+.hoi-start-switches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 9px 12px;
+  margin-top: 8px;
+  border-radius: 5px;
+  border: 1px solid #7a6846;
+  background: linear-gradient(180deg, #242b26, #181d1a);
+  box-shadow: inset 0 1px 0 rgba(255, 236, 184, 0.1);
+}
+.hoi-seg-group { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #bfb8a2; }
+.hoi-seg-group > span { font-weight: 700; color: #d8cba7; }
+.hoi-seg-pills { display: inline-flex; border: 1px solid #6b5e43; border-radius: 4px; overflow: hidden; }
+.hoi-seg-pills button {
+  border: none !important;
+  border-right: 1px solid #524835 !important;
+  border-radius: 0 !important;
+  padding: 4px 10px !important;
+  font-size: 11.5px !important;
+  background: #1d231f !important;
+  color: #bdb6a0 !important;
+  box-shadow: none !important;
+}
+.hoi-seg-pills button:last-child { border-right: none !important; }
+.hoi-seg-pills button[aria-pressed="true"] {
+  background: linear-gradient(180deg, #63512a, #423519) !important;
+  color: #fff3c7 !important;
+  font-weight: 700;
+}
+@media (max-width: 980px) { .hoi-battle-plans { bottom: 56px; max-width: calc(100% - 20px); } }

@@ -14,6 +14,8 @@
   <script defer src="engine.js"></script>
   <script defer src="timeline.js"></script>
   <script defer src="geography.js"></script>
+  <script defer src="world-map.js"></script>
+  <script defer src="korean-war-data.js"></script>
   <script defer src="human-3d.js"></script>
   <script defer src="map.js"></script>
   <script defer src="save-store.js"></script>
@@ -62,6 +64,8 @@
         <button type="button" id="air-command" class="hoi-core-btn">✈️ 空军指挥</button>
         <button type="button" id="navy-command" class="hoi-core-btn">⚓ 海军指挥</button>
         <button type="button" id="history-mode" class="hoi-core-btn">📜 历史事件</button>
+        <button type="button" id="world-map-btn" class="hoi-core-btn" title="1946–1953 全世界势力范围与世界地形图">🌍 世界态势</button>
+        <button type="button" id="korean-war-btn" class="hoi-core-btn" title="1950–1953 抗美援朝参战国编制、航母、喷气机、坦克与火炮全库">🇰🇵 抗美援朝</button>
       </div>
       <div class="workbar-region">
         <label for="sector-select">战区</label><select id="sector-select" aria-label="选择指挥范围"></select>
@@ -101,6 +105,7 @@
           <div class="map-layer-toggles"><button type="button" data-overlay="terrainBack" aria-pressed="true" title="在势力范围下显示地形，可独立关闭">地形底图</button><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役线</button><button type="button" data-overlay="supply" aria-pressed="false" title="F3 蓝区补给充足、黄区偏紧、红区断粮">补给(F3)</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button><button type="button" data-overlay="models3d" aria-pressed="true" title="显示或隐藏地图上的三维兵模">3D兵模</button></div>
         </div>
         <div id="hoi-theaters" class="hoi-theaters" aria-label="战区速览"></div>
+        <div id="hoi-battle-plans" class="hoi-battle-plans" aria-label="HOI4 地图战术指令条"></div>
         <div id="general-dock" class="general-dock" aria-label="集团军将领栏"></div>
         <div class="map-legend"><span><b class="dot ccp"></b>共产党</span><span><b class="dot roc"></b>国民党</span><span><i></i>铁路</span><span><i class="attack-key"></i>进攻路线</span><span><i class="shell-key"></i>炮火</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span></div>
         <div id="territory-note" class="territory-note">范围按城镇控制权近似推算，非实测历史边界</div>
