@@ -3338,7 +3338,10 @@
       + '<button type="button" data-wm-mode="terrain" aria-pressed="' + (mode === 'terrain') + '">全球地形图</button>'
       + '<button type="button" data-wm-mode="hybrid" aria-pressed="' + (mode === 'hybrid') + '">势力 + 地形叠加</button>'
       + '</div>'
-      + '<button type="button" class="gold" id="wm-open-korea">🇰🇵 直达《抗美援朝 · 朝鲜战争》作战库</button>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+      + '<button type="button" class="gold" id="wm-open-ww2">🌐 启动《二战全球战役》HOI4 沙盘</button>'
+      + '<button type="button" id="wm-open-korea">🇰🇵 《抗美援朝 · 朝鲜战争》作战库</button>'
+      + '</div>'
       + '</div>'
       + '<canvas id="world-map-canvas" width="940" height="450" style="width:100%;height:auto;border-radius:5px;border:1px solid #8f7a52;cursor:pointer;display:block;"></canvas>'
       + '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;margin:8px 0;">' + legendHtml + '</div>'
@@ -3368,6 +3371,7 @@
       };
     });
     body.querySelector('#wm-open-korea').onclick = () => openKoreanWarPanel('pva', 'carrier');
+    body.querySelector('#wm-open-ww2')?.addEventListener('click', () => openWW2CampaignPanel('ww2-1941-barbarossa', 'ussr', 'sim'));
     canvas.onclick = (ev) => {
       const rect = canvas.getBoundingClientRect();
       const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
@@ -3491,7 +3495,292 @@
     }
   }
 
+  let ww2State = null;
+  let ww2Timer = null;
+
+  function openWW2CampaignPanel(scenarioId = null, playerId = null, activeTab = 'sim', previewKind = null) {
+    const WW2 = globalThis.WW2Data;
+    const World = globalThis.CivilWarWorld;
+    if (!WW2 || !World?.WW2Sim) { notify('二战全球战役模块未加载。'); return; }
+    const Sim = World.WW2Sim;
+    if (ww2Timer) { clearInterval(ww2Timer); ww2Timer = null; }
+    if (!ww2State || (scenarioId && ww2State.scenarioId !== scenarioId) || (playerId && ww2State.player !== playerId)) {
+      const scId = scenarioId || ww2State?.scenarioId || 'ww2-1941-barbarossa';
+      const pId = playerId || ww2State?.player || 'usa';
+      ww2State = Sim.createWW2Game(WW2, scId, pId);
+    }
+    const st = ww2State;
+    const fac = WW2.factions[st.player] || WW2.factions.usa;
+    const ns = st.nations[st.player];
+    let selectedArmy = st.armies.find((a) => a.nation === st.player && a.strength > 0)?.id || null;
+    let selectedCityId = st.armies.find((a) => a.id === selectedArmy)?.city || 'london';
+    let mapLayer = 'ww2';
+    let mapZoom = 1;
+    let curTab = activeTab;
+    const defaultModelByNation = { usa: 'sherman', ussr: 't34', uk: 'spitfire', france: 'charb1', japan: 'yamato', germany: 'tiger', china: 'sherman' };
+    let activeModel = previewKind || defaultModelByNation[st.player] || 'sherman';
+    let combatPose = false;
+
+    const nationPills = Object.values(WW2.factions).map((f) =>
+      '<button type="button" data-ww2-nation="' + f.id + '" aria-pressed="' + (f.id === st.player) + '">'
+      + f.flag + ' ' + escape(f.short) + '</button>').join('');
+    const scenarioPills = WW2.scenarios.map((s) =>
+      '<button type="button" data-ww2-sc="' + s.id + '" aria-pressed="' + (s.id === st.scenarioId) + '" style="font-size:11px;padding:3px 7px;">'
+      + escape(s.title) + '</button>').join('');
+    const theaterPills = Object.values(WW2.theaters).map((t) =>
+      '<button type="button" data-ww2-th="' + t.id + '" aria-pressed="' + (t.id === st.theater) + '" style="font-size:11px;padding:3px 7px;">'
+      + escape(t.name) + '</button>').join('');
+
+    const modelButtons = [
+      ['yamato', '🚢 大和号战列舰'], ['carrier', '🚢 埃塞克斯航母'], ['battleship', '⚓ 黎塞留/衣阿华'],
+      ['zero', '✈️ 日本零式战机'], ['spitfire', '✈️ 英国喷火/P-51'], ['b29', '🛫 B-29轰炸机'],
+      ['sherman', '🚜 美军M4谢尔曼'], ['t34', '🚜 苏式T-34/85'], ['charb1', '🚜 法军夏尔B1'],
+      ['tiger', '🚜 德军虎式重坦'], ['katyusha', '🚀 苏式喀秋莎'], ['m26', '🚜 美军M26潘兴'],
+    ];
+
+    const body = showDialog('🌐 第二次世界大战（1939–1945）HOI4 全球战略沙盘与全列强武器库',
+      '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">'
+      + '<div class="hoi-start-tabs" style="margin:0;">' + nationPills + '</div>'
+      + '<div class="hoi-seg-pills">'
+      + '<button type="button" data-ww2-tab="sim" aria-pressed="' + (curTab === 'sim') + '">⚔ 全球二战推演</button>'
+      + '<button type="button" data-ww2-tab="arsenal" aria-pressed="' + (curTab === 'arsenal') + '">🎖️ 列强武器与 3D 检视</button>'
+      + '</div></div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">' + scenarioPills + '</div>'
+      + '<div id="ww2-hud-bar" class="hoi-parchment" style="padding:6px 10px;margin-bottom:8px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;"></div>'
+      + '<div id="ww2-tab-sim" ' + (curTab === 'sim' ? '' : 'hidden') + '>'
+      + '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;">'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px;">' + theaterPills + '</div>'
+      + '<div style="display:flex;gap:4px;align-items:center;">'
+      + '<button type="button" id="ww2-layer-toggle" style="font-size:11px;padding:3px 8px;">🗺️ 切换地形图</button>'
+      + '<button type="button" id="ww2-zoom-in" style="font-size:11px;padding:3px 7px;">＋</button>'
+      + '<button type="button" id="ww2-zoom-out" style="font-size:11px;padding:3px 7px;">－</button>'
+      + '<button type="button" class="gold" id="ww2-play" style="font-size:11.5px;padding:3px 10px;">▶ 自动推演</button>'
+      + '<button type="button" id="ww2-step1" style="font-size:11.5px;padding:3px 8px;">▸▏ +1天</button>'
+      + '<button type="button" id="ww2-step7" style="font-size:11.5px;padding:3px 8px;">⏩ +7天</button>'
+      + '</div></div>'
+      + '<canvas id="ww2-map-canvas" width="960" height="440" style="width:100%;height:auto;border-radius:5px;border:1px solid #9c8659;cursor:crosshair;display:block;"></canvas>'
+      + '<div id="ww2-cmd-panel" style="display:grid;grid-template-columns:1.15fr 1fr;gap:10px;margin-top:8px;"></div>'
+      + '</div>'
+      + '<div id="ww2-tab-arsenal" ' + (curTab === 'arsenal' ? '' : 'hidden') + '></div>');
+
+    const hudBar = body.querySelector('#ww2-hud-bar');
+    const mapCanvas = body.querySelector('#ww2-map-canvas');
+    const cmdPanel = body.querySelector('#ww2-cmd-panel');
+    const arsenalBox = body.querySelector('#ww2-tab-arsenal');
+    let hits = { cityHits: [], armyHits: [] };
+
+    const renderHud = () => {
+      const ownedCities = Object.values(st.owners).filter((o) => o === st.player).length;
+      const myArmies = st.armies.filter((a) => a.nation === st.player && a.strength > 0);
+      const totalStr = myArmies.reduce((s, a) => s + a.strength, 0);
+      hudBar.innerHTML = '<div><strong style="font-size:13.5px;">' + fac.flag + ' ' + escape(fac.name) + '</strong>'
+        + ' · 元首：' + escape(fac.leader) + ' · 日期：<b>' + Sim.formatDate(st.date) + '</b> · 紧张度：<b>' + st.worldTension + '%</b></div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:12px;">'
+        + '<span>🏛政点 <b>' + Math.floor(ns.pp) + '</b></span>'
+        + '<span>🏭民/军/坞 <b>' + ns.civ + '/' + ns.mil + '/' + ns.dock + '</b></span>'
+        + '<span>👥现役 <b>' + format(totalStr) + '</b>（' + ownedCities + '城）</span>'
+        + '<span>🚜坦 <b>' + ns.stock.tanks + '</b></span>'
+        + '<span>💣炮 <b>' + ns.stock.artillery + '</b></span>'
+        + '<span>✈️机 <b>' + ns.stock.planes + '</b></span>'
+        + '<span>⚓舰 <b>' + ns.stock.ships + '</b></span>'
+        + '</div>';
+    };
+
+    const renderCmdPanel = () => {
+      const selA = st.armies.find((a) => a.id === selectedArmy && a.strength > 0);
+      const selC = WW2.cities.find((c) => c.id === selectedCityId);
+      const focuses = Sim.ww2FocusTrees[st.player] || [];
+      const allies = Object.values(WW2.factions).filter((f) => f.id !== st.player && !Sim.isHostile(WW2, st.player, f.id, st));
+      const logLines = st.log.slice(-6).reverse().map((l) => '<li style="margin:2px 0;">' + escape(l) + '</li>').join('');
+
+      cmdPanel.innerHTML = '<div class="hoi-cipher-box" style="margin:0;">'
+        + '<header style="display:flex;justify-content:space-between;align-items:center;"><strong style="color:#f5e1b0;">🎖️ 集团军指挥 & 三军部署</strong>'
+        + '<span class="subtext">' + (selA ? escape(selA.name + ' · ' + selA.commander) : '请在地图点击我方兵牌') + '</span></header>'
+        + (selA ? '<p class="subtext" style="margin:4px 0;">兵力 ' + format(selA.strength) + ' · 坦克 ' + selA.tanks + ' · 火炮 ' + selA.artillery
+          + ' · 组织度 ' + Math.round(selA.org) + '% · 堑壕 ' + selA.entrench.toFixed(1) + ' · 状态：'
+          + ({ defend: '掘壕防守', attack: '主攻 → ' + (WW2.cities.find((c) => c.id === selA.target)?.name || ''), support: '牵制支援', move: '调动中' }[selA.order] || selA.order) + '</p>'
+          + '<div class="unit-actions" style="margin-bottom:6px;">'
+          + '<button type="button" data-ww2-army-cmd="defend">🛡 掘壕死守</button>'
+          + '<button type="button" data-ww2-recruit="infantry">➕ 编组步炮军(9步2炮)</button>'
+          + '<button type="button" data-ww2-recruit="armor">🚜 编组装甲军(10坦10摩)</button>'
+          + '<button type="button" data-ww2-recruit="marine">⚓ 编组海军陆战军</button>'
+          + '</div>' : '')
+        + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">'
+        + '<span class="subtext">空军任务：</span>'
+        + [['air_superiority', '夺取制空'], ['cas', '对地支援'], ['strat_bomb', '战略轰炸']].map(([k, l]) =>
+          '<button type="button" data-ww2-air="' + k + '" aria-pressed="' + (ns.airMission === k) + '" style="font-size:11px;padding:2px 7px;">' + l + '</button>').join('')
+        + '<span class="subtext" style="margin-left:6px;">海军：</span>'
+        + [['strike_force', '航母主力'], ['convoy_raid', '破交封锁'], ['escort', '登陆护航']].map(([k, l]) =>
+          '<button type="button" data-ww2-navy="' + k + '" aria-pressed="' + (ns.navalMission === k) + '" style="font-size:11px;padding:2px 7px;">' + l + '</button>').join('')
+        + '</div>'
+        + (allies.length ? '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;align-items:center;"><span class="subtext">🚢 租借法案（20政点）：</span>'
+          + allies.map((al) => '<button type="button" data-ww2-ll="' + al.id + '" style="font-size:11px;padding:2px 7px;">援' + escape(al.short) + '</button>').join('') + '</div>' : '')
+        + '</div>'
+        + '<div class="hoi-cipher-box" style="margin:0;">'
+        + '<header style="display:flex;justify-content:space-between;"><strong style="color:#f5e1b0;">⭐ 国家焦点树 & 全球战报</strong>'
+        + '<span class="subtext">' + (ns.activeFocus ? '推进中：' + escape(ns.activeFocus.name) + '（剩' + ns.activeFocus.left + '天）' : '点击选择国策') + '</span></header>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin:5px 0;">'
+        + focuses.map((fo) => {
+          const done = ns.completedFocuses.includes(fo.id);
+          const act = ns.activeFocus?.id === fo.id;
+          return '<button type="button" data-ww2-focus="' + fo.id + '" ' + (done ? 'disabled' : '') + ' aria-pressed="' + act
+            + '" title="' + escape(fo.desc) + '" style="font-size:11px;padding:3px 7px;">'
+            + (done ? '✔ ' : act ? '⏳ ' : '★ ') + escape(fo.name) + '</button>';
+        }).join('')
+        + '</div>'
+        + '<ul style="margin:4px 0 0;padding-left:16px;font-size:11.5px;color:#dfd7c0;max-height:84px;overflow:auto;">' + logLines + '</ul>'
+        + '</div>';
+
+      cmdPanel.querySelector('[data-ww2-army-cmd="defend"]')?.addEventListener('click', () => {
+        if (selectedArmy) { Sim.issueWW2Order(WW2, st, selectedArmy, 'defend'); redrawAll(); }
+      });
+      cmdPanel.querySelectorAll('[data-ww2-recruit]').forEach((b) => b.onclick = () => {
+        const res = Sim.recruitWW2Division(WW2, st, st.player, selectedCityId, b.dataset.ww2Recruit);
+        if (!res.ok) notify(res.error);
+        else { selectedArmy = res.id; notify('新编集团军已完成整训并部署至前线！'); redrawAll(); }
+      });
+      cmdPanel.querySelectorAll('[data-ww2-focus]').forEach((b) => b.onclick = () => {
+        const res = Sim.startWW2Focus(st, st.player, b.dataset.ww2Focus);
+        if (!res.ok) notify(res.error); else redrawAll();
+      });
+      cmdPanel.querySelectorAll('[data-ww2-air]').forEach((b) => b.onclick = () => { ns.airMission = b.dataset.ww2Air; redrawAll(); });
+      cmdPanel.querySelectorAll('[data-ww2-navy]').forEach((b) => b.onclick = () => { ns.navalMission = b.dataset.ww2Navy; redrawAll(); });
+      cmdPanel.querySelectorAll('[data-ww2-ll]').forEach((b) => b.onclick = () => {
+        const res = Sim.lendLeaseWW2(WW2, st, st.player, b.dataset.ww2Ll);
+        if (!res.ok) notify(res.error); else { notify('租借法案船队已启航交付装备！'); redrawAll(); }
+      });
+    };
+
+    const renderArsenal = () => {
+      const equipTbl = (title, list, cols) => '<h4 style="margin:8px 0 4px;color:#f4dfaa;">' + title + '</h4>'
+        + '<table class="dialog-table"><thead><tr>' + cols.map((c) => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>'
+        + list.map((it) => '<tr><td><strong>' + escape(it.name) + '</strong></td><td>' + format(it.qty) + '</td><td>'
+          + escape(it.caliber || (it.armor ? it.armor + ' / ' + it.gun : it.speed || it.class || ('软' + it.soft + '/硬' + it.hard))) + '</td><td>'
+          + escape(it.role) + '</td></tr>').join('') + '</tbody></table>';
+      arsenalBox.innerHTML = '<div style="display:grid;grid-template-columns:265px minmax(0,1fr);gap:12px;align-items:start;">'
+        + '<div style="padding:8px;border-radius:6px;border:1px solid #8f7a52;background:#161d19;text-align:center;">'
+        + '<canvas id="ww2-3d-canvas" width="245" height="235" style="width:100%;height:auto;border-radius:4px;background:#101715;display:block;"></canvas>'
+        + '<div style="margin:6px 0;"><button type="button" id="ww2-3d-pose" style="font-size:11px;padding:3px 9px;">🔥 切换作战/开火姿态</button></div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">'
+        + modelButtons.map(([k, l]) => '<button type="button" data-ww2-model="' + k + '" aria-pressed="' + (activeModel === k) + '" style="font-size:10.5px;padding:3px 6px;">' + l + '</button>').join('')
+        + '</div></div>'
+        + '<div class="hoi-parchment">'
+        + '<h4>' + fac.flag + ' ' + escape(fac.name) + ' · 最高统帅：' + escape(fac.leader) + '</h4>'
+        + '<p><b>峰值总兵力：</b>' + format(fac.peakPersonnel) + ' 人 · <b>名将团：</b>' + escape(fac.commanders.join(' · ')) + '</p>'
+        + '<p><b>核心作战学说：</b>' + escape(fac.doctrine) + '</p>'
+        + '<p><b>民族精神：</b>' + escape(fac.spirits.join(' | ')) + '</p>'
+        + '<p style="margin-top:4px;">' + escape(fac.summary) + '</p>'
+        + '</div></div>'
+        + equipTbl('⚓ 航空母舰、战列舰与主力舰艇', fac.arsenal.navy, ['舰级', '数量', '舰种', '战略定位'])
+        + equipTbl('✈️ 二战王牌战斗机、强击机与战略轰炸机', fac.arsenal.aircraft, ['机型', '总产量/编配', '极速', '制空/轰炸角色'])
+        + equipTbl('🚜 主战坦克、重型坦克与坦克歼击车', fac.arsenal.tanks, ['车型', '产量', '装甲 / 主炮', '战场角色'])
+        + equipTbl('💣 野战火炮、重型榴弹炮、反坦炮与火箭炮', fac.arsenal.artillery, ['火炮型号', '产量', '口径', '火力定位'])
+        + equipTbl('🔫 步兵主战轻武器与反坦克武器', fac.arsenal.infantryWeapons, ['武器型号', '产量', '软/硬攻', '班排定位']);
+
+      arsenalBox.querySelector('#ww2-3d-pose')?.addEventListener('click', (ev) => {
+        combatPose = !combatPose;
+        ev.currentTarget.textContent = combatPose ? '🛑 切回静态检视' : '🔥 切换作战/开火姿态';
+      });
+      arsenalBox.querySelectorAll('[data-ww2-model]').forEach((btn) => btn.onclick = () => {
+        activeModel = btn.dataset.ww2Model;
+        arsenalBox.querySelectorAll('[data-ww2-model]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      });
+      const c3d = arsenalBox.querySelector('#ww2-3d-canvas');
+      if (c3d && preview3DRenderer) {
+        const gctx = c3d.getContext('2d');
+        const sideKey = st.player === 'ussr' ? 'ccp' : 'roc';
+        const spin = (t) => {
+          if (!document.body.contains(c3d) || !dialog.open) return;
+          gctx.clearRect(0, 0, c3d.width, c3d.height);
+          const orbit = (t * 0.00055) % (Math.PI * 2);
+          const act = combatPose ? 'attack' : (['zero', 'spitfire', 'b29', 'mig15', 'f86'].includes(activeModel) ? 'march' : 'idle');
+          gctx.drawImage(preview3DRenderer.frame(sideKey, true, t, activeModel, act, '', orbit), 0, 0, c3d.width, c3d.height);
+          requestAnimationFrame(spin);
+        };
+        requestAnimationFrame(spin);
+      }
+    };
+
+    const redrawAll = () => {
+      renderHud();
+      hits = Sim.renderWW2Canvas(mapCanvas, WW2, st, {
+        theater: st.theater, layer: mapLayer, zoom: mapZoom,
+        selectedArmy, selectedCity: selectedCityId,
+      });
+      renderCmdPanel();
+    };
+
+    redrawAll();
+    if (curTab === 'arsenal') renderArsenal();
+
+    body.querySelectorAll('[data-ww2-nation]').forEach((btn) => btn.onclick = () => openWW2CampaignPanel(st.scenarioId, btn.dataset.ww2Nation, curTab));
+    body.querySelectorAll('[data-ww2-sc]').forEach((btn) => btn.onclick = () => openWW2CampaignPanel(btn.dataset.ww2Sc, st.player, curTab));
+    body.querySelectorAll('[data-ww2-th]').forEach((btn) => btn.onclick = () => {
+      st.theater = btn.dataset.ww2Th; mapZoom = 1;
+      body.querySelectorAll('[data-ww2-th]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      redrawAll();
+    });
+    body.querySelectorAll('[data-ww2-tab]').forEach((btn) => btn.onclick = () => {
+      curTab = btn.dataset.ww2Tab;
+      body.querySelectorAll('[data-ww2-tab]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      body.querySelector('#ww2-tab-sim').hidden = curTab !== 'sim';
+      body.querySelector('#ww2-tab-arsenal').hidden = curTab !== 'arsenal';
+      if (curTab === 'arsenal') renderArsenal();
+      else redrawAll();
+    });
+    body.querySelector('#ww2-layer-toggle').onclick = (ev) => {
+      mapLayer = mapLayer === 'ww2' ? 'terrain' : 'ww2';
+      ev.currentTarget.textContent = mapLayer === 'terrain' ? '🗺️ 切回势力战线图' : '🗺️ 切换地形图';
+      redrawAll();
+    };
+    body.querySelector('#ww2-zoom-in').onclick = () => { mapZoom = Math.min(3.2, mapZoom * 1.3); redrawAll(); };
+    body.querySelector('#ww2-zoom-out').onclick = () => { mapZoom = Math.max(1, mapZoom / 1.3); redrawAll(); };
+    body.querySelector('#ww2-step1').onclick = () => { Sim.stepWW2Day(WW2, st, 1); redrawAll(); };
+    body.querySelector('#ww2-step7').onclick = () => { Sim.stepWW2Day(WW2, st, 7); redrawAll(); };
+    body.querySelector('#ww2-play').onclick = (ev) => {
+      if (ww2Timer) {
+        clearInterval(ww2Timer); ww2Timer = null;
+        ev.currentTarget.textContent = '▶ 自动推演';
+      } else {
+        ev.currentTarget.textContent = '⏸ 暂停推演';
+        ww2Timer = setInterval(() => {
+          if (!dialog.open || !document.body.contains(mapCanvas)) { clearInterval(ww2Timer); ww2Timer = null; return; }
+          Sim.stepWW2Day(WW2, st, 1);
+          redrawAll();
+        }, 420);
+      }
+    };
+    mapCanvas.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      mapZoom = ev.deltaY < 0 ? Math.min(3.2, mapZoom * 1.15) : Math.max(1, mapZoom / 1.15);
+      redrawAll();
+    }, { passive: false });
+    mapCanvas.onclick = (ev) => {
+      const rect = mapCanvas.getBoundingClientRect();
+      const x = (ev.clientX - rect.left) * (mapCanvas.width / rect.width);
+      const y = (ev.clientY - rect.top) * (mapCanvas.height / rect.height);
+      const aHit = hits.armyHits.find((h) => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+      if (aHit && aHit.army.nation === st.player) {
+        selectedArmy = aHit.id;
+        selectedCityId = aHit.army.city;
+        redrawAll();
+        return;
+      }
+      const cHit = hits.cityHits.find((h) => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
+      if (cHit) {
+        selectedCityId = cHit.id;
+        if (selectedArmy) {
+          const res = Sim.issueWW2Order(WW2, st, selectedArmy, 'attack', cHit.id);
+          if (res.ok) notify('已向 ' + cHit.city.name + ' 下达集团军作战/机动指令！');
+          else notify(res.error);
+        }
+        redrawAll();
+      }
+    };
+  }
+
   $('world-map-btn')?.addEventListener('click', () => openWorldMapPanel('hybrid', 'china'));
+  $('ww2-campaign-btn')?.addEventListener('click', () => openWW2CampaignPanel('ww2-1941-barbarossa', 'ussr', 'sim'));
   $('korean-war-btn')?.addEventListener('click', () => openKoreanWarPanel('usa', 'carrier'));
   $('hoi-theaters')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-hoi-theater]');

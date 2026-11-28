@@ -1469,13 +1469,138 @@
     }
   }
 
+  function buildYamato(b, action = 'idle', phase = 0) {
+    const isFiring = action === 'attack' || action === 'fire';
+    // 日本大和级超弩级战列舰：超宽防雷鼓包放样舰体 + 金色菊花纹章 + 高耸宝塔桅楼 + 3座三联460mm主炮
+    const hull = [
+      [-2.10, 0.05, 0.42, 0.24, 1.05],
+      [-1.50, 0.02, 0.45, 0.44, 1.12],
+      [-0.50, 0.01, 0.47, 0.54, 1.16],
+      [ 0.55, 0.01, 0.48, 0.52, 1.18],
+      [ 1.35, 0.03, 0.52, 0.34, 1.25],
+      [ 1.85, 0.06, 0.57, 0.16, 1.35],
+      [ 2.18, 0.12, 0.62, 0.02, 1.44],
+    ];
+    b.loftHullZ(hull, MAT.hullRed, 0.0, 0.14);
+    b.loftHullZ(hull, MAT.navalGrey, 0.14, 0.72);
+    b.box(0, 0.48, 0.0, 0.86, 0.04, 3.35, MAT.deckTeak); // 宽大桧木甲板
+    b.cyl(0, 0.54, 2.14, 0, 0.54, 2.19, 0.048, 0.048, MAT.brass, 10); // 舰首金色菊花纹章
+    // 标志性高耸宝塔舰桥 + 单斜置大烟囱 + 后桅杆
+    b.box(0, 0.74, 0.10, 0.42, 0.48, 0.56, MAT.navalLight);
+    b.box(0, 1.10, 0.14, 0.30, 0.34, 0.36, MAT.navalGrey);
+    b.box(0, 1.34, 0.15, 0.38, 0.10, 0.18, MAT.navalLight); // 15米光学测距仪
+    b.cyl(0, 1.38, 0.15, 0, 1.66, 0.15, 0.025, 0.014, MAT.gunmetal, 8);
+    b.cyl(0, 0.66, -0.34, 0, 1.24, -0.52, 0.14, 0.12, MAT.navalGrey, 12); // 大和标志性后倾大烟囱
+    b.cyl(0, 1.20, -0.51, 0, 1.27, -0.53, 0.13, 0.12, MAT.rubber, 12);
+    // 3 座三联装 460mm 巨炮塔（前二背负 + 后一）
+    const turrets = [[0, 0.58, 1.26, 0], [0, 0.74, 0.78, 0], [0, 0.60, -1.16, Math.PI]];
+    for (const [tx, ty, tz, dir] of turrets) {
+      b.box(tx, ty, tz, 0.44, 0.22, 0.42, MAT.navalLight);
+      const sgn = dir === 0 ? 1 : -1;
+      for (const bx of [-0.11, 0, 0.11]) {
+        b.cyl(tx + bx, ty + 0.04, tz + sgn * 0.20, tx + bx, ty + 0.12, tz + sgn * 0.86, 0.030, 0.024, MAT.gunmetal, 8);
+        if (isFiring) b.cyl(tx + bx, ty + 0.12, tz + sgn * 0.86, tx + bx, ty + 0.17, tz + sgn * 1.26, 0.10, 0.025, MAT.flameOuter, 8);
+      }
+    }
+    // 舷侧 155mm 副炮与 127mm 高平两用炮群
+    for (const sx of [-0.36, 0.36]) for (const pz of [-0.18, 0.18, -0.54]) {
+      b.box(sx, 0.56, pz, 0.14, 0.10, 0.14, MAT.navalLight);
+    }
+  }
+
+  function buildPropFighter(b, kind = 'zero', action = 'idle', phase = 0) {
+    const isZero = kind === 'zero';
+    const isFiring = action === 'attack' || action === 'fire';
+    const bank = Math.sin(phase) * 0.08;
+    const bodyMat = isZero ? MAT.navalLight : MAT.armorGrn;
+    const wingMat = isZero ? MAT.navalLight : MAT.armorSov;
+    // 流线活塞机身 + 引擎整流罩 + 旋转三叶螺旋桨
+    b.cyl(0, 0.84, -1.05, 0, 0.84, 0.96, 0.12, 0.17, bodyMat, 14);
+    b.cyl(0, 0.84, 0.96, 0, 0.84, 1.12, 0.16, 0.06, isZero ? MAT.rubber : MAT.brass, 12);
+    const spin = phase * 3.5;
+    for (let k = 0; k < 3; k++) {
+      const a = spin + k * (Math.PI * 2 / 3);
+      b.cyl(0, 0.84, 1.13, Math.cos(a) * 0.42, 0.84 + Math.sin(a) * 0.42, 1.14, 0.028, 0.012, MAT.gunmetal, 6);
+    }
+    // 气泡水滴座舱盖
+    b.ellipsoid(0, 0.99, 0.05, 0.11, 0.11, 0.34, MAT.glass);
+    // 主翼：零战长直微后掠翼+日之丸红日；喷火经典椭圆翼
+    b.box(0, 0.80, 0.16, isZero ? 2.48 : 2.30, 0.045, isZero ? 0.48 : 0.56, wingMat, 0, 0, bank);
+    if (!isZero) {
+      // 喷火椭圆翼尖收弧
+      b.ellipsoid(-1.05, 0.80, 0.16, 0.32, 0.032, 0.22, wingMat);
+      b.ellipsoid(1.05, 0.80, 0.16, 0.32, 0.032, 0.22, wingMat);
+    }
+    // 机翼国徽标志（零战日之丸红日 / 喷火黄蓝靶标）
+    for (const sx of [-0.72, 0.72]) {
+      b.cyl(sx, 0.828, 0.16, sx, 0.842, 0.16, 0.14, 0.14, isZero ? MAT.hullRed : MAT.brass, 12);
+      if (!isZero) b.cyl(sx, 0.838, 0.16, sx, 0.848, 0.16, 0.075, 0.075, MAT.hullRed, 10);
+    }
+    // 水平尾翼与垂直尾翼 + 机腹副油箱
+    b.box(0, 0.86, -0.96, 0.84, 0.035, 0.24, wingMat, 0, 0, bank);
+    b.box(0, 1.04, -0.96, 0.04, 0.34, 0.28, bodyMat);
+    if (isZero) b.cyl(0, 0.68, -0.10, 0, 0.68, 0.42, 0.065, 0.055, MAT.navalGrey, 10);
+    // 机翼 20mm 航炮与开火弹道
+    if (isFiring) {
+      for (const sx of [-0.46, 0.46]) {
+        b.cyl(sx, 0.80, 0.44, sx, 0.80, 1.38, 0.032, 0.012, MAT.flameOuter, 8);
+      }
+    }
+  }
+
+  function buildWW2Tank(b, kind = 'sherman', action = 'idle', phase = 0) {
+    const isFiring = action === 'attack' || action === 'fire';
+    const bounce = action === 'march' ? Math.sin(phase * 2) * 0.025 : 0;
+    const isTiger = kind === 'tiger';
+    const isCharB1 = kind === 'charb1';
+    const bodyMat = isTiger ? MAT.navalGrey : isCharB1 ? MAT.armorSov : MAT.armorGrn;
+    // 履带与负重轮
+    for (const sx of [-0.48, 0.48]) {
+      b.box(sx, 0.20 + bounce, 0, isTiger ? 0.26 : 0.20, 0.26, isCharB1 ? 1.72 : 1.54, MAT.rubber);
+      const wheels = isTiger ? 6 : 5;
+      for (let w = 0; w < wheels; w++) {
+        const wz = -0.58 + w * (1.16 / (wheels - 1));
+        b.cyl(sx - 0.11, 0.16 + bounce, wz, sx + 0.11, 0.16 + bounce, wz, isTiger ? 0.14 : 0.12, isTiger ? 0.14 : 0.12, MAT.armorDark, 10);
+      }
+    }
+    if (isCharB1) {
+      // 法军夏尔 B1 bis：菱形高大侧板 + 车体前右 75mm 榴弹炮 + 顶部偏置单人小炮塔 47mm 炮
+      b.box(0, 0.40 + bounce, 0.0, 0.82, 0.34, 1.62, bodyMat);
+      b.cyl(0.22, 0.38 + bounce, 0.72, 0.22, 0.38 + bounce, 1.12, 0.046, 0.042, MAT.bluedSteel, 8); // 车体75mm榴弹炮
+      b.cyl(-0.08, 0.56 + bounce, 0.16, -0.08, 0.82 + bounce, 0.16, 0.26, 0.22, bodyMat, 12); // APX1 单人炮塔
+      b.cyl(-0.08, 0.70 + bounce, 0.36, -0.08, 0.70 + bounce, 1.04, 0.032, 0.026, MAT.bluedSteel, 8); // 47mm SA35 主炮
+    } else if (isTiger) {
+      // 德军虎式 I：方正垂直装甲车体 + 马蹄形重型炮塔 + 88mm L/56 主炮与炮口制退器
+      b.box(0, 0.40 + bounce, 0.0, 1.06, 0.32, 1.52, bodyMat);
+      b.box(0, 0.68 + bounce, 0.06, 0.68, 0.28, 0.74, bodyMat);
+      b.cyl(0, 0.68 + bounce, 0.42, 0, 0.68 + bounce, 1.68, 0.044, 0.036, MAT.bluedSteel, 10);
+      b.box(0, 0.68 + bounce, 1.70, 0.11, 0.09, 0.12, MAT.gunmetal); // 虎式88炮双室制退器
+    } else {
+      // 美军 M4 谢尔曼：高大圆润倾斜车体 + 铸造圆弧炮塔 + 76mm 主炮 + 车顶 .50 机枪
+      b.box(0, 0.42 + bounce, 0.0, 0.88, 0.36, 1.48, bodyMat);
+      b.box(0, 0.38 + bounce, 0.72, 0.84, 0.26, 0.30, bodyMat, 0.48, 0, 0);
+      b.ellipsoid(0, 0.72 + bounce, 0.08, 0.34, 0.20, 0.40, bodyMat);
+      b.cyl(0, 0.72 + bounce, 0.38, 0, 0.72 + bounce, 1.44, 0.038, 0.032, MAT.bluedSteel, 10);
+      b.cyl(0.14, 0.86 + bounce, -0.10, 0.14, 0.96 + bounce, 0.18, 0.015, 0.012, MAT.gunmetal, 6);
+    }
+    if (isFiring) {
+      const mz = isTiger ? 1.76 : isCharB1 ? 1.08 : 1.48;
+      const my = isTiger ? 0.68 : isCharB1 ? 0.70 : 0.72;
+      b.cyl(0, my + bounce, mz, 0, my + bounce, mz + 0.46, 0.14, 0.03, MAT.flameOuter, 10);
+      b.cyl(0, my + bounce, mz, 0, my + bounce, mz + 0.30, 0.08, 0.02, MAT.flameCore, 8);
+    }
+  }
+
   function buildKindScene(kind, side, action = 'idle', phase = 0, variant = '') {
     const b = createBuilder();
     if (kind === 'carrier') buildCarrier(b, side, action, phase);
     else if (kind === 'battleship') buildBattleship(b, side, action, phase);
+    else if (kind === 'yamato') buildYamato(b, action, phase);
     else if (kind === 'jet' || kind === 'mig15' || kind === 'f86') buildJetFighter(b, side, action, phase, kind === 'jet' ? variant : kind);
     else if (kind === 'b29') buildB29(b, action, phase);
+    else if (kind === 'zero' || kind === 'spitfire') buildPropFighter(b, kind, action, phase);
     else if (kind === 't34' || kind === 'm26') buildHistoricalTank(b, kind, action, phase);
+    else if (kind === 'sherman' || kind === 'charb1' || kind === 'tiger') buildWW2Tank(b, kind, action, phase);
     else if (kind === 'katyusha') buildKatyusha(b, action, phase);
     else if (kind === 'ship' || kind === 'warship') buildWarship(b, side, action, phase);
     else if (kind === 'tank') buildMapTank(b, side, action, phase);
@@ -1736,13 +1861,13 @@
 
     function cameraFor(kind, action, side) {
       const dir = side === 'ccp' ? 1 : -1;
-      if (kind === 'carrier' || kind === 'battleship') {
+      if (kind === 'carrier' || kind === 'battleship' || kind === 'yamato') {
         return { eye: [dir * 3.9, 2.2, 4.0], center: [0, 0.58, 0.0], fov: 0.98 };
       }
-      if (kind === 'jet' || kind === 'mig15' || kind === 'f86' || kind === 'b29' || kind === 'aircraft') {
+      if (kind === 'jet' || kind === 'mig15' || kind === 'f86' || kind === 'b29' || kind === 'zero' || kind === 'spitfire' || kind === 'aircraft') {
         return { eye: [dir * 3.6, 2.3, 3.6], center: [0, 0.88, 0.02], fov: 1.0 };
       }
-      if (kind === 't34' || kind === 'm26' || kind === 'katyusha') {
+      if (kind === 't34' || kind === 'm26' || kind === 'sherman' || kind === 'charb1' || kind === 'tiger' || kind === 'katyusha') {
         return { eye: [dir * 3.2, 1.8, 3.2], center: [0, 0.52, 0.06], fov: 0.96 };
       }
       if (kind === 'ship' || kind === 'warship') {
