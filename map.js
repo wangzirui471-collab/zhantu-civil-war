@@ -328,7 +328,7 @@
       }
     }
     rebuildDataIndex(data);
-    const options = { mode: 'situation', terrainBack: true, rail: true, province: true, battle: true, maritime: false,
+    const options = { mode: 'situation', terrainBack: true, satellite: true, rail: true, province: true, battle: true, maritime: false,
       supply: false, fort: true, models3d: true, globalLayer: true };
     let width = 1;
     let height = 1;
@@ -478,6 +478,102 @@
     // 实时帧率统计（平滑滑动窗口）
     let fpsSmoothed = 60;
     let lastDrawStamp = 0;
+    let cursorGeo = null;
+
+    // ── 🛰️ 全球高清卫星影像瓦片引擎（对齐八九/谷歌卫星图，Mercator 精确重投影至等经纬坐标，零偏差、360°无限循环、离线自动无缝降级）──
+    const satTileCache = new Map();
+    const SAT_TILE_MAX = 320;
+    const tileLat = (ty, n) => Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / n))) * 180 / Math.PI;
+    const latToTileY = (lat, n) => {
+      const rad = clamp(lat, -82, 82) * Math.PI / 180;
+      return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n);
+    };
+    function getSatTile(z, tx, ty) {
+      const n = 1 << z;
+      const wx = ((tx % n) + n) % n;
+      if (ty < 0 || ty >= n) return null;
+      const key = z + '/' + wx + '/' + ty;
+      let entry = satTileCache.get(key);
+      if (entry) {
+        // LRU 刷新
+        satTileCache.delete(key);
+        satTileCache.set(key, entry);
+        return entry;
+      }
+      if (satTileCache.size >= SAT_TILE_MAX) {
+        const oldest = satTileCache.keys().next().value;
+        satTileCache.delete(oldest);
+      }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      entry = { img, ready: false, failed: false, z, wx, ty };
+      satTileCache.set(key, entry);
+      img.onload = () => {
+        entry.ready = true;
+        backgroundKey = undefined;
+        scheduleDraw();
+      };
+      img.onerror = () => { entry.failed = true; };
+      img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + ty + '/' + wx;
+      return entry;
+    }
+
+    function drawSatelliteTiles(ctx) {
+      // 根据当前 camera.zoom 匹配最清晰的卫星瓦片层级（z = 2 .. 13，放大至街道/山脊/港口全清！）
+      const targetZ = clamp(Math.round(Math.log2(Math.max(camera.zoom * 0.76 * 360 / 256, 1))), 2, 13);
+      const n = 1 << targetZ;
+      const [vMinLon, vMaxLon, vMinLat, vMaxLat] = viewportGeoBounds();
+      const tyMin = clamp(latToTileY(vMaxLat, n), 0, n - 1);
+      const tyMax = clamp(latToTileY(vMinLat, n), 0, n - 1);
+      const txMin = Math.floor(((vMinLon + 180) / 360) * n);
+      const txMax = Math.floor(((vMaxLon + 180) / 360) * n);
+      let drawnAny = false;
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      for (let ty = tyMin; ty <= tyMax; ty++) {
+        const latN = tileLat(ty, n);
+        const latS = tileLat(ty + 1, n);
+        for (let tx = txMin; tx <= txMax; tx++) {
+          const lonW = (tx / n) * 360 - 180;
+          const lonE = ((tx + 1) / n) * 360 - 180;
+          const [x0, y0] = projectAt(lonW, latN, 0);
+          const [x1, y1] = projectAt(lonE, latS, 0);
+          const dw = x1 - x0;
+          const dh = y1 - y0;
+          if (x1 < 0 || x0 > width || y1 < 0 || y0 > height || dw <= 0 || dh <= 0) continue;
+          const tile = getSatTile(targetZ, tx, ty);
+          if (tile?.ready) {
+            ctx.drawImage(tile.img, x0 - 0.5, y0 - 0.5, dw + 1, dh + 1);
+            drawnAny = true;
+          } else {
+            // 瓦片加载中自动向上查找已缓存父级瓦片无缝补帧（零白闪！）
+            for (let pz = targetZ - 1; pz >= 2; pz--) {
+              const shift = targetZ - pz;
+              const ptx = Math.floor(tx / (1 << shift));
+              const pty = ty >> shift;
+              const pn = 1 << pz;
+              const pKey = pz + '/' + (((ptx % pn) + pn) % pn) + '/' + pty;
+              const pEntry = satTileCache.get(pKey);
+              if (pEntry?.ready) {
+                const pLonW = (ptx / pn) * 360 - 180;
+                const pLonE = ((ptx + 1) / pn) * 360 - 180;
+                const pLatN = tileLat(pty, pn);
+                const pLatS = tileLat(pty + 1, pn);
+                const sx = ((lonW - pLonW) / (pLonE - pLonW)) * pEntry.img.width;
+                const sw = ((lonE - lonW) / (pLonE - pLonW)) * pEntry.img.width;
+                const sy = ((pLatN - latN) / (pLatN - pLatS)) * pEntry.img.height;
+                const sh = ((latN - latS) / (pLatN - pLatS)) * pEntry.img.height;
+                ctx.drawImage(pEntry.img, sx, sy, sw, sh, x0 - 0.5, y0 - 0.5, dw + 1, dh + 1);
+                drawnAny = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      ctx.restore();
+      return drawnAny;
+    }
 
     function scheduleDraw() {
       if (pendingDrawFrame) return;
@@ -1135,11 +1231,47 @@
     }
 
     function drawBase() {
-      const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province, options.terrainBack, options.rail, options.globalLayer].join('|');
+      const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province, options.terrainBack, options.satellite, options.rail, options.globalLayer].join('|');
       if (key === backgroundKey) return;
       backgroundKey = key;
       const ctx = backdrop;
-      if (camera.zoom < 45 && options.mode !== 'contour') {
+      const useSatellite = options.mode === 'satellite' || (options.satellite && options.mode !== 'contour' && options.mode !== 'terrain');
+      let satDrawn = false;
+      if (useSatellite) {
+        // 先铺深邃卫星海面与离线高清世界图集作为底层（瓦片未到或离线时无缝兜底，绝不黑屏）
+        ctx.fillStyle = '#071527';
+        ctx.fillRect(0, 0, width, height);
+        if (camera.zoom < 45) {
+          ensureWorldAtlas();
+          blitWorldTexture(ctx, worldAtlas, worldAtlas.width, worldAtlas.height);
+        }
+        satDrawn = drawSatelliteTiles(ctx);
+        if (options.mode === 'terrain3d') {
+          drawTerrain3DRelief(ctx);
+          showContours(ctx);
+        }
+        // 叠加八九/谷歌卫星图风格的清晰白色国际国界、亮青色水系与醒目金色中国国界
+        if (options.province && worldGeo?.borders?.length) {
+          ctx.save();
+          ctx.beginPath();
+          for (const seg of worldGeo.borders) trace(ctx, seg, false);
+          ctx.strokeStyle = satDrawn ? 'rgba(255, 255, 255, 0.64)' : '#5c66549c';
+          ctx.lineWidth = satDrawn ? 0.95 : 0.78;
+          ctx.stroke();
+          ctx.restore();
+        }
+        const worldRivers = globalThis.CivilWarWorld?.rivers || [];
+        if (satDrawn && worldRivers.length) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(122, 206, 238, 0.68)';
+          ctx.lineWidth = Math.max(0.95, Math.min(2.6, camera.zoom * 0.04));
+          ctx.beginPath();
+          for (const rv of worldRivers) trace(ctx, rv.pts, false);
+          ctx.stroke();
+          ctx.restore();
+        }
+        if (camera.zoom >= 85) drawHistoricalMicroDetails(ctx);
+      } else if (camera.zoom < 45 && options.mode !== 'contour') {
         // 宏观/全球/战区视角直接使用 WebGL GPU 着色器（或 4096×2048 纹理贴图）完成 360° 球形底图渲染！
         ensureWorldAtlas();
         if (gpuPipe) {
@@ -1247,35 +1379,49 @@
         }
       }
 
-      if (!data.theaterMode && geography?.boundary) {
+      if (geography?.boundary && (!data.theaterMode || useSatellite)) {
         shape(ctx, geography.boundary);
-        ctx.strokeStyle = '#465e50';
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = satDrawn ? '#e8cc72' : '#465e50';
+        ctx.lineWidth = satDrawn ? 1.65 : 1.2;
         ctx.stroke();
       }
       if (!data.theaterMode && options.province && geography?.provinces?.length) {
         for (const province of geography.provinces) {
           shape(ctx, province.rings);
           ctx.lineWidth = .7;
-          ctx.strokeStyle = '#626a57a4';
+          ctx.strokeStyle = satDrawn ? 'rgba(255, 255, 255, 0.44)' : '#626a57a4';
           ctx.stroke();
           if (!province.name || camera.zoom < 10 || camera.zoom > 146) continue;
           const [x, y] = project(...province.label);
           if (x < 10 || x > width - 10 || y < 50 || y > height - 30) continue;
           ctx.font = (camera.zoom < 22 ? '10' : '13') + 'px SimSun, serif';
           ctx.textAlign = 'center';
-          ctx.fillStyle = options.mode === 'terrain' ? '#3b4a39b8' : '#5b614bbd';
+          if (satDrawn) {
+            ctx.strokeStyle = 'rgba(8, 16, 24, 0.85)';
+            ctx.lineWidth = 2.6;
+            ctx.strokeText(province.name, x, y);
+            ctx.fillStyle = '#f2ecd6';
+          } else {
+            ctx.fillStyle = options.mode === 'terrain' ? '#3b4a39b8' : '#5b614bbd';
+          }
           ctx.fillText(province.name, x, y);
         }
       }
       if (!data.theaterMode && camera.zoom < 22) {
         const [x, y] = project(101, 34);
-        ctx.font = 'bold 29px SimSun, serif';
+        ctx.font = 'bold 26px SimSun, serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#4858468a';
+        if (satDrawn) {
+          ctx.strokeStyle = 'rgba(10, 14, 18, 0.85)';
+          ctx.lineWidth = 3.2;
+          ctx.strokeText('中  国', x, y);
+          ctx.fillStyle = '#ff6b57';
+        } else {
+          ctx.fillStyle = '#4858468a';
+        }
         ctx.fillText('中  国', x, y);
       }
-      // 全球 31 国名称标注（三大战区统一显示；内战模式下跳过“中 国”以避免与省界大字重复）
+      // 全球 31 国名称标注（卫星图下白字深边，地形图下墨绿字）
       {
         const countries = [
           ['苏  联', 62, 61, 22], ['德  国', 10.4, 51.2, 15], ['法  国', 2.4, 46.8, 15], ['英  国', -2.2, 54.0, 13],
@@ -1290,13 +1436,20 @@
         ctx.save();
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#2d3b3288';
         for (const [cname, lon, lat, basePx] of countries) {
           if (!data.theaterMode && cname === '中  国') continue;
           const [cx, cy] = project(lon, lat);
           if (cx < -60 || cx > width + 60 || cy < -30 || cy > height + 30) continue;
-          const sz = Math.round(clamp(basePx * (camera.zoom / 18), 10, 28));
+          const sz = Math.round(clamp(basePx * (camera.zoom / 18), 10, 26));
           ctx.font = 'bold ' + sz + 'px SimSun, serif';
+          if (satDrawn) {
+            ctx.strokeStyle = 'rgba(6, 12, 20, 0.88)';
+            ctx.lineWidth = 2.8;
+            ctx.strokeText(cname, cx, cy);
+            ctx.fillStyle = cname === '中  国' ? '#ff6b57' : 'rgba(244, 240, 226, 0.92)';
+          } else {
+            ctx.fillStyle = '#2d3b3288';
+          }
           ctx.fillText(cname, cx, cy);
         }
         ctx.restore();
@@ -3438,7 +3591,9 @@
       const label = chosenKm >= 1 ? chosenKm + ' km' : Math.round(chosenKm * 1000) + ' m';
       const x0 = 14;
       const y0 = height - 42;
-      const fpsText = '⚡ ' + gpuLabel + ' · ' + Math.round(fpsSmoothed) + ' FPS';
+      const geoCoords = cursorGeo || [camera.lon, camera.lat];
+      const geoText = '经纬度: ' + geoCoords[0].toFixed(2) + '°, ' + geoCoords[1].toFixed(2) + '°';
+      const fpsText = '⚡ ' + gpuLabel + ' · ' + Math.round(fpsSmoothed) + ' FPS · ' + geoText;
       brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
       const fpsW = cachedTextWidth(brush, '700 10px "Microsoft YaHei UI", sans-serif', fpsText);
       const totalW = barPx + 74 + fpsW + 16;
@@ -3609,6 +3764,7 @@
     });
     canvas.addEventListener('pointermove', (event) => {
       const xy = coordinates(event);
+      cursorGeo = unproject(xy[0], xy[1]);
       if (pointer) {
         const dx = xy[0] - pointer.where[0], dy = xy[1] - pointer.where[1];
         if (Math.hypot(dx, dy) > 5) pointer.moved = true;
