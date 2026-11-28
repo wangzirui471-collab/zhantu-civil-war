@@ -1300,6 +1300,28 @@
             uy = cy + (unit.side === 'ccp' ? -Math.abs(ringSlot) * 7 : Math.abs(ringSlot) * 7);
           }
 
+          // 宏观/战区缩放下同城次级非选中单位直接聚合进首牌（不再额外堆叠 3D 兵墙与重叠标签），点开首牌即可查看全城纵队
+          const focusedEarly = unit.id === selection.unit || unit.id === selection.guideUnit || chosen.has(unit.id);
+          if (idx > 0 && !focusedEarly && camera.zoom < 40) {
+            const primaryCard = hitCards.find((rect) => !rect.figureHit && rect.primary && rect.unit?.city === unit.city && rect.unit?.side === unit.side);
+            if (primaryCard) {
+              if (!primaryCard.stack.includes(unit.id)) primaryCard.stack.push(unit.id);
+              const n = primaryCard.stack.length;
+              brush.save();
+              brush.fillStyle = '#a67d37';
+              brush.beginPath();
+              brush.roundRect(primaryCard.left + primaryCard.width - 21, primaryCard.top + 1.5, 19, 11.5, 3);
+              brush.fill();
+              brush.fillStyle = '#fff9e6';
+              brush.font = '700 8px "Microsoft YaHei UI", sans-serif';
+              brush.textAlign = 'center';
+              brush.textBaseline = 'middle';
+              brush.fillText('×' + n, primaryCard.left + primaryCard.width - 11.5, primaryCard.top + 7.5);
+              brush.restore();
+              return;
+            }
+          }
+
           // 每支纵队有自己的兵模和可点击区域；小人数量按该驻地的实际基层兵力计算。
           const localCount = localStrength.get(unit.id + '|' + unit.city) ?? (parentIds.has(unit.id) ? 0 : unit.strength);
           const strength = Math.max(0, localCount - (shownChildren.get(unit.id + '|' + unit.city) || 0));
@@ -1309,8 +1331,9 @@
             const gSet = globalThis.GameSettings || { modelScale: 1, maxModelsMacro: 4 };
             const size = Math.round((national ? 22 : zoomLevel() === 'detail' ? 44 : 34) * (gSet.modelScale || 1));
             const rawCount = globalThis.CivilWarHuman3D.iconCount(strength);
-            // 全国宏观视角防密集穿模：按设置面板中的【宏观最大兵模密度】展示，战区/局部放大后自动展开完整人数阵型
-            const count = national ? Math.min(rawCount, Math.max(1, gSet.maxModelsMacro || 4)) : rawCount;
+            // 宏观与中景视角严格限制单队兵模上限，杜绝低地国家/华北堆出几十排兵模高墙；局部放大后自动展开完整人数阵型
+            const macroCap = Math.max(1, gSet.maxModelsMacro || 4);
+            const count = camera.zoom < 40 ? Math.min(rawCount, macroCap) : rawCount;
             const columns = Math.min(count, 4);
             const soldierKind = unit.nationModel || 'human';
             const sprite = humanRenderer.frame(unit.side, !['idle', 'hold', 'sleep'].includes(action), now, soldierKind, action, unit.group || '');

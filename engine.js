@@ -978,7 +978,8 @@
     const transportHave = state.navy?.[unit.side]?.transports ?? 0;
     if (transportNeed > transportHave) {
       const action = hostileOrders.has(type) ? '渡海进攻' : '跨海调动';
-      return { ok: false, error: action + '需要运输船 ' + transportNeed + '，当前只有 ' + Math.floor(transportHave) + '。' };
+      return { ok: false, error: action + '需要运输船 ' + transportNeed + '，当前只有 ' + Math.floor(transportHave)
+        + '（可点左侧「航母战舰」消耗 15 政点增派运输船，或在「海军指挥」征用民船）。' };
     }
 
     return { ok: true, days, route, recipients, destination };
@@ -2289,7 +2290,16 @@
         }
         const availableStrength = available.reduce((sum, member) => sum + member.strength, 0);
         const averageOrg = available.reduce((sum, member) => sum + unitOrg(member), 0) / available.length;
-        const attackPower = power(available, false, state);
+        // 同城合编协同：若同城有多支同方空闲 AI 小编制单位，合并计算战力并协同出击，避免编制细碎的一方（如国民党）单薄送兵。
+        const coLocatedIdle = outsideControl
+          ? (garrisons.get(city) ?? []).filter((u) => {
+            if (u.side !== army.side || u.strength <= 0 || u.inactive || u.food < 30 || u.garrison) return false;
+            const ot = u.order?.type;
+            return !ot || ot === 'hold' || (ot === 'defend' && u.order.target === city);
+          })
+          : [];
+        const strikePool = coLocatedIdle.length > available.length ? coLocatedIdle.slice(0, Math.max(available.length, 4)) : available;
+        const attackPower = power(strikePool, false, state);
         const adjacent = map.neighbors.get(city) ?? [];
         const progress = distance === undefined ? adjacent : adjacent.filter(neighbor => distances.get(neighbor) < distance);
         const targets = progress.filter(neighbor => state.owners[neighbor] !== army.side);
@@ -2326,7 +2336,7 @@
           }
         }
         if (target) {
-          for (const unit of available) assignOrder(map, state, unit, 'advance', target, true);
+          for (const unit of strikePool) assignOrder(map, state, unit, 'advance', target, true);
         } else {
           const front = distance === undefined
             ? (!targets.length && nearestFront(map, state, city, army.side))
@@ -2359,10 +2369,13 @@
         if (active) targeted.add(unit.garrison);
         else delete unit.garrison;
       }
-      const empty = [...map.cities.values()].filter(city => {
+      const allEmpty = [...map.cities.values()].filter(city => {
         if (state.owners[city.id] !== side || byCity.has(city.id) || targeted.has(city.id)) return false;
         return (map.neighbors.get(city.id) ?? []).some(id => state.owners[id] !== side);
       }).sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+      // 优先守高价值交通枢纽，避免大防线阵营把兵力摊薄到低价值边陲小城。
+      const highVal = allEmpty.filter((c) => (Number(c.value) || 1) >= 2);
+      const empty = highVal.length ? highVal : allEmpty;
       if (!empty.length) continue;
       const reserves = [];
       for (const army of armies) {
@@ -5253,15 +5266,15 @@
       const owned = data.cities.filter(city => state.owners[city.id] === side).length;
       const share = owned / data.cities.length;
       // 全国地图上的一城失守不应令仍控制大片地区的一方立即投降。
-      // 小型测试地图保留原规则；全国局需同时出现领土与支持度危机。
-      const territorialCrisis = data.cities.length <= 40 || share < 0.35;
+      // 小型测试地图保留原规则；全国局需同时出现严重领土丧失（不足 15%）与支持度危机。
+      const territorialCrisis = data.cities.length <= 40 || share < 0.15;
       const collapse = ((capitalLost && support < 25) || support < 8) && territorialCrisis
         || (data.cities.length > 40 && share < 0.1 && support < 25);
       if (!collapse) continue;
       state.winner = other;
       state.endReason = 'capitulation';
-      addLog(state, sideNames[side] + '战争支持度崩溃，停止抵抗。', 'capitulation',
-        { side, winner: other, support, share: Math.round(share * 100) / 100 });
+      addLog(state, sideNames[side] + '战争支持度崩溃' + (owned > 0 ? '，残余 ' + owned + ' 座城镇相继和平交接，停止抵抗。' : '，停止抵抗。'), 'capitulation',
+        { side, winner: other, support, share: Math.round(share * 100) / 100, remainingCities: owned });
       return;
     }
     if (state.date >= '1951-12-31') {
@@ -5322,6 +5335,21 @@
       advanceRecruitment(data, map, state);
       if (state.units.length !== unitsBeforeRecruitment) tree = unitTree(state);
       aggregate(map, state, tree);
+      // 清理阵亡超过 14 天且无下属子单位的空壳部队（保留 14 天战后复盘窗口，避免 180 天后存档膨胀与遍历冗余）。
+      const livingParents = new Set();
+      for (const u of state.units) if (u.parent) livingParents.add(u.parent);
+      let pruned = 0;
+      state.units = state.units.filter((u) => {
+        if (u.strength > 0 || u.inactive || livingParents.has(u.id)) {
+          if (u.deadDays) delete u.deadDays;
+          return true;
+        }
+        u.deadDays = (u.deadDays || 0) + 1;
+        if (u.deadDays < 14) return true;
+        pruned += 1;
+        return false;
+      });
+      if (pruned) state.graveyardCount = (state.graveyardCount || 0) + pruned;
       checkVictory(data, state);
     }
     return state;

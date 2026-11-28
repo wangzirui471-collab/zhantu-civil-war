@@ -380,17 +380,18 @@
     const prepHtml = (state.prepDaysLeft || 0) > 0
       ? '<div style="margin:4px 0;padding:4px 6px;border-radius:4px;background:#3a3016;border:1px solid #d4b054;color:#ffe79e;font-size:11px;">⏳ 战前筹备期：剩 <b>' + state.prepDaysLeft + '</b> 天开战 <button type="button" id="rail-end-prep" style="font-size:10px;padding:1px 5px;margin-left:4px;">⚡ 提前开战</button></div>'
       : '';
-    const endlessBadge = state.sandboxEndless ? '<span style="font-size:10px;color:#7ee094;">♾️ 无尽沙盒</span>' : '<span style="font-size:10px;color:#7ee094;">● 进行中</span>';
+    const endlessBadge = state.sandboxEndless ? '<span style="font-size:10px;color:#7ee094;white-space:nowrap;">♾️ 无尽沙盒</span>' : '<span style="font-size:10px;color:#7ee094;white-space:nowrap;">● 进行中</span>';
     $('scenario-list').innerHTML =
-      '<div class="lock-title"><span>' + escape(sc?.title || '全面内战') + '</span>' + endlessBadge + '</div>'
-      + '<div><b>锁定阵营：</b>' + escape(sideLabel) + '</div>'
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><span style="font-size:10px;color:#c9bc95;">当前存档</span>' + endlessBadge + '</div>'
+      + '<div class="lock-title" style="display:block;word-break:break-word;">' + escape(sc?.title || '全面内战') + '</div>'
+      + '<div style="word-break:break-word;"><b>锁定阵营：</b>' + escape(sideLabel) + '</div>'
       + '<div><b>当前日期：</b>' + fmtDate(state.date) + ' · 纵队 ' + ownUnits.length + ' 支</div>'
       + prepHtml
       + '<div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;">'
       + '<button type="button" id="rail-sandbox-war" style="flex:1;font-size:10.5px;padding:3px 5px;" title="HOI4 自由跨国宣战（东征日本 / 美苏开战 / 称霸全球）">🌍 自由宣战</button>'
       + '<button type="button" id="rail-continue-endless" style="flex:1;font-size:10.5px;padding:3px 5px;" title="开启无尽模式，统一后不结束">♾️ 无尽模式</button>'
       + '</div>'
-      + '<div style="color:#a8b8a4;font-size:10.5px;margin-top:3px;">🔒 已锁定当前战役存档，需点击「🚪 退出重选」才可切换战役。</div>'
+      + '<div style="color:#a8b8a4;font-size:10.5px;margin-top:3px;">已锁定当前战役，请点击上方「退出重选」切换战役。</div>'
       + '<div hidden aria-hidden="true">' + list.map((s) => '<button type="button" data-scenario="' + escape(s.id) + '" aria-pressed="' + (state.scenarioId === s.id) + '"></button>').join('') + '</div>';
     $('rail-end-prep')?.addEventListener('click', () => {
       if (action('endPrepEarly', [])) { WarAudio.bugle(); saveAuto(true); render(); notify('⚡ 已提前结束筹备期，全线正式开战！'); }
