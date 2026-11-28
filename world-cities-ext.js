@@ -62,6 +62,13 @@
     ['us_sacramento', '萨克拉门托(加州)', -121.49, 38.58, 'america', 'usa', 'plain', false, 5, 4],
     ['us_portland_or', '波特兰(俄勒冈)', -122.68, 45.52, 'america', 'usa', 'port', true, 7, 7],
     ['us_anchorage', '安克雷奇(阿拉斯加)', -149.90, 61.22, 'america', 'usa', 'port', true, 7, 3],
+    // ═══ 美国核心军事基地与海军船厂 ═══
+    ['us_fort_bragg', '布拉格堡(空降基地)', -79.00, 35.14, 'america', 'usa', 'fort', false, 8, 5],
+    ['us_fort_hood', '胡德堡(装甲基地)', -97.78, 31.14, 'america', 'usa', 'fort', false, 8, 5],
+    ['us_camp_pendleton', '彭德尔顿营(陆战队基地)', -117.38, 33.30, 'america', 'usa', 'port', true, 9, 6],
+    ['us_bremerton', '布雷默顿军港(华盛顿州)', -122.63, 47.56, 'america', 'usa', 'port', true, 9, 8],
+    ['us_dutch_harbor', '荷兰港(阿留申基地)', -166.54, 53.89, 'pacific', 'usa', 'port', true, 7, 2],
+    ['us_kadena', '嘉手纳基地(冲绳美军)', 127.77, 26.35, 'pacific', 'usa', 'fort', true, 10, 5],
 
     // ═══ 加拿大与拉丁美洲核心城市与运河 ═══
     ['ca_montreal', '蒙特利尔', -73.57, 45.50, 'america', 'uk', 'port', true, 10, 10],
@@ -222,19 +229,25 @@
     ['su_almaty', '阿拉木图', 76.85, 43.22, 'east', 'ussr', 'mountain', false, 8, 6],
     ['su_ashgabat', '阿什哈巴德', 58.38, 37.96, 'east', 'ussr', 'desert', false, 6, 4],
 
-    // ═══ 日本列岛全线城市与四大军港 ═══
-    ['jp_yokohama', '横滨/横须贺军港', 139.64, 35.44, 'pacific', 'japan', 'port', true, 10, 10],
-    ['jp_shizuoka', '静冈', 138.38, 34.98, 'pacific', 'japan', 'plain', false, 6, 5],
-    ['jp_kyoto', '京都', 135.77, 35.01, 'pacific', 'japan', 'urban', false, 8, 6],
-    ['jp_kobe', '神户港', 135.19, 34.69, 'pacific', 'japan', 'port', true, 9, 9],
-    ['jp_okayama', '冈山', 133.93, 34.66, 'pacific', 'japan', 'plain', false, 6, 5],
-    ['jp_sasebo', '佐世保军港', 129.72, 33.16, 'pacific', 'japan', 'port', true, 8, 6],
-    ['jp_kagoshima', '鹿儿岛', 130.56, 31.60, 'pacific', 'japan', 'port', true, 7, 4],
+    // ═══ 日本列岛全线发达城市、铁路干线枢纽与四大军港 ═══
+    ['jp_yokohama', '横滨/横须贺军港', 139.64, 35.44, 'pacific', 'japan', 'port', true, 11, 12],
+    ['jp_shizuoka', '静冈(东海道干线)', 138.38, 34.98, 'pacific', 'japan', 'plain', false, 7, 6],
+    ['jp_kyoto', '京都', 135.77, 35.01, 'pacific', 'japan', 'urban', false, 9, 7],
+    ['jp_kobe', '神户港', 135.19, 34.69, 'pacific', 'japan', 'port', true, 10, 10],
+    ['jp_okayama', '冈山(山阳干线)', 133.93, 34.66, 'pacific', 'japan', 'plain', false, 7, 6],
+    ['jp_kure', '吴港(海军军工厂)', 132.57, 34.25, 'pacific', 'japan', 'port', true, 9, 9],
+    ['jp_shimonoseki', '下关/门司港(关门铁路)', 130.94, 33.96, 'pacific', 'japan', 'port', true, 9, 8],
+    ['jp_fukuoka', '福冈/博多(九州枢纽)', 130.40, 33.59, 'pacific', 'japan', 'port', true, 10, 9],
+    ['jp_sasebo', '佐世保军港', 129.72, 33.16, 'pacific', 'japan', 'port', true, 10, 7],
+    ['jp_kagoshima', '鹿儿岛', 130.56, 31.60, 'pacific', 'japan', 'port', true, 7, 5],
     ['jp_takamatsu', '高松(四国)', 134.04, 34.34, 'pacific', 'japan', 'port', true, 6, 4],
+    ['jp_maizuru', '舞鹤军港', 135.39, 35.47, 'pacific', 'japan', 'port', true, 8, 5],
     ['jp_niigata', '新潟港', 139.04, 37.92, 'pacific', 'japan', 'port', true, 7, 5],
-    ['jp_kanazawa', '金泽', 136.66, 36.56, 'pacific', 'japan', 'plain', false, 6, 4],
-    ['jp_aomori', '青森', 140.74, 40.82, 'pacific', 'japan', 'port', true, 7, 4],
-    ['jp_hakodate', '函馆港', 140.73, 41.77, 'pacific', 'japan', 'port', true, 6, 4],
+    ['jp_kanazawa', '金泽(北陆干线)', 136.66, 36.56, 'pacific', 'japan', 'plain', false, 7, 5],
+    ['jp_sendai', '仙台(东北本线)', 140.87, 38.27, 'pacific', 'japan', 'urban', false, 9, 7],
+    ['jp_aomori', '青森(青函联络港)', 140.74, 40.82, 'pacific', 'japan', 'port', true, 8, 5],
+    ['jp_hakodate', '函馆港', 140.73, 41.77, 'pacific', 'japan', 'port', true, 7, 5],
+    ['jp_sapporo', '札幌(北海道首府)', 141.35, 43.06, 'pacific', 'japan', 'urban', false, 9, 7],
 
     // ═══ 中东、非洲、南亚、东南亚、澳新与太平洋岛链 ═══
     ['me_beirut', '贝鲁特', 35.50, 33.89, 'africa', 'france', 'port', true, 7, 4],
@@ -477,7 +490,7 @@
       }
     }
 
-    // 显式补齐跨大西洋/跨太平洋/澳洲-新西兰/拉美关键战略海运线
+    // 显式补齐跨大西洋/跨太平洋/澳洲-新西兰/拉美关键战略海运线 + 日本全境铁路干线 + 中国/美国新铁路
     const keySeaLinks = [
       ['us_norfolk', 'gibraltar', 'sea'], ['us_miami', 'cu_havana', 'sea'], ['cu_havana', 'pa_panama', 'sea'],
       ['pa_panama', 'us_san_diego', 'sea'], ['pa_panama', 'co_bogota', 'sea'], ['br_recife', 'af_dakar', 'sea'],
@@ -487,6 +500,23 @@
       ['pac_wake', 'pac_saipan', 'sea'], ['is_reykjavik', 'edinburgh', 'sea'], ['is_reykjavik', 'halifax', 'sea'],
       ['mt_valletta', 'palermo', 'sea'], ['mt_valletta', 'alexandria', 'sea'], ['gr_crete', 'athens', 'sea'],
       ['gr_crete', 'tobruk', 'sea'], ['us_anchorage', 'seattle', 'sea'], ['us_anchorage', 'su_kamchatka', 'sea'],
+      ['us_dutch_harbor', 'us_anchorage', 'sea'], ['us_dutch_harbor', 'midway', 'sea'],
+      // 日本全境铁路大动脉（东海道本线 / 山阳本线 / 九州本线 / 东北本线 / 北陆本线 / 青函线）
+      ['tokyo', 'jp_yokohama', 'rail'], ['jp_yokohama', 'jp_shizuoka', 'rail'], ['jp_shizuoka', 'osaka', 'rail'],
+      ['osaka', 'jp_kyoto', 'rail'], ['osaka', 'jp_kobe', 'rail'], ['jp_kobe', 'jp_okayama', 'rail'],
+      ['jp_okayama', 'hiroshima', 'rail'], ['hiroshima', 'jp_kure', 'rail'], ['hiroshima', 'jp_shimonoseki', 'rail'],
+      ['jp_shimonoseki', 'jp_fukuoka', 'rail'], ['jp_fukuoka', 'jp_sasebo', 'rail'], ['jp_fukuoka', 'jp_kagoshima', 'rail'],
+      ['tokyo', 'jp_sendai', 'rail'], ['jp_sendai', 'jp_aomori', 'rail'], ['jp_aomori', 'jp_hakodate', 'sea'],
+      ['jp_hakodate', 'jp_sapporo', 'rail'], ['jp_kyoto', 'jp_maizuru', 'rail'], ['jp_kyoto', 'jp_kanazawa', 'rail'],
+      ['jp_kanazawa', 'jp_niigata', 'rail'], ['tokyo', 'jp_niigata', 'rail'],
+      ['jp_sasebo', 'us_kadena', 'sea'], ['jp_yokohama', 'us_kadena', 'sea'], ['us_kadena', 'manila', 'sea'],
+      // 中国新修重要干线（成渝 / 湘桂 / 兰新起点 / 京包 / 沈丹）
+      ['chongqing', 'chengdu', 'rail'], ['cn_hengyang', 'cn_guilin', 'rail'], ['cn_guilin', 'cn_nanning', 'rail'],
+      ['lanzhou', 'cn_xining', 'rail'], ['lanzhou', 'cn_urumqi', 'rail'], ['shenyang', 'cn_dandong', 'rail'],
+      // 美国军港与军事基地战略铁路
+      ['us_norfolk', 'us_fort_bragg', 'rail'], ['us_fort_bragg', 'us_atlanta', 'rail'],
+      ['us_dallas', 'us_fort_hood', 'rail'], ['us_fort_hood', 'us_san_antonio', 'rail'],
+      ['us_san_diego', 'us_camp_pendleton', 'rail'], ['seattle', 'us_bremerton', 'rail'],
     ];
     for (const [a, b, kind] of keySeaLinks) {
       if (existingIds.has(a) && existingIds.has(b)) addEdge(a, b, kind);

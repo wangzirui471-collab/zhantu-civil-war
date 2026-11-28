@@ -118,70 +118,94 @@
     const grids = (geography?.grids || []).map(prepareGrid);
     const worldGrids = (worldGeo?.grids || []).map(prepareGrid);
     let globalBackdropCities = [];
+    let globalBackdropRoutes = [];
     let globalDeployments = [];
     let globalHitItems = [];
 
     const GLOBAL_DEPLOYMENTS_KOREA = [
-      // ══ 五常：苏联（红）══
+      // ══ 五常：苏联（红 · 欧亚全域纵深部署）══
       { id: 'gd-kw-moscow', nation: '苏联', name: '苏军莫斯科军区近卫集群', short: '苏·莫斯科近卫', commander: '华西列夫斯基', strength: 180000, lon: 37.62, lat: 55.75, city: '莫斯科', bloc: 'red', side: 'ccp', icon: '★', kind: '装甲/火箭炮战略预备', models: ['t34', 'katyusha', 'soldier_ussr'], arsenal: 'T-34/85 ×600 · IS-3重坦 ×120 · 喀秋莎火箭炮 ×180', note: '苏联最高统帅部中央战略总预备队，威慑欧洲与远东全局。' },
+      { id: 'gd-kw-leningrad', nation: '苏联', name: '苏军列宁格勒军区与波罗的海舰队', short: '苏·波罗的海舰队', commander: '戈沃罗夫', strength: 150000, lon: 30.31, lat: 59.93, city: '列宁格勒/喀琅施塔得港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '波罗的海舰队与北方集群', models: ['battleship', 'ship', 'mig15'], arsenal: '战列舰/巡洋舰编队 · 米格-15防空师 · 机械化师×8', note: '扼守芬兰湾与波罗的海出口，拱卫苏联西北门户。' },
+      { id: 'gd-kw-kiev', nation: '苏联', name: '苏军基辅军区与黑海舰队', short: '苏·黑海舰队/乌克兰', commander: '格列奇科', strength: 175000, lon: 33.52, lat: 44.61, city: '塞瓦斯托波尔/敖德萨港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '黑海舰队与南方装甲集群', models: ['battleship', 'ship', 't34'], arsenal: '黑海舰队主力 · T-34/85装甲师×5 · 152mm重炮群', note: '监控黑海海峡与土耳其方向北约南翼。' },
       { id: 'gd-kw-berlin', nation: '苏联', name: '苏军驻德集群（GSFG）', short: '苏·驻德集群', commander: '崔可夫', strength: 350000, lon: 13.40, lat: 52.52, city: '柏林', bloc: 'red', side: 'ccp', icon: '⛨', kind: '重装甲机械化集群', models: ['t34', 'soldier_ussr', 'mig15'], arsenal: 'T-34/85与IS-2 ×2400 · 米格-15 ×400 · 机械化师×22', note: '冷战欧洲前线最精锐机械化集群，牢牢牵制北约主力东调。' },
       { id: 'gd-kw-warsaw', nation: '苏联', name: '苏军北方集群', short: '苏·北方集群', commander: '罗科索夫斯基', strength: 120000, lon: 21.01, lat: 52.23, city: '华沙', bloc: 'red', side: 'ccp', icon: '★', kind: '步兵与装甲师群', models: ['t34', 'soldier_ussr'], arsenal: 'T-34/85 ×420 · 152mm加榴炮 ×240', note: '守卫东欧铁路干线与波罗的海方向侧翼。' },
+      { id: 'gd-kw-ural', nation: '苏联', name: '苏军乌拉尔/西伯利亚战略预备军区', short: '苏·西伯利亚预备', commander: '朱可夫', strength: 160000, lon: 61.40, lat: 55.16, city: '车里雅宾斯克/新西伯利亚', bloc: 'red', side: 'ccp', icon: '★', kind: '重装甲生产与铁路预备', models: ['t34', 'katyusha'], arsenal: '坦克城兵工厂 · 西伯利亚大铁路机动预备师', note: '依托乌拉尔重工业基地向中朝提供60个师苏械装备。' },
+      { id: 'gd-kw-chita', nation: '苏联', name: '苏军后贝加尔军区（伯力/赤塔）', short: '苏·后贝加尔军区', commander: '普尔卡耶夫', strength: 140000, lon: 113.50, lat: 52.03, city: '赤塔/伯力', bloc: 'red', side: 'ccp', icon: '★', kind: '机械化步兵与航空师', models: ['soldier_ussr', 't34'], arsenal: '机械化师×10 · 喀秋莎团 · 远东战略铁路枢纽', note: '沿西伯利亚大铁路衔接中苏边境满洲里与海参崴。' },
       { id: 'gd-kw-vladivostok', nation: '苏联', name: '苏军远东军区 · 太平洋舰队', short: '苏·太平洋舰队/远东军', commander: '马利诺夫斯基', strength: 220000, lon: 131.89, lat: 43.12, city: '海参崴军港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '太平洋舰队与远东集团军', models: ['battleship', 'ship', 'mig15'], arsenal: '巡洋舰×4 · 驱逐舰×26 · 潜艇×60 · 米格-15×280', note: '扼守日本海北大门，为中朝后勤与米格走廊提供战略纵深。' },
+      { id: 'gd-kw-kamchatka', nation: '苏联', name: '苏军堪察加与千岛防卫基地', short: '苏·堪察加基地', commander: '太平洋舰队北支队', strength: 55000, lon: 158.65, lat: 53.02, city: '彼得罗巴甫洛夫斯克港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '潜艇基地与岸防航空师', models: ['uboat', 'ship', 'mig15'], arsenal: '潜艇编队 · 岸防炮兵与极地航空团', note: '与美军阿留申荷兰港隔北太平洋对峙。' },
       { id: 'gd-kw-lushun', nation: '苏联', name: '苏军驻旅顺海军要塞与第39集团军', short: '苏·旅顺海军基地', commander: '别洛博罗多夫', strength: 60000, lon: 121.25, lat: 38.80, city: '旅顺/大连港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '海军基地与米格航空师', models: ['ship', 'mig15', 'soldier_ussr'], arsenal: '驱逐舰与鱼雷艇×18 · 米格-15×96 · 岸防重炮群', note: '拱卫渤海湾与辽东半岛，与志愿军共同防卫黄海北岸。' },
-      // ══ 五常：中国（红）══
-      { id: 'gd-kw-beijing', nation: '中国', name: '解放军华北军区战略总预备队', short: '中·华北战略预备', commander: '聂荣臻', strength: 280000, lon: 116.40, lat: 39.90, city: '北京', bloc: 'red', side: 'ccp', icon: '★', kind: '野战兵团预备队', models: ['soldier_pva', 't34', 'artillery'], arsenal: '野战兵团×3 · T-34/85坦克团 · 122mm榴弹炮群', note: '拱卫京津与华北铁路枢纽，源源不断轮换兵团入朝。' },
-      { id: 'gd-kw-shenyang', nation: '中国/苏联', name: '东北军区 · 志愿军后勤与米格走廊空军', short: '中苏·东北后勤/米格走廊', commander: '高岗 / 阔日杜布', strength: 240000, lon: 123.43, lat: 41.80, city: '沈阳/安东机场', bloc: 'red', side: 'ccp', icon: '✈', kind: '米格-15空军与喀秋莎预备', models: ['mig15', 'katyusha', 'soldier_pva'], arsenal: '米格-15×480 · BM-13喀秋莎×240 · 铁道兵与高炮师', note: '抗美援朝大后方核心，中苏空军由此起飞开辟“米格走廊”。' },
-      { id: 'gd-kw-shanghai', nation: '中国', name: '解放军华东军区与华东海军', short: '中·华东军区/海防', commander: '陈毅 / 粟裕', strength: 320000, lon: 121.47, lat: 31.23, city: '上海港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '野战兵团与东南海防舰艇', models: ['soldier_pva', 'ship', 'artillery'], arsenal: '野战军×8 · 护卫舰与炮艇编队 · 岸防重炮', note: '防卫长江口与台湾海峡方向，应对美第7舰队与国民党反攻威胁。' },
-      { id: 'gd-kw-guangzhou', nation: '中国', name: '解放军中南军区（华南防务）', short: '中·中南军区', commander: '叶剑英', strength: 250000, lon: 113.26, lat: 23.13, city: '广州港', bloc: 'red', side: 'ccp', icon: '★', kind: '野战军与援越顾问团', models: ['soldier_pva', 'artillery'], arsenal: '野战军×6 · 山炮与榴弹炮群', note: '扼守华南海疆并支援印支方向反法抗战。' },
+      // ══ 五常：中国（红 · 六大军区完整分布）══
+      { id: 'gd-kw-beijing', nation: '中国', name: '解放军华北军区战略总预备队', short: '中·华北军区', commander: '聂荣臻', strength: 280000, lon: 116.40, lat: 39.90, city: '北京/天津港', bloc: 'red', side: 'ccp', icon: '★', kind: '野战兵团预备队', models: ['soldier_pva', 't34', 'artillery'], arsenal: '野战兵团×3 · T-34/85坦克团 · 122mm榴弹炮群', note: '拱卫京津与华北铁路枢纽，源源不断轮换兵团入朝。' },
+      { id: 'gd-kw-shenyang', nation: '中国/苏联', name: '东北军区 · 志愿军后勤与米格走廊空军', short: '中苏·东北/米格走廊', commander: '高岗 / 阔日杜布', strength: 240000, lon: 123.43, lat: 41.80, city: '沈阳/安东机场', bloc: 'red', side: 'ccp', icon: '✈', kind: '米格-15空军与喀秋莎预备', models: ['mig15', 'katyusha', 'soldier_pva'], arsenal: '米格-15×480 · BM-13喀秋莎×240 · 铁道兵与高炮师', note: '抗美援朝大后方核心，中苏空军由此起飞开辟“米格走廊”。' },
+      { id: 'gd-kw-shanghai', nation: '中国', name: '解放军华东军区与华东海军', short: '中·华东军区/海防', commander: '陈毅 / 粟裕', strength: 320000, lon: 121.47, lat: 31.23, city: '上海/南京/青岛港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '野战兵团与东南海防舰艇', models: ['soldier_pva', 'ship', 'artillery'], arsenal: '野战军×8 · 护卫舰与炮艇编队 · 岸防重炮', note: '防卫长江口与台湾海峡方向，应对美第7舰队与国民党反攻威胁。' },
+      { id: 'gd-kw-guangzhou', nation: '中国', name: '解放军中南军区（华南防务）', short: '中·中南军区', commander: '叶剑英', strength: 250000, lon: 113.26, lat: 23.13, city: '广州/武汉', bloc: 'red', side: 'ccp', icon: '★', kind: '野战军与援越顾问团', models: ['soldier_pva', 'artillery'], arsenal: '野战军×6 · 山炮与榴弹炮群', note: '扼守华南海疆并经湘桂铁路支援印支反法抗战。' },
+      { id: 'gd-kw-chengdu', nation: '中国', name: '解放军西南军区（成渝/进藏）', short: '中·西南军区', commander: '刘伯承 / 贺龙', strength: 210000, lon: 104.07, lat: 30.67, city: '重庆/成都', bloc: 'red', side: 'ccp', icon: '★', kind: '山地野战军与铁道工程兵', models: ['soldier_pva', 'artillery'], arsenal: '第18军等主力师 · 成渝铁路修筑兵团', note: '稳固大西南战略后方并修通成渝铁路干线。' },
+      { id: 'gd-kw-lanzhou', nation: '中国', name: '解放军西北军区（兰新线）', short: '中·西北军区', commander: '彭德怀 / 习仲勋', strength: 160000, lon: 103.83, lat: 36.06, city: '西安/兰州/乌鲁木齐', bloc: 'red', side: 'ccp', icon: '★', kind: '西北野战兵团', models: ['soldier_pva', 'artillery'], arsenal: '第1/2/6军主力 · 西北铁路与石油通道守备', note: '保障西北大后方与中苏新疆陆路通道。' },
       // ══ 邻国：蒙古 ══
       { id: 'gd-kw-ulaanbaatar', nation: '蒙古', name: '苏蒙联军外蒙古防卫集群', short: '蒙·外蒙防卫集群', commander: '乔巴山', strength: 55000, lon: 106.91, lat: 47.92, city: '乌兰巴托', bloc: 'red', side: 'ccp', icon: '★', kind: '骑兵机械化师', models: ['soldier_ussr', 't34'], arsenal: 'T-34中型坦克×90 · 摩托化骑兵师×4', note: '护卫中苏蒙铁路大动脉与北方战略纵深。' },
-      // ══ 五常：美国 & 第7舰队（蓝）══
-      { id: 'gd-kw-tokyo', nation: '美国', name: '美远东司令部（FECOM · 东京总部）', short: '美·远东司令部', commander: '麦克阿瑟 / 李奇微', strength: 85000, lon: 139.69, lat: 35.69, city: '东京', bloc: 'blue', side: 'roc', icon: '★', kind: '战区最高司令部与航空联队', models: ['soldier_usa', 'f86', 'm26'], arsenal: 'F-86佩刀联队 · 第16军预备师 · 远东后勤司令部', note: '联合国军总指挥部，统筹日本列岛全部美军陆海空基地与补给。' },
-      { id: 'gd-kw-7thfleet', nation: '美国', name: '美国海军第7舰队（TF77 航母战列舰编队）', short: '美·第7舰队(TF77)', commander: '斯特鲁布尔 / 克拉克', strength: 72000, lon: 130.60, lat: 32.80, city: '佐世保/横须贺军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '埃塞克斯级航母与衣阿华级战列舰', models: ['carrier', 'battleship', 'f86'], arsenal: '埃塞克斯级航母×6 · 衣阿华级战列舰×2（密苏里/新泽西号） · 巡洋舰×8 · 驱逐舰×48', note: '掌控黄海、日本海与台湾海峡制海权，承担仁川登陆、舰载空袭与406mm巨炮支援。' },
-      { id: 'gd-kw-okinawa', nation: '美国', name: '美远东空军 B-29 战略轰炸机群（嘉手纳）', short: '美·冲绳B-29机群', commander: '斯特拉特迈耶', strength: 48000, lon: 127.68, lat: 26.21, city: '冲绳那霸', bloc: 'blue', side: 'roc', icon: '✈', kind: 'B-29战略轰炸与F-86联队', models: ['b29', 'f86', 'soldier_usa'], arsenal: 'B-29超级空中堡垒×120 · F-80/F-86×180', note: '从冲绳嘉手纳基地起飞，对朝鲜北部铁路、电站与桥梁实施战略轰炸。' },
-      { id: 'gd-kw-taipei', nation: '美国/中国台湾', name: '美第7舰队台海巡弋编队 & 国民党驻台部队', short: '美第7舰队/驻台军', commander: '蒋介石 / 孙立人', strength: 450000, lon: 121.56, lat: 25.03, city: '台北/基隆/左营港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '海峡巡弋舰队与岛屿守军', models: ['carrier', 'ship', 'soldier_usa'], arsenal: '美第7舰队巡弋分遣舰队 · 国民党陆军60万与F-51机群', note: '1950年6月美第7舰队开入台湾海峡，牵制华东解放军兵力。' },
-      { id: 'gd-kw-guam', nation: '美国', name: '美太平洋海空战略中转基地（关岛）', short: '美·关岛战略港', commander: '太平洋司令部', strength: 42000, lon: 144.79, lat: 13.44, city: '关岛阿普拉港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '战略轰炸与海军补给枢纽', models: ['battleship', 'b29'], arsenal: 'B-29战略轰炸机中队 · 太平洋后勤补给舰群', note: '西太平洋第二岛链核心枢纽，保障跨洋兵力与弹药转运。' },
-      { id: 'gd-kw-pearl', nation: '美国', name: '美太平洋舰队司令部（CINCPAC）', short: '美·珍珠港太平洋舰队', commander: '雷德福', strength: 120000, lon: -157.86, lat: 21.31, city: '珍珠港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '航母预备舰队与陆战后备', models: ['carrier', 'battleship'], arsenal: '重型航母×4 · 战列舰×2 · 潜艇舰队 · 陆战预备团', note: '统筹太平洋全域海运护航、舰队轮换与陆战队增援。' },
-      { id: 'gd-kw-sf', nation: '美国', name: '美军西海岸战略投送港与预备师', short: '美·旧金山/圣迭戈港', commander: '第6集团军', strength: 180000, lon: -122.42, lat: 37.77, city: '旧金山/圣迭戈军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '跨洋海运与装甲预备师', models: ['carrier', 'm26', 'soldier_usa'], arsenal: '登陆运输船队×120 · M26/M46坦克预备群 · 155mm重炮', note: '美军赴朝兵力、坦克与海量范佛里特弹药的主要装船母港。' },
-      { id: 'gd-kw-dc', nation: '美国', name: '美军本土总预备队与大西洋舰队', short: '美·华盛顿/诺福克舰队', commander: '布莱德雷', strength: 350000, lon: -77.04, lat: 38.90, city: '华盛顿/诺福克军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '本土总预备与大西洋舰队', models: ['carrier', 'battleship', 'soldier_usa'], arsenal: '中途岛级/埃塞克斯级航母×5 · 空降第82/101师', note: '美军参谋长联席会议统筹全球防务与战时总动员。' },
-      // ══ 邻国：日本 ══
-      { id: 'gd-kw-japan', nation: '日本', name: '日本警察预备队（保安队）与海上警备队', short: '日·警察预备队', commander: '林敬三', strength: 75000, lon: 135.50, lat: 34.69, city: '大阪/舞鹤港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '美械治安步兵与扫雷艇队', models: ['soldier_japan', 'sherman', 'ship'], arsenal: '4个管区队（7.5万人） · 美援M24/M4坦克 · 扫雷艇队', note: '朝鲜战争爆发后麦克阿瑟下令组建，填补美第8集团军赴朝后的日本本土防务空缺，并秘密派扫雷艇赴元山扫雷。' },
-      // ══ 五常：英国（蓝）══
-      { id: 'gd-kw-london', nation: '英国', name: '英国皇家海军本土舰队与英联邦陆军', short: '英·皇家海军/本土军', commander: '斯利姆', strength: 160000, lon: -0.13, lat: 51.51, city: '伦敦/朴茨茅斯港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '皇家海军航母与英联邦师群', models: ['carrier', 'spitfire', 'soldier_uk'], arsenal: '巨像级轻型航母×3 · 百夫长坦克团 · 皇家空军', note: '向朝鲜派遣英联邦第1师（装备百夫长重坦）及轻型航母编队。' },
-      { id: 'gd-kw-singapore', nation: '英国', name: '英国皇家海军远东舰队（新加坡/香港）', short: '英·远东舰队/新加坡', commander: '坦普勒', strength: 85000, lon: 103.82, lat: 1.35, city: '新加坡军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '轻型航母与远东陆军', models: ['battleship', 'churchill', 'soldier_uk'], arsenal: '轻型航母×2 · 巡洋舰×4 · 廓尔喀与皇家步兵旅', note: '扼守马六甲海峡与南海航道，轮换支援朝鲜西海岸制海。' },
-      // ══ 五常：法国（蓝）══
-      { id: 'gd-kw-paris', nation: '法国/北约', name: '北约西欧盟军司令部（SHAPE）与法军本土', short: '法/北约·西欧集群', commander: '艾森豪威尔 / 瑞安', strength: 260000, lon: 2.35, lat: 48.86, city: '巴黎/法兰克福', bloc: 'blue', side: 'roc', icon: '⛨', kind: '法军装甲师与美第7集团军', models: ['charb1', 'soldier_france', 'ship'], arsenal: '法军机械化师×8 · 美第7集团军 · 法国地中海舰队', note: '西方战略重心仍在西欧防务，与驻德苏军隔铁幕对峙；法国并派独立营赴朝参战。' },
-      { id: 'gd-kw-saigon', nation: '法国', name: '法军远东远征军（印支战场）', short: '法·印支远征军', commander: '塔西尼', strength: 150000, lon: 106.66, lat: 10.78, city: '西贡/海防港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '外籍军团与远东舰队', models: ['soldier_france', 'sherman', 'ship'], arsenal: '法国外籍军团 · 谢尔曼坦克群 · 航母阿罗芒什号', note: '在印度支那与越盟激战，构筑西方东南亚防线。' },
+      // ══ 五常：美国 & 第7舰队 & 全球基地网（蓝）══
+      { id: 'gd-kw-tokyo', nation: '美国', name: '美远东司令部（FECOM · 东京总部）', short: '美·远东司令部', commander: '麦克阿瑟 / 李奇微', strength: 85000, lon: 139.69, lat: 35.69, city: '东京/横滨', bloc: 'blue', side: 'roc', icon: '★', kind: '战区最高司令部与航空联队', models: ['soldier_usa', 'f86', 'm26'], arsenal: 'F-86佩刀联队 · 第16军预备师 · 远东后勤司令部', note: '联合国军总指挥部，统筹日本列岛全部美军陆海空基地与铁路补给。' },
+      { id: 'gd-kw-7thfleet', nation: '美国', name: '美国海军第7舰队（TF77 航母战列舰编队）', short: '美·第7舰队(TF77)', commander: '斯特鲁布尔 / 克拉克', strength: 78000, lon: 130.60, lat: 32.30, city: '佐世保/横须贺军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '埃塞克斯级航母编队 + 战列舰群 + 舰载机', models: ['carrier', 'battleship', 'f86'], arsenal: '埃塞克斯级航母×6 · 衣阿华级战列舰×2（密苏里/新泽西号） · 巡洋舰×8 · 驱逐舰×48 · 舰载机500架', note: '掌控黄海、日本海与台湾海峡制海权，承担仁川登陆、舰载空袭与406mm巨炮支援。' },
+      { id: 'gd-kw-okinawa', nation: '美国', name: '美远东空军 B-29 战略轰炸机群（嘉手纳）', short: '美·冲绳嘉手纳B-29', commander: '斯特拉特迈耶', strength: 52000, lon: 127.77, lat: 26.35, city: '冲绳嘉手纳基地', bloc: 'blue', side: 'roc', icon: '✈', kind: 'B-29战略轰炸与F-86联队', models: ['b29', 'f86', 'soldier_usa'], arsenal: 'B-29超级空中堡垒×120 · F-80/F-86×180', note: '从冲绳嘉手纳基地起飞，对朝鲜北部铁路、电站与桥梁实施战略轰炸。' },
+      { id: 'gd-kw-taipei', nation: '美国/中国台湾', name: '美第7舰队台海巡弋编队 & 国民党驻台部队', short: '美第7舰队/驻台军', commander: '蒋介石 / 孙立人', strength: 450000, lon: 121.56, lat: 25.03, city: '台北/基隆/左营港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '海峡巡弋航母编队与岛屿守军', models: ['carrier', 'ship', 'f86'], arsenal: '美第7舰队台湾海峡分遣舰队 · 国民党陆军60万与F-51机群', note: '1950年6月美第7舰队开入台湾海峡，牵制华东解放军兵力。' },
+      { id: 'gd-kw-guam', nation: '美国', name: '美太平洋海空战略中转基地（关岛安德森）', short: '美·关岛战略基地', commander: '太平洋司令部', strength: 42000, lon: 144.79, lat: 13.44, city: '关岛阿普拉港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '战略轰炸与海军补给枢纽', models: ['battleship', 'b29'], arsenal: 'B-29战略轰炸机中队 · 太平洋后勤补给舰群', note: '西太平洋第二岛链核心枢纽，保障跨洋兵力与弹药转运。' },
+      { id: 'gd-kw-pearl', nation: '美国', name: '美太平洋舰队司令部（CINCPAC · 珍珠港）', short: '美·珍珠港太平洋舰队', commander: '雷德福', strength: 125000, lon: -157.86, lat: 21.31, city: '珍珠港/希卡姆基地', bloc: 'blue', side: 'roc', icon: '⚓', kind: '大型航母舰队与陆战后备', models: ['carrier', 'battleship', 'f86'], arsenal: '重型航母×4 · 战列舰×2 · 潜艇舰队 · 陆战预备团', note: '统筹太平洋全域海运护航、舰队轮换与陆战队增援。' },
+      { id: 'gd-kw-bremerton', nation: '美国', name: '美军西北太平洋军港与阿拉斯加防空', short: '美·布雷默顿/西雅图港', commander: '第13海军区', strength: 72000, lon: -122.63, lat: 47.56, city: '布雷默顿/西雅图港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '航母船厂与北太平洋护航', models: ['battleship', 'ship', 'b29'], arsenal: '普吉特湾海军船厂 · 阿拉斯加北极防空联队', note: '承担太平洋航母与战列舰大修及北太平洋补给线护航。' },
+      { id: 'gd-kw-sf', nation: '美国', name: '美军西海岸战略投送港与彭德尔顿陆战队', short: '美·旧金山/圣迭戈港', commander: '第6集团军', strength: 185000, lon: -117.38, lat: 33.30, city: '圣迭戈/彭德尔顿/旧金山', bloc: 'blue', side: 'roc', icon: '⚓', kind: '跨洋航母投送港与陆战队师', models: ['carrier', 'm26', 'soldier_usa'], arsenal: '登陆运输船队×120 · 陆战预备师 · M26/M46坦克群', note: '美军赴朝兵力、坦克与海量范佛里特弹药的主要装船母港。' },
+      { id: 'gd-kw-hood', nation: '美国', name: '美军胡德堡装甲基地（得州预备集群）', short: '美·胡德堡装甲基地', commander: '第4集团军', strength: 95000, lon: -97.78, lat: 31.14, city: '胡德堡/休斯敦港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '重装甲预备师与燃油枢纽', models: ['m26', 'sherman', 'soldier_usa'], arsenal: '第1/第2装甲师预备群 · 休斯敦战略燃油装船港', note: '美军本土核心装甲训练与重装备铁路集结基地。' },
+      { id: 'gd-kw-bragg', nation: '美国', name: '美军布拉格堡空降集群（第82/101空降师）', short: '美·布拉格堡空降军', commander: '第18空降军', strength: 88000, lon: -79.00, lat: 35.14, city: '布拉格堡(北卡)', bloc: 'blue', side: 'roc', icon: '✈', kind: '战略空降快速反应部队', models: ['soldier_usa', 'b29'], arsenal: '第82空降师 · 第11空降师 · 战术运输机群', note: '美军全球机动战略总预备队，可随时空运支援欧洲或远东。' },
+      { id: 'gd-kw-dc', nation: '美国', name: '美军大西洋舰队与华盛顿/诺福克总基地', short: '美·诺福克大西洋舰队', commander: '布莱德雷', strength: 350000, lon: -76.29, lat: 36.85, city: '华盛顿/诺福克军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '大西洋大型航母舰队与本土总部', models: ['carrier', 'battleship', 'f86'], arsenal: '中途岛级/埃塞克斯级航母×5 · 战列舰×2 · 核威慑空军', note: '美军参谋长联席会议统筹全球防务与大西洋海运线。' },
+      { id: 'gd-kw-frankfurt', nation: '美国', name: '美军驻德第7集团军（法兰克福）', short: '美·驻德第7集团军', commander: '艾森豪威尔', strength: 220000, lon: 8.68, lat: 50.11, city: '法兰克福(西德)', bloc: 'blue', side: 'roc', icon: '⛨', kind: '驻欧美军重装甲与步兵军', models: ['m26', 'soldier_usa', 'f86'], arsenal: '美第5军/第7军 · M46巴顿坦克群 · 驻德战术空军', note: '美军全球第一战略重心，正面抵御苏军驻德集群。' },
+      // ══ 邻国：日本（发达城市与铁路沿线防务）══
+      { id: 'gd-kw-japan', nation: '日本', name: '日本警察预备队（保安队）与海上警备队', short: '日·警察预备队(4管区)', commander: '林敬三', strength: 75000, lon: 135.50, lat: 34.69, city: '大阪/舞鹤/札幌', bloc: 'blue', side: 'roc', icon: '⛨', kind: '美械治安步兵与扫雷艇队', models: ['soldier_japan', 'sherman', 'ship'], arsenal: '4个管区队（7.5万人） · 美援M24/M4坦克 · 扫雷艇队', note: '朝鲜战争爆发后组建，接替美第8集团军守备日本东海道/东北本线与北海道，并派扫雷艇赴元山扫雷。' },
+      // ══ 五常：英国（本土/莱茵/地中海/远东四大部署）══
+      { id: 'gd-kw-london', nation: '英国', name: '英国皇家海军本土舰队与英联邦陆军', short: '英·皇家海军本土舰队', commander: '斯利姆', strength: 160000, lon: -0.13, lat: 51.51, city: '伦敦/朴茨茅斯港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '皇家海军航母编队与皇家空军', models: ['carrier', 'battleship', 'spitfire'], arsenal: '光辉级/巨像级航母×4 · 战列舰 · 皇家空军与本土军', note: '向朝鲜派遣英联邦第1师（装备百夫长重坦）及轻型航母编队。' },
+      { id: 'gd-kw-baor', nation: '英国', name: '英国莱茵陆军（BAOR · 西德汉诺威）', short: '英·莱茵陆军(BAOR)', commander: '哈丁', strength: 95000, lon: 9.73, lat: 52.37, city: '汉诺威/鲁尔', bloc: 'blue', side: 'roc', icon: '⛨', kind: '百夫长重装甲师与驻德英军', models: ['churchill', 'soldier_uk'], arsenal: '百夫长Mk.3重型坦克师 · 皇家炮兵团', note: '北约北方集群核心，与驻德美军共同驻守北德平原。' },
+      { id: 'gd-kw-med', nation: '英国', name: '英国地中海舰队（马耳他/苏伊士）', short: '英·地中海舰队', commander: '蒙巴顿', strength: 75000, lon: 14.51, lat: 35.90, city: '瓦莱塔/亚历山大港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '地中海航母战舰编队与运河驻军', models: ['carrier', 'ship', 'spitfire'], arsenal: '地中海舰队航母编队 · 苏伊士运河区陆军驻军', note: '守护直布罗陀—马耳他—苏伊士至远东的生命航线。' },
+      { id: 'gd-kw-singapore', nation: '英国', name: '英国皇家海军远东舰队（新加坡/香港）', short: '英·远东舰队/新加坡', commander: '坦普勒', strength: 88000, lon: 103.82, lat: 1.35, city: '新加坡/香港军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '远东航母编队与英联邦陆军', models: ['carrier', 'battleship', 'churchill'], arsenal: '凯旋号/忒修斯号/荣耀号轻型航母 · 巡洋舰×4 · 廓尔喀旅', note: '扼守马六甲海峡与南海航道，轮换赴朝鲜西海岸制海作战。' },
+      // ══ 五常：法国（本土/印支）══
+      { id: 'gd-kw-paris', nation: '法国', name: '法国本土陆军与土伦地中海舰队', short: '法·巴黎/土伦舰队', commander: '瑞安', strength: 165000, lon: 2.35, lat: 48.86, city: '巴黎/土伦港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '法军装甲师与地中海舰队', models: ['charb1', 'soldier_france', 'ship'], arsenal: '法军机械化师×8 · 黎塞留号战列舰编队 · 赴朝法国营', note: '北约西欧防务柱石，并派法国独立志愿营赴朝参加砥平里战斗。' },
+      { id: 'gd-kw-saigon', nation: '法国', name: '法军远东远征军（印支战场）', short: '法·印支远征军', commander: '塔西尼', strength: 150000, lon: 106.66, lat: 10.78, city: '西贡/海防港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '外籍军团与阿罗芒什航母', models: ['soldier_france', 'sherman', 'ship'], arsenal: '法国外籍军团 · 谢尔曼坦克群 · 航母阿罗芒什号', note: '在印度支那与越盟激战，构筑西方东南亚防线。' },
       // ══ 其他重要邻国：印度 / 菲律宾 / 澳大利亚 ══
-      { id: 'gd-kw-delhi', nation: '印度', name: '印度陆军与孟买海军舰队', short: '印·本土陆海军', commander: '卡里亚帕', strength: 210000, lon: 77.21, lat: 28.61, city: '新德里/孟买港', bloc: 'amber', side: 'roc', icon: '★', kind: '南亚主力陆军与巡洋舰队', models: ['churchill', 'soldier_uk', 'ship'], arsenal: '装甲师与步兵师群 · 德里号巡洋舰 · 战地救护队', note: '在朝鲜战争中保持中立调停立场，并派遣第60野战救护队与中立国遣返委员会。' },
+      { id: 'gd-kw-delhi', nation: '印度', name: '印度陆军与孟买海军舰队', short: '印·本土陆海军', commander: '卡里亚帕', strength: 210000, lon: 77.21, lat: 28.61, city: '新德里/孟买港', bloc: 'amber', side: 'roc', icon: '★', kind: '南亚主力陆军与巡洋舰队', models: ['churchill', 'soldier_uk', 'ship'], arsenal: '装甲师与步兵师群 · 德里号巡洋舰 · 战地救护队', note: '在朝鲜战争中保持中立调停立场，并派第60野战救护队与中立国遣返委员会。' },
       { id: 'gd-kw-manila', nation: '美国/菲律宾', name: '美军苏比克湾/克拉克海空基地', short: '美菲·苏比克基地', commander: '西太平洋海军', strength: 65000, lon: 120.98, lat: 14.60, city: '马尼拉/苏比克港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '海军修理港与重型航空基地', models: ['ship', 'b29', 'soldier_usa'], arsenal: '第7舰队前进维修母港 · 菲律宾远征营（PEFTOK）', note: '南海核心海空基地，菲律宾亦派战斗营加入联合国军。' },
-      { id: 'gd-kw-sydney', nation: '澳大利亚', name: '澳新联军西南太平洋后备队', short: '澳新·悉尼舰队', commander: '罗伯逊', strength: 48000, lon: 151.21, lat: -33.87, city: '悉尼港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '轻型航母悉尼号与步兵旅', models: ['carrier', 'soldier_uk'], arsenal: '悉尼号航空母舰 · 皇家澳军第3营 · 第77战斗机中队', note: '派遣航母、驱逐舰与步兵营加入英联邦师赴朝作战。' },
+      { id: 'gd-kw-sydney', nation: '澳大利亚', name: '澳新联军西南太平洋航母编队与后备队', short: '澳新·悉尼航母编队', commander: '罗伯逊', strength: 48000, lon: 151.21, lat: -33.87, city: '悉尼港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '悉尼号轻型航母与步兵旅', models: ['carrier', 'ship', 'spitfire'], arsenal: '悉尼号航空母舰 · 皇家澳军第3营 · 第77战斗机中队', note: '派遣航母、驱逐舰与步兵营加入英联邦师赴朝作战。' },
     ];
 
     const GLOBAL_DEPLOYMENTS_CIVIL = [
-      // ══ 五常：苏联（红）══
+      // ══ 五常：苏联（红 · 欧亚全域部署）══
       { id: 'gd-cw-moscow', nation: '苏联', name: '苏军莫斯科战略预备集群', short: '苏·莫斯科预备', commander: '华西列夫斯基', strength: 220000, lon: 37.62, lat: 55.75, city: '莫斯科', bloc: 'red', side: 'ccp', icon: '★', kind: '近卫坦克与喀秋莎集群', models: ['t34', 'katyusha', 'soldier_ussr'], arsenal: 'T-34/85 ×800 · 喀秋莎火箭炮 ×220 · 近卫步兵师', note: '战后苏联最高统帅部中枢与战略总预备队。' },
+      { id: 'gd-cw-leningrad', nation: '苏联', name: '苏军列宁格勒军区与波罗的海舰队', short: '苏·波罗的海舰队', commander: '戈沃罗夫', strength: 160000, lon: 30.31, lat: 59.93, city: '列宁格勒港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '波罗的海舰队与北方集群', models: ['battleship', 'ship', 'il2'], arsenal: '波罗的海舰队主力 · 伊尔强击机师 · 机械化师', note: '扼守芬兰湾与波罗的海航道。' },
+      { id: 'gd-cw-kiev', nation: '苏联', name: '苏军乌克兰军区与黑海舰队', short: '苏·黑海舰队', commander: '格列奇科', strength: 185000, lon: 33.52, lat: 44.61, city: '塞瓦斯托波尔/敖德萨', bloc: 'red', side: 'ccp', icon: '⚓', kind: '黑海舰队与南方装甲群', models: ['battleship', 'ship', 't34'], arsenal: '黑海舰队主力 · T-34/85近卫坦克师', note: '监控黑海海峡与巴尔干方向。' },
       { id: 'gd-cw-berlin', nation: '苏联', name: '苏军驻德占领军集群', short: '苏·驻德占领军', commander: '索科洛夫斯基', strength: 400000, lon: 13.40, lat: 52.52, city: '柏林', bloc: 'red', side: 'ccp', icon: '⛨', kind: '重装甲机械化集团军', models: ['t34', 'soldier_ussr', 'il2'], arsenal: 'T-34/85与IS-2 ×2800 · 伊尔强击机与雅克战机群', note: '控制东德与中欧要冲，柏林危机期间与西方盟军正面峙立。' },
-      { id: 'gd-cw-vladivostok', nation: '苏联', name: '苏军远东军区与太平洋舰队', short: '苏·远东/太平洋舰队', commander: '马利诺夫斯基', strength: 280000, lon: 131.89, lat: 43.12, city: '海参崴军港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '远东集团军与太平洋舰队', models: ['battleship', 'ship', 't34'], arsenal: '太平洋舰队主力 · T-34/85机械化军 · 远东航空军', note: '曾出兵东北击溃关东军，战后扼守东北亚北翼并提供通道与物资支持。' },
+      { id: 'gd-cw-ural', nation: '苏联', name: '苏军乌拉尔/西伯利亚战略预备军区', short: '苏·西伯利亚预备', commander: '朱可夫', strength: 170000, lon: 61.40, lat: 55.16, city: '车里雅宾斯克/新西伯利亚', bloc: 'red', side: 'ccp', icon: '★', kind: '重装甲预备与铁路纵深', models: ['t34', 'katyusha'], arsenal: '乌拉尔兵工基地 · 西伯利亚大铁路机动兵团', note: '苏联战后工业腹地与远东物资转运后盾。' },
+      { id: 'gd-cw-chita', nation: '苏联', name: '苏军后贝加尔军区（赤塔/伯力）', short: '苏·后贝加尔军区', commander: '马利诺夫斯基', strength: 150000, lon: 113.50, lat: 52.03, city: '赤塔/伯力', bloc: 'red', side: 'ccp', icon: '★', kind: '远东铁路机械化集团军', models: ['soldier_ussr', 't34'], arsenal: 'T-34机械化军 · 满洲里—赤塔铁路通道', note: '紧邻东北解放区北翼，保障铁路后勤交通。' },
+      { id: 'gd-cw-vladivostok', nation: '苏联', name: '苏军远东军区与太平洋舰队', short: '苏·远东/太平洋舰队', commander: '华西列夫斯基', strength: 280000, lon: 131.89, lat: 43.12, city: '海参崴军港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '远东集团军与太平洋舰队', models: ['battleship', 'ship', 't34'], arsenal: '太平洋舰队主力 · T-34/85机械化军 · 远东航空军', note: '曾出兵东北击溃关东军，战后扼守东北亚北翼并提供通道与物资支持。' },
       { id: 'gd-cw-lushun', nation: '苏联', name: '苏军旅顺海军要塞驻军', short: '苏·旅顺海军要塞', commander: '第39集团军', strength: 55000, lon: 121.25, lat: 38.80, city: '旅顺/大连港', bloc: 'red', side: 'ccp', icon: '⚓', kind: '海军要塞与步兵师', models: ['ship', 'soldier_ussr', 'artillery'], arsenal: '旅顺海军支队 · 海岸要塞炮台 · 第39集团军', note: '依中苏协定驻守旅大地区，客观上形成辽东半岛海上屏障。' },
       // ══ 邻国：蒙古 & 朝鲜（红/蓝南北对峙）══
       { id: 'gd-cw-ulaanbaatar', nation: '蒙古', name: '苏蒙联军外蒙古防卫集群', short: '蒙·苏蒙联军', commander: '乔巴山', strength: 60000, lon: 106.91, lat: 47.92, city: '乌兰巴托', bloc: 'red', side: 'ccp', icon: '★', kind: '骑兵机械化师', models: ['soldier_ussr', 't34'], arsenal: '苏蒙机械化旅 · T-34坦克营', note: '稳固蒙古高原与漠北铁路、公路交通线。' },
       { id: 'gd-cw-pyongyang', nation: '朝鲜/苏联', name: '苏军驻北朝鲜第25集团军 & 朝鲜人民军', short: '朝苏·平壤/北朝鲜', commander: '奇斯佳科夫 / 金日成', strength: 130000, lon: 125.76, lat: 39.03, city: '平壤/元山港', bloc: 'red', side: 'ccp', icon: '★', kind: '驻朝苏军与朝鲜人民军', models: ['soldier_kpa', 't34', 'il2'], arsenal: '第25集团军 · 人民军主力师 · T-34/85装甲团', note: '掩护东北解放区东侧后方，并协助东北野战军伤员转运与物资过境。' },
       { id: 'gd-cw-seoul', nation: '韩国/美国', name: '美军驻南朝鲜第24军 & 韩国防警备队', short: '美韩·汉城/仁川港', commander: '霍奇 / 蔡秉德', strength: 75000, lon: 126.98, lat: 37.57, city: '汉城/仁川港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '美第24军与韩警备队', models: ['soldier_usa', 'sherman', 'ship'], arsenal: '美第6/第7步兵师 · 谢尔曼坦克营 · 仁川港务舰艇', note: '驻守三八线以南，监控黄海与东北亚海上动向。' },
-      // ══ 五常：美国 & 第7舰队 & 日本占领军（蓝）══
-      { id: 'gd-cw-tokyo', nation: '美国/日本', name: '美军驻日占领军（SCAP · 第8集团军）', short: '美·驻日第8集团军', commander: '麦克阿瑟 / 艾克尔伯格', strength: 150000, lon: 139.69, lat: 35.69, city: '东京', bloc: 'blue', side: 'roc', icon: '★', kind: '占领军与日本警察/扫雷队', models: ['soldier_usa', 'sherman', 'soldier_japan'], arsenal: '美第8集团军（4个师） · 远东空军 · 日本战后海上扫雷队', note: '盟军最高司令官总司令部（SCAP）驻地，管控日本列岛与西太平洋基地网。' },
-      { id: 'gd-cw-7thfleet', nation: '美国', name: '美国海军第7舰队（西太平洋巡弋舰队）', short: '美·第7舰队(青岛/横须贺)', commander: '库克 / 巴杰', strength: 68000, lon: 130.60, lat: 32.80, city: '横须贺/佐世保/青岛外海', bloc: 'blue', side: 'roc', icon: '⚓', kind: '航母战列舰与登陆舰群', models: ['carrier', 'battleship', 'ship'], arsenal: '埃塞克斯级航母×3 · 战列舰/重巡洋舰群 · 登陆舰队（曾运送国军北上东北/华北）', note: '1945–1949年驻泊青岛与横须贺，协助国民党海运主力并控制西太平洋制海权。' },
-      { id: 'gd-cw-okinawa', nation: '美国', name: '美军琉球海空战略基地（嘉手纳）', short: '美·冲绳B-29基地', commander: '远东空军', strength: 60000, lon: 127.68, lat: 26.21, city: '冲绳那霸', bloc: 'blue', side: 'roc', icon: '✈', kind: 'B-29轰炸机与海运中转', models: ['b29', 'p40', 'soldier_usa'], arsenal: 'B-29超级空中堡垒联队 · 战略运输机群', note: '距中国东海沿岸仅数百公里，负责对国民党军空运与海运补给。' },
+      // ══ 五常：美国 & 第7舰队 & 日本占领军 & 本土基地（蓝）══
+      { id: 'gd-cw-tokyo', nation: '美国/日本', name: '美军驻日占领军（SCAP · 第8集团军）', short: '美·驻日第8集团军', commander: '麦克阿瑟 / 艾克尔伯格', strength: 150000, lon: 139.69, lat: 35.69, city: '东京/大阪', bloc: 'blue', side: 'roc', icon: '★', kind: '占领军与日本战后海上保安队', models: ['soldier_usa', 'sherman', 'soldier_japan'], arsenal: '美第8集团军（4个师） · 远东空军 · 日本战后扫雷队', note: '盟军最高司令官总司令部（SCAP）驻地，管控日本列岛铁路与四大军港。' },
+      { id: 'gd-cw-7thfleet', nation: '美国', name: '美国海军第7舰队（航母战列舰巡弋编队）', short: '美·第7舰队(青岛/横须贺)', commander: '库克 / 巴杰', strength: 68000, lon: 130.60, lat: 32.30, city: '横须贺/佐世保/青岛外海', bloc: 'blue', side: 'roc', icon: '⚓', kind: '埃塞克斯级航母编队 + 战列舰群 + 登陆舰队', models: ['carrier', 'battleship', 'p40'], arsenal: '埃塞克斯级航母×3 · 战列舰/重巡洋舰群 · 两栖登陆舰队（曾运送国军北上东北/华北）', note: '1945–1949年驻泊青岛与横须贺，协助国民党海运主力并控制西太平洋制海权。' },
+      { id: 'gd-cw-okinawa', nation: '美国', name: '美军琉球海空战略基地（嘉手纳）', short: '美·冲绳嘉手纳B-29', commander: '远东空军', strength: 60000, lon: 127.77, lat: 26.35, city: '冲绳嘉手纳基地', bloc: 'blue', side: 'roc', icon: '✈', kind: 'B-29轰炸机与海运中转', models: ['b29', 'p40', 'soldier_usa'], arsenal: 'B-29超级空中堡垒联队 · 战略运输机群', note: '距中国东海沿岸仅数百公里，负责对国民党军空运与海运补给。' },
       { id: 'gd-cw-manila', nation: '美国/菲律宾', name: '美军菲律宾克拉克/苏比克海空基地', short: '美·菲律宾苏比克基地', commander: '西太平洋海军', strength: 80000, lon: 120.98, lat: 14.60, city: '马尼拉/苏比克港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '海空联队与剩余军火库', models: ['ship', 'b29', 'soldier_usa'], arsenal: '美军二战剩余军火总库 · 苏比克海军基地', note: '大量太平洋战争美军剩余军火由此海运援助国民党军。' },
       { id: 'gd-cw-guam', nation: '美国', name: '美军关岛西太平洋海军枢纽', short: '美·关岛基地', commander: '太平洋舰队', strength: 45000, lon: 144.79, lat: 13.44, city: '关岛港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '海军补给与战略航空基地', models: ['battleship', 'b29'], arsenal: '阿普拉海军基地 · 战略轰炸机中队', note: '连接珍珠港与冲绳、上海、青岛的跨洋运输中继站。' },
-      { id: 'gd-cw-pearl', nation: '美国', name: '美海军太平洋舰队司令部', short: '美·珍珠港太平洋舰队', commander: '尼米兹 / 登菲尔德', strength: 140000, lon: -157.86, lat: 21.31, city: '珍珠港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '航母舰队与两栖登陆舰群', models: ['carrier', 'battleship'], arsenal: '埃塞克斯级航母×5 · 衣阿华级战列舰×2 · 两栖登陆舰队', note: '掌控整个太平洋航线，调派登陆舰协助国民党军跨海机动。' },
-      { id: 'gd-cw-sf', nation: '美国', name: '美军西海岸军港与美援装运港', short: '美·旧金山/圣迭戈港', commander: '第6集团军', strength: 160000, lon: -122.42, lat: 37.77, city: '旧金山/圣迭戈军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '海军基地与援华运输港', models: ['carrier', 'sherman', 'soldier_usa'], arsenal: '太平洋后备舰队 · 援华军械与燃油运输船队', note: '美援武器、舰艇、燃油与工业物资发往上海、青岛的主港口。' },
-      { id: 'gd-cw-dc', nation: '美国', name: '美军本土战略预备队与大西洋舰队', short: '美·华盛顿/诺福克舰队', commander: '艾森豪威尔 / 马歇尔', strength: 400000, lon: -77.04, lat: 38.90, city: '华盛顿/诺福克军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '本土总预备队与大西洋舰队', models: ['carrier', 'battleship', 'soldier_usa'], arsenal: '大西洋舰队主力 · 陆军总预备队 · 战略空军司令部', note: '马歇尔调停与美国全球战略决策中枢，战略重心置于欧洲。' },
-      // ══ 五常：英国（蓝）══
-      { id: 'gd-cw-london', nation: '英国', name: '英国皇家海军本土舰队与英军', short: '英·皇家海军/伦敦', commander: '蒙哥马利', strength: 180000, lon: -0.13, lat: 51.51, city: '伦敦/朴茨茅斯港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '皇家海军与喷火空军', models: ['carrier', 'battleship', 'spitfire'], arsenal: '皇家海军主力航母/战列舰 · 喷火战斗机联队', note: '维系大英帝国经苏伊士至香港、新加坡的海上交通线。' },
-      { id: 'gd-cw-singapore', nation: '英国', name: '英军远东司令部与香港驻军', short: '英·新加坡/香港舰队', commander: '远东司令部', strength: 95000, lon: 103.82, lat: 1.35, city: '新加坡军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '远东舰队与丘吉尔装甲旅', models: ['battleship', 'churchill', 'soldier_uk'], arsenal: '紫石英号等远东巡防舰队 · 廓尔喀与英军步兵旅', note: '扼守马六甲海峡与南海航道，并驻防香港与长江口外海。' },
-      // ══ 五常：法国（蓝）══
-      { id: 'gd-cw-paris', nation: '法国', name: '法国本土陆军与西欧盟军占领集群', short: '法·巴黎/西欧盟军', commander: '塔西尼 / 克莱', strength: 240000, lon: 2.35, lat: 48.86, city: '巴黎/土伦港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '法军装甲师与地中海舰队', models: ['charb1', 'soldier_france', 'ship'], arsenal: '法军装甲与步兵师 · 黎塞留号战列舰编队', note: '冷战初起时在西欧与苏联红军形成战略均势。' },
+      { id: 'gd-cw-pearl', nation: '美国', name: '美海军太平洋舰队司令部（珍珠港）', short: '美·珍珠港太平洋舰队', commander: '尼米兹 / 登菲尔德', strength: 140000, lon: -157.86, lat: 21.31, city: '珍珠港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '大型航母舰队与登陆舰群', models: ['carrier', 'battleship', 'p40'], arsenal: '埃塞克斯级航母×5 · 衣阿华级战列舰×2 · 两栖登陆舰队', note: '掌控整个太平洋航线，调派登陆舰协助国民党军跨海机动。' },
+      { id: 'gd-cw-bremerton', nation: '美国', name: '美军西雅图/布雷默顿军港', short: '美·布雷默顿军港', commander: '第13海军区', strength: 65000, lon: -122.63, lat: 47.56, city: '布雷默顿/西雅图', bloc: 'blue', side: 'roc', icon: '⚓', kind: '太平洋航母修造船厂', models: ['battleship', 'ship'], arsenal: '普吉特湾海军船厂 · 阿拉斯加北线护航队', note: '美国太平洋舰队主力战舰维修与北太平洋补给母港。' },
+      { id: 'gd-cw-sf', nation: '美国', name: '美军西海岸军港与彭德尔顿陆战队', short: '美·旧金山/圣迭戈港', commander: '第6集团军', strength: 160000, lon: -117.38, lat: 33.30, city: '圣迭戈/彭德尔顿/旧金山', bloc: 'blue', side: 'roc', icon: '⚓', kind: '航母基地与援华运输港', models: ['carrier', 'sherman', 'soldier_usa'], arsenal: '太平洋后备舰队 · 援华军械与燃油运输船队', note: '美援武器、舰艇、燃油与工业物资发往上海、青岛的主港口。' },
+      { id: 'gd-cw-hood', nation: '美国', name: '美军胡德堡装甲预备基地（得州）', short: '美·胡德堡装甲基地', commander: '第4集团军', strength: 90000, lon: -97.78, lat: 31.14, city: '胡德堡/休斯敦港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '本土装甲师与燃油枢纽', models: ['sherman', 'soldier_usa'], arsenal: '第2装甲师 · 休斯敦油港', note: '美国南部军事集结与战略燃油装运中心。' },
+      { id: 'gd-cw-bragg', nation: '美国', name: '美军布拉格堡空降总预备队', short: '美·布拉格堡空降军', commander: '第82空降师', strength: 80000, lon: -79.00, lat: 35.14, city: '布拉格堡(北卡)', bloc: 'blue', side: 'roc', icon: '✈', kind: '本土战略空降机动集群', models: ['soldier_usa', 'b29'], arsenal: '第82空降师 · 战略运输航空联队', note: '美军战后本土最快反应机动力量。' },
+      { id: 'gd-cw-dc', nation: '美国', name: '美军本土战略预备队与大西洋舰队', short: '美·诺福克大西洋舰队', commander: '艾森豪威尔 / 马歇尔', strength: 400000, lon: -76.29, lat: 36.85, city: '华盛顿/诺福克军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '大西洋大型航母舰队与本土总部', models: ['carrier', 'battleship', 'p40'], arsenal: '大西洋舰队航母主力 · 陆军总预备队 · 战略空军', note: '马歇尔调停与美国全球战略决策中枢，战略重心置于欧洲。' },
+      { id: 'gd-cw-frankfurt', nation: '美国', name: '美军驻德占领军（法兰克福）', short: '美·驻德占领军', commander: '克莱', strength: 180000, lon: 8.68, lat: 50.11, city: '法兰克福(西德)', bloc: 'blue', side: 'roc', icon: '⛨', kind: '西德美占区主力与柏林空运', models: ['sherman', 'soldier_usa', 'b29'], arsenal: '驻德美军装甲骑兵团 · 柏林空运运输机群', note: '冷战欧洲前线主力，1948年执行柏林大空运。' },
+      // ══ 五常：英国（本土/莱茵/地中海/远东四大部署）══
+      { id: 'gd-cw-london', nation: '英国', name: '英国皇家海军本土舰队与英军', short: '英·皇家海军本土舰队', commander: '蒙哥马利', strength: 180000, lon: -0.13, lat: 51.51, city: '伦敦/朴茨茅斯港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '皇家海军航母编队与喷火空军', models: ['carrier', 'battleship', 'spitfire'], arsenal: '皇家海军主力航母/战列舰 · 喷火战斗机联队', note: '维系大英帝国经苏伊士至香港、新加坡的海上交通线。' },
+      { id: 'gd-cw-baor', nation: '英国', name: '英国莱茵占领军（BAOR · 西德）', short: '英·莱茵占领军', commander: '麦克里里', strength: 110000, lon: 9.73, lat: 52.37, city: '汉诺威/鲁尔', bloc: 'blue', side: 'roc', icon: '⛨', kind: '装甲师与驻德英军', models: ['churchill', 'soldier_uk'], arsenal: '英军第7装甲师 · 皇家炮兵与步兵师', note: '驻守西德英占区与鲁尔重工业带。' },
+      { id: 'gd-cw-med', nation: '英国', name: '英国地中海舰队（马耳他/苏伊士）', short: '英·地中海舰队', commander: '坎宁安', strength: 85000, lon: 14.51, lat: 35.90, city: '瓦莱塔/亚历山大港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '地中海航母战舰编队', models: ['carrier', 'ship', 'spitfire'], arsenal: '地中海舰队主力 · 苏伊士运河驻军', note: '控制地中海与红海咽喉要道。' },
+      { id: 'gd-cw-singapore', nation: '英国', name: '英军远东舰队与香港驻军', short: '英·新加坡/香港舰队', commander: '远东司令部', strength: 95000, lon: 103.82, lat: 1.35, city: '新加坡/香港军港', bloc: 'blue', side: 'roc', icon: '⚓', kind: '远东航母舰队与丘吉尔装甲旅', models: ['carrier', 'battleship', 'churchill'], arsenal: '远东舰队主力与紫石英号护卫舰 · 廓尔喀与英军旅', note: '扼守马六甲海峡与南海航道，并驻防香港与长江口外海。' },
+      // ══ 五常：法国（本土/印支）══
+      { id: 'gd-cw-paris', nation: '法国', name: '法国本土陆军与土伦地中海舰队', short: '法·巴黎/土伦舰队', commander: '塔西尼', strength: 195000, lon: 2.35, lat: 48.86, city: '巴黎/土伦港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '法军装甲师与地中海舰队', models: ['charb1', 'soldier_france', 'ship'], arsenal: '法军装甲与步兵师 · 黎塞留号战列舰编队', note: '冷战初起时在西欧与苏联红军形成战略均势。' },
       { id: 'gd-cw-saigon', nation: '法国', name: '法军印支远征军（西贡/海防）', short: '法·印支远征军', commander: '勒克莱尔 / 瓦吕', strength: 115000, lon: 106.66, lat: 10.78, city: '西贡/海防港', bloc: 'blue', side: 'roc', icon: '⛨', kind: '外籍军团与远东海军', models: ['soldier_france', 'sherman', 'ship'], arsenal: '法国外籍军团 · 谢尔曼装甲团 · 远东分遣舰队', note: '控制越南南部与海防港，紧邻中国两广与云南边境。' },
       // ══ 重要邻国：印度 & 澳大利亚 ══
       { id: 'gd-cw-delhi', nation: '印度', name: '南亚与印度洋防卫集群', short: '印·新德里/孟买舰队', commander: '奥金莱克', strength: 180000, lon: 77.21, lat: 28.61, city: '新德里/孟买港', bloc: 'amber', side: 'roc', icon: '★', kind: '南亚陆军与孟买海军', models: ['churchill', 'soldier_uk', 'ship'], arsenal: '南亚主力师群 · 孟买海军巡洋舰队', note: '印巴分治前后南亚次大陆主力部队与印度洋核心港口。' },
@@ -220,16 +244,29 @@
           globalThis.applyWorldCitiesExt(globalThis.WW2Data);
         }
         const ww2Cities = globalThis.WW2Data?.cities || [];
+        const ww2CityMap = new Map(ww2Cities.map((c) => [c.id, c]));
         const localCoords = (data.cities || []).map((c) => [c.lon, c.lat]);
+        const backdropIdSet = new Set();
         globalBackdropCities = ww2Cities.filter((wc) => {
           for (const [lon, lat] of localCoords) {
             if (Math.abs(wc.lon - lon) < 0.65 && Math.abs(wc.lat - lat) < 0.55) return false;
           }
+          backdropIdSet.add(wc.id);
           return true;
         });
+        // 同步接入二战同级完整全球铁路网与海运网（日本东海道/山阳/东北/九州铁路、美国东西贯通铁路、中国新干线、西伯利亚与欧洲铁路）
+        globalBackdropRoutes = [];
+        for (const [aId, bId, kind] of (globalThis.WW2Data?.routes || [])) {
+          if (!backdropIdSet.has(aId) && !backdropIdSet.has(bId)) continue;
+          const a = ww2CityMap.get(aId);
+          const b = ww2CityMap.get(bId);
+          if (!a || !b || Math.abs(a.lon - b.lon) > 160) continue;
+          globalBackdropRoutes.push({ a, b, kind });
+        }
         globalDeployments = data.theaterMode === 'korea' ? GLOBAL_DEPLOYMENTS_KOREA : GLOBAL_DEPLOYMENTS_CIVIL;
       } else {
         globalBackdropCities = [];
+        globalBackdropRoutes = [];
         globalDeployments = [];
       }
       // 二战全球 550+ 城按重要度与缩放清晰展示：战区视角即展示重要城市/省会/州府/要塞/根据地，放大后展示全部 550+ 节点
@@ -2259,11 +2296,32 @@
       if (data.theaterMode === 'ww2' || options.globalLayer === false) return;
       if (!globalBackdropCities.length && !globalDeployments.length) return;
 
-      // 1. 全球战略海运航线与洲际铁路干线（淡雅背景参考）
+      // 1. 全球完整铁路网（日本/美国/中国/苏联/欧洲干线）与全球战略海运航线
       brush.save();
-      brush.lineWidth = 1.1;
+      if (options.rail !== false && globalBackdropRoutes.length) {
+        brush.lineWidth = camera.zoom >= 14 ? 1.55 : 1.05;
+        brush.strokeStyle = 'rgba(72, 62, 46, 0.54)';
+        brush.beginPath();
+        for (const r of globalBackdropRoutes) {
+          if (r.kind !== 'rail') continue;
+          const [x1, y1] = project(r.a.lon, r.a.lat);
+          const [x2, y2] = project(r.b.lon, r.b.lat);
+          if ((x1 < -20 && x2 < -20) || (x1 > width + 20 && x2 > width + 20) || (y1 < -20 && y2 < -20) || (y1 > height + 20 && y2 > height + 20)) continue;
+          brush.moveTo(x1, y1);
+          brush.lineTo(x2, y2);
+        }
+        brush.stroke();
+        if (camera.zoom >= 12) {
+          brush.lineWidth = 0.85;
+          brush.setLineDash([4, 4]);
+          brush.strokeStyle = 'rgba(235, 224, 194, 0.52)';
+          brush.stroke();
+          brush.setLineDash([]);
+        }
+      }
+      brush.lineWidth = 1.05;
       brush.setLineDash([5, 5]);
-      brush.strokeStyle = 'rgba(130, 204, 232, 0.36)';
+      brush.strokeStyle = 'rgba(130, 204, 232, 0.34)';
       for (const seg of GLOBAL_SEA_CORRIDORS) {
         brush.beginPath();
         let started = false;
@@ -2280,36 +2338,26 @@
         }
         brush.stroke();
       }
-      brush.setLineDash([3, 3]);
-      brush.strokeStyle = 'rgba(92, 78, 56, 0.42)';
-      for (const seg of GLOBAL_RAIL_TRUNKS) {
-        brush.beginPath();
-        seg.forEach(([lon, lat], i) => {
-          const [px, py] = project(lon, lat);
-          if (i === 0) brush.moveTo(px, py);
-          else brush.lineTo(px, py);
-        });
-        brush.stroke();
-      }
       brush.setLineDash([]);
       brush.restore();
 
-      // 2. 全球重大城市与重要军港/商港（按缩放自适应分层显示，零重叠）
+      // 2. 全球重大城市、美国州府/军事基地、中国省会、日本发达城市与重要港口（按缩放自适应分层显示，零重叠）
       const labelBoxes = [];
-      const minVp = camera.zoom < 7 ? 10 : camera.zoom < 14 ? 8 : camera.zoom < 28 ? 6 : 0;
-      const minPortVp = camera.zoom < 7 ? 8 : camera.zoom < 14 ? 6 : 0;
-      const sortedCities = globalBackdropCities.slice().sort((a, b) => (Number(b.port) - Number(a.port)) || ((b.vp || 0) - (a.vp || 0)));
+      const minVp = camera.zoom < 6.5 ? 9 : camera.zoom < 12 ? 7 : camera.zoom < 22 ? 5 : 0;
+      const minPortVp = camera.zoom < 6.5 ? 8 : camera.zoom < 12 ? 6 : 0;
+      const sortedCities = globalBackdropCities.slice().sort((a, b) => (Number(b.terrain === 'fort') - Number(a.terrain === 'fort')) || (Number(b.port) - Number(a.port)) || ((b.vp || 0) - (a.vp || 0)));
       for (const city of sortedCities) {
         const vp = city.vp || 5;
-        if (city.port ? vp < minPortVp : vp < minVp) continue;
+        const isBase = city.terrain === 'fort';
+        if (!isBase && (city.port ? vp < minPortVp : vp < minVp)) continue;
         const [x, y] = project(city.lon, city.lat);
         if (x < -10 || x > width + 10 || y < -10 || y > height + 10) continue;
         const isCapital = vp >= 14;
-        const r = city.port ? 3.8 : isCapital ? 4.2 : 2.8;
+        const r = isBase ? 4.2 : city.port ? 3.8 : isCapital ? 4.2 : 2.8;
         brush.save();
         brush.beginPath();
         brush.arc(x, y, r, 0, Math.PI * 2);
-        brush.fillStyle = city.port ? '#2b86a8' : isCapital ? '#c28b32' : '#6b624c';
+        brush.fillStyle = isBase ? '#b85330' : city.port ? '#2b86a8' : isCapital ? '#c28b32' : '#6b624c';
         brush.fill();
         brush.lineWidth = 1.1;
         brush.strokeStyle = '#f2ead2';
@@ -2321,9 +2369,16 @@
           brush.lineWidth = 2.2;
           brush.strokeText('⚓', x - 11, y - 4);
           brush.fillText('⚓', x - 11, y - 4);
+        } else if (isBase) {
+          brush.font = '700 9.5px "Microsoft YaHei UI", sans-serif';
+          brush.fillStyle = '#ffd480';
+          brush.strokeStyle = '#1e1610e6';
+          brush.lineWidth = 2.2;
+          brush.strokeText('★', x - 10, y - 4);
+          brush.fillText('★', x - 10, y - 4);
         }
         const shortName = (city.name || '').split('(')[0].split('（')[0];
-        brush.font = (city.port || isCapital ? '600 10.5px' : '500 9.5px') + ' "Microsoft YaHei UI", sans-serif';
+        brush.font = (city.port || isCapital || isBase ? '600 10.5px' : '500 9.5px') + ' "Microsoft YaHei UI", sans-serif';
         brush.textBaseline = 'middle';
         const tw = brush.measureText(shortName).width;
         const lx = x + 6;
@@ -2334,45 +2389,124 @@
           brush.strokeStyle = '#eee4c6d8';
           brush.lineWidth = 2.4;
           brush.strokeText(shortName, lx, ly);
-          brush.fillStyle = city.port ? '#17485c' : '#2d352e';
+          brush.fillStyle = isBase ? '#6e2315' : city.port ? '#17485c' : '#2d352e';
           brush.fillText(shortName, lx, ly);
         }
         brush.restore();
         globalHitItems.push({ kind: 'city', item: city, left: x - 8, top: y - 8, width: 16 + tw, height: 16 });
       }
 
-      // 3. 全球战略布兵图（真实 3D 舰艇/航母/战机/坦克/各国单兵模型 + 战术标牌）
+      // 3. 全球战略布兵图（大航母在前 + 后方人字形护航战舰群 + 上空舰载机编队 / 陆空重装甲单兵，绝不穿模）
       const cardBoxes = [];
       const showGlobal3D = Boolean(options.models3d) && Boolean(humanRenderer);
       const now = performance.now();
-      const baseModelSize = clamp(camera.zoom * 3.8, 26, 44);
+      const baseModelSize = clamp(camera.zoom * 3.8, 28, 46);
       const airKinds = new Set(['b29', 'mig15', 'f86', 'spitfire', 'il2', 'zero', 'p40', 'jet', 'aircraft']);
       const shipKinds = new Set(['carrier', 'battleship', 'yamato', 'ship', 'uboat']);
 
       for (const dep of globalDeployments) {
         const [x, y] = project(dep.lon, dep.lat);
-        if (x < -50 || x > width + 50 || y < -35 || y > height + 35) continue;
+        if (x < -70 || x > width + 70 || y < -55 || y > height + 55) continue;
 
-        // 3a. 渲染真实 WebGL 3D 装备与各国单兵模型集群（航母/战列舰/战机/坦克/单兵）
         let modelRendered = false;
-        let modelTopY = y - 10;
-        if (showGlobal3D && Array.isArray(dep.models) && dep.models.length) {
+        let modelTopY = y - 12;
+        let modelBottomY = y + 6;
+        const isCarrierGroup = Array.isArray(dep.models) && dep.models.includes('carrier');
+
+        if (showGlobal3D && isCarrierGroup) {
+          // ── 航母打击群专享大型防穿模编队：旗舰大航母居前 + 后方人字形战列舰与护航驱逐舰群 + 上空双机舰载机编队 ──
+          const sideKey = dep.side || (dep.bloc === 'red' ? 'ccp' : 'roc');
+          const cvSize = Math.round(baseModelSize * 1.62);
+          const bbSize = Math.round(baseModelSize * 1.02);
+          const ddSize = Math.round(baseModelSize * 0.82);
+          const airSize = Math.round(baseModelSize * 0.88);
+          const airKind = dep.models.find((k) => airKinds.has(k)) || 'f86';
+          const escortHeavy = dep.models.includes('battleship') ? 'battleship' : 'ship';
+
+          // 后方护航战舰群（严格位于航母后方两侧与尾后，绝不与航母本体重叠穿模）
+          const escorts = [
+            { kind: escortHeavy, ex: x - cvSize * 0.62, ey: y + cvSize * 0.12, sz: bbSize },
+            { kind: 'ship', ex: x + cvSize * 0.62, ey: y + cvSize * 0.12, sz: ddSize },
+            { kind: 'ship', ex: x, ey: y + cvSize * 0.34, sz: ddSize },
+          ];
+          for (const esc of escorts) {
+            try {
+              const sp = humanRenderer.frame(sideKey, true, now, esc.kind, 'idle', '');
+              if (sp) {
+                brush.save();
+                brush.fillStyle = 'rgba(130, 224, 255, 0.22)';
+                brush.beginPath();
+                brush.ellipse(esc.ex, esc.ey + esc.sz * 0.28, esc.sz * 0.42, esc.sz * 0.11, 0, 0, Math.PI * 2);
+                brush.fill();
+                brush.restore();
+                brush.drawImage(sp, esc.ex - esc.sz / 2, esc.ey - esc.sz / 2, esc.sz, esc.sz);
+                modelRendered = true;
+              }
+            } catch {}
+          }
+
+          // 旗舰大型航空母舰（居前中心，带白色破浪尾迹 V 字波纹）
+          const cvY = y - cvSize * 0.16;
+          try {
+            const cvSp = humanRenderer.frame(sideKey, true, now, 'carrier', 'idle', '');
+            if (cvSp) {
+              brush.save();
+              brush.strokeStyle = 'rgba(218, 245, 255, 0.48)';
+              brush.lineWidth = 1.6;
+              brush.beginPath();
+              brush.moveTo(x, cvY - cvSize * 0.12);
+              brush.lineTo(x - cvSize * 0.48, cvY + cvSize * 0.36);
+              brush.moveTo(x, cvY - cvSize * 0.12);
+              brush.lineTo(x + cvSize * 0.48, cvY + cvSize * 0.36);
+              brush.stroke();
+              brush.fillStyle = 'rgba(140, 232, 255, 0.28)';
+              brush.beginPath();
+              brush.ellipse(x, cvY + cvSize * 0.24, cvSize * 0.50, cvSize * 0.13, 0, 0, Math.PI * 2);
+              brush.fill();
+              brush.restore();
+              brush.drawImage(cvSp, x - cvSize / 2, cvY - cvSize / 2, cvSize, cvSize);
+              modelRendered = true;
+            }
+          } catch {}
+
+          // 上空伴飞舰载机双机编队（高空巡航，独立间距零穿模）
+          const planes = [
+            { px: x - cvSize * 0.44, py: cvY - cvSize * 0.52 },
+            { px: x + cvSize * 0.44, py: cvY - cvSize * 0.44 },
+          ];
+          for (const pl of planes) {
+            try {
+              const pSp = humanRenderer.frame(sideKey, true, now, airKind, 'idle', '');
+              if (pSp) {
+                brush.save();
+                brush.fillStyle = 'rgba(10, 22, 32, 0.26)';
+                brush.beginPath();
+                brush.ellipse(pl.px + 4, pl.py + airSize * 0.42, airSize * 0.24, airSize * 0.08, 0, 0, Math.PI * 2);
+                brush.fill();
+                brush.restore();
+                brush.drawImage(pSp, pl.px - airSize / 2, pl.py - airSize / 2, airSize, airSize);
+              }
+            } catch {}
+          }
+
+          modelTopY = cvY - cvSize * 0.82;
+          modelBottomY = y + cvSize * 0.58;
+        } else if (showGlobal3D && Array.isArray(dep.models) && dep.models.length) {
           const modelsToDraw = camera.zoom < 6 ? dep.models.slice(0, 2) : dep.models.slice(0, 3);
-          const spacing = baseModelSize * 0.72;
+          const spacing = baseModelSize * 0.82;
           const startX = x - ((modelsToDraw.length - 1) * spacing) / 2;
           modelsToDraw.forEach((kind, idx) => {
             const mx = startX + idx * spacing;
             const isAir = airKinds.has(kind);
             const isShip = shipKinds.has(kind);
             const isSoldier = kind.startsWith('soldier_');
-            const mSize = isShip ? baseModelSize * 1.18 : isAir ? baseModelSize * 1.04 : baseModelSize * 0.94;
-            const my = y - (isAir ? 24 : isShip ? 12 : 14);
+            const mSize = isShip ? baseModelSize * 1.16 : isAir ? baseModelSize * 1.02 : baseModelSize * 0.94;
+            const my = y - (isAir ? 26 : isShip ? 12 : 14);
             modelTopY = Math.min(modelTopY, my - mSize * 0.5);
             try {
               const sprite = humanRenderer.frame(dep.side || (dep.bloc === 'red' ? 'ccp' : 'roc'), isAir || isShip, now, kind, 'idle', '');
               if (sprite) {
                 brush.save();
-                // 阴影 / 海面波纹光晕
                 brush.fillStyle = isShip ? 'rgba(130, 224, 255, 0.24)' : 'rgba(12, 18, 16, 0.34)';
                 brush.beginPath();
                 brush.ellipse(mx, my + mSize * (isAir ? 0.42 : 0.30), mSize * (isShip ? 0.46 : 0.28), mSize * 0.11, 0, 0, Math.PI * 2);
@@ -2397,10 +2531,10 @@
         const cw = Math.ceil(tw + 14);
         const ch = 18;
         const candidates = [
-          [x - cw / 2, y + 6],
+          [x - cw / 2, modelBottomY + 2],
           [x - cw / 2, modelTopY - ch - 4],
-          [x + 12, y - ch / 2],
-          [x - cw - 12, y - ch / 2],
+          [x + (isCarrierGroup ? baseModelSize * 1.15 : 14), y - ch / 2],
+          [x - cw - (isCarrierGroup ? baseModelSize * 1.15 : 14), y - ch / 2],
         ];
         const pos = candidates.find(([cx, cy]) => cx > 4 && cx + cw < width - 4 && cy > 4 && cy + ch < height - 4
           && !cardBoxes.some((b) => cx < b[0] + b[2] + 3 && cx + cw + 3 > b[0] && cy < b[1] + b[3] + 3 && cy + ch + 3 > b[1]));
@@ -2426,7 +2560,7 @@
         brush.restore();
         globalHitItems.push({ kind: 'deployment', item: dep, left: cx, top: cy, width: cw, height: ch });
         if (modelRendered) {
-          globalHitItems.push({ kind: 'deployment', item: dep, left: x - baseModelSize, top: modelTopY, width: baseModelSize * 2, height: y - modelTopY + 8 });
+          globalHitItems.push({ kind: 'deployment', item: dep, left: x - baseModelSize * 1.2, top: modelTopY, width: baseModelSize * 2.4, height: modelBottomY - modelTopY + 8 });
         }
       }
     }
@@ -2827,7 +2961,9 @@
       globalSummary: () => ({
         cities: globalBackdropCities.length,
         ports: globalBackdropCities.filter((c) => c.port).length,
+        rails: globalBackdropRoutes.filter((r) => r.kind === 'rail').length,
         deployments: globalDeployments.length,
+        carrierGroups: globalDeployments.filter((d) => d.models?.includes('carrier')).length,
         models3dTotal: globalDeployments.reduce((sum, d) => sum + (d.models?.length || 0), 0),
         nations: [...new Set(globalDeployments.map((d) => d.nation).filter(Boolean))],
       }),
