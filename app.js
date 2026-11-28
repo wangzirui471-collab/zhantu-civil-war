@@ -443,6 +443,8 @@
     });
   }
 
+  let selfProclaimed = false;
+
   function renderHeader() {
     $('player-name').textContent = sides[state.player];
     $('player-dot').className = 'dot ' + state.player;
@@ -451,6 +453,8 @@
       flagEl.className = 'hoi-flag-badge ' + state.player;
       flagEl.textContent = state.player === 'ccp' ? '★' : '☀';
     }
+    const selfBanner = $('self-banner');
+    if (selfBanner) selfBanner.hidden = !selfProclaimed;
     const group = groupsById.get(state.group);
     $('scope-label').textContent = group && state.scope === 'theater' ? group.name
       : state.scope === 'national' ? '全国指挥' : regions[area()] || '战区指挥';
@@ -3064,9 +3068,11 @@
     body.querySelectorAll('[data-control-side]').forEach((item) => {
       item.disabled = state.player === item.dataset.controlSide;
       item.onclick = () => {
+        selfProclaimed = false;
         action('setSide', [item.dataset.controlSide]);
         pendingOrder = undefined;
         selectedUnit = undefined;
+        selectedUnits = new Set();
         rosterSide = 'player';
         rosterGroup = '';
         rosterPage = 0;
@@ -3076,6 +3082,135 @@
         render();
       };
     });
+  }
+
+  function openDefectDialog() {
+    const curSide = state.player;
+    const otherSide = curSide === 'ccp' ? 'roc' : 'ccp';
+    const curScopeText = state.scope === 'national' ? '全国指挥' : (regions[area()] || area() || '地方战区');
+    const curGroupObj = state.group ? groupsById.get(state.group) : null;
+    const curGroupText = curGroupObj ? ('已锁定派系：' + curGroupObj.name) : '未锁定特定派系';
+
+    // 统计目标阵营中当前有存活在役 root 单位的派系，供方案 b 选用
+    const availableGroups = [];
+    const seenGroup = new Set();
+    for (const u of state.units || []) {
+      if (u.parent || u.inactive || !(u.strength > 0) || u.side !== otherSide || !u.group) continue;
+      if (seenGroup.has(u.group)) continue;
+      seenGroup.add(u.group);
+      const g = groupsById.get(u.group);
+      availableGroups.push({ id: u.group, name: g?.name || u.group });
+    }
+    const areaOptions = Object.entries(regions).filter(([k]) => k !== 'national');
+
+    let choice = 'join';
+    let pickedGroup = availableGroups[0]?.id || '';
+    let pickedArea = (state.area && regions[state.area] && state.area !== 'national') ? state.area : (areaOptions[0]?.[0] || 'northeast');
+
+    const consequenceText = '叛变不会移动任何部队与城镇。你的原部队将转为 AI 指挥，你本人接管对方阵营全部部队。若要真正带走部队与地盘，需要引擎支持，当前版本不支持。';
+
+    const showStep1 = () => {
+      const html = '<div id="defect-step1" style="display:grid;gap:10px;">'
+        + '<section class="hoi-cipher-box">'
+        + '<header><strong style="color:#f5e1b0;">1. 当前身份现状</strong></header>'
+        + '<p style="margin:5px 0 3px;font-size:12px;">当前阵营：<b>' + escape(sides[curSide]) + '</b> · 指挥范围：<b>' + escape(curScopeText) + '</b> · ' + escape(curGroupText) + '</p>'
+        + '<p class="subtext" style="margin:0;color:#ffe49c;">明确说明：当前可带走的是「指挥权限」，不是部队本身。</p>'
+        + '</section>'
+        + '<section class="hoi-cipher-box">'
+        + '<header><strong style="color:#f5e1b0;">2. 选择叛变 / 自立方案（单选）</strong></header>'
+        + '<div style="display:grid;gap:7px;margin-top:6px;font-size:12px;">'
+        + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">'
+        + '<input type="radio" name="defect-choice" value="join" ' + (choice === 'join' ? 'checked' : '') + '>'
+        + '<span><b>a. 投靠对方阵营</b>（转投 ' + escape(sides[otherSide]) + '，接管对方全国指挥权）</span></label>'
+        + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:' + (availableGroups.length ? 'pointer' : 'not-allowed') + ';opacity:' + (availableGroups.length ? '1' : '0.55') + ';">'
+        + '<input type="radio" name="defect-choice" value="group" ' + (choice === 'group' ? 'checked' : '') + (availableGroups.length ? '' : ' disabled') + '>'
+        + '<span><b>b. 只带一个派系自立</b>（转投 ' + escape(sides[otherSide]) + ' 并锁定单一派系指挥）'
+        + (availableGroups.length
+          ? '<br><select id="defect-group-sel" style="margin-top:4px;font-size:11.5px;">'
+            + availableGroups.map((g) => '<option value="' + escape(g.id) + '"' + (g.id === pickedGroup ? ' selected' : '') + '>' + escape(g.name) + '</option>').join('')
+            + '</select>'
+          : '<br><small class="subtext">对方阵营当前无可锁定的独立派系部队</small>')
+        + '</span></label>'
+        + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">'
+        + '<input type="radio" name="defect-choice" value="theater" ' + (choice === 'theater' ? 'checked' : '') + '>'
+        + '<span><b>c. 只守一个战区自立</b>（锁定单个战区并转投 ' + escape(sides[otherSide]) + '）'
+        + '<br><select id="defect-area-sel" style="margin-top:4px;font-size:11.5px;">'
+        + areaOptions.map(([k, v]) => '<option value="' + escape(k) + '"' + (k === pickedArea ? ' selected' : '') + '>' + escape(v) + '</option>').join('')
+        + '</select></span></label>'
+        + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;">'
+        + '<input type="radio" name="defect-choice" value="self" ' + (choice === 'self' ? 'checked' : '') + '>'
+        + '<span><b>d. 自立（名义自立 · 自成一派）</b>（锁定所选战区并转投 ' + escape(sides[otherSide]) + '，顶栏挂出「自成一派 · 不听调遣」）'
+        + '<br><small style="color:#ffbe85;">名义自立：不与任何一方停战，实际仍会被双方攻击。</small></span></label>'
+        + '</div></section>'
+        + '<section class="hoi-cipher-box" style="border-color:#a85648;background:#2d1f1d;">'
+        + '<header><strong style="color:#ffb3a3;">3. 后果告知</strong></header>'
+        + '<p style="margin:5px 0 0;font-size:12px;line-height:1.55;color:#f3dfd8;">' + consequenceText + '</p>'
+        + '</section>'
+        + '<div class="dialog-actions"><button type="button" id="defect-cancel">取消</button>'
+        + '<button type="button" class="gold" id="defect-next">下一步：确认交接</button></div>'
+        + '</div>';
+      const body = showDialog('率部叛变 / 自立门户', html);
+      body.querySelectorAll('input[name="defect-choice"]').forEach((r) => {
+        r.onchange = () => { choice = r.value; };
+      });
+      body.querySelector('#defect-group-sel')?.addEventListener('change', (ev) => { pickedGroup = ev.target.value; });
+      body.querySelector('#defect-area-sel')?.addEventListener('change', (ev) => { pickedArea = ev.target.value; });
+      body.querySelector('#defect-cancel').onclick = () => dialog.close();
+      body.querySelector('#defect-next').onclick = () => showStep2();
+    };
+
+    const showStep2 = () => {
+      const loseUnits = (state.units || []).filter((u) => !u.parent && !u.inactive && u.strength > 0 && u.side === curSide).length;
+      const loseCities = Object.values(state.owners || {}).filter((o) => o === curSide).length;
+      const gainUnits = (state.units || []).filter((u) => !u.parent && !u.inactive && u.strength > 0 && u.side === otherSide).length;
+      const planLabel = choice === 'join'
+        ? ('投靠 ' + sides[otherSide])
+        : choice === 'group'
+          ? ('只带派系「' + (groupsById.get(pickedGroup)?.name || pickedGroup) + '」自立并转投 ' + sides[otherSide])
+          : choice === 'self'
+            ? ('名义自立（锁定战区「' + (regions[pickedArea] || pickedArea) + '」并转投 ' + sides[otherSide] + '）')
+            : ('只守战区「' + (regions[pickedArea] || pickedArea) + '」自立并转投 ' + sides[otherSide]);
+      const html = '<div id="defect-step2" style="display:grid;gap:10px;">'
+        + '<section class="hoi-cipher-box" style="border-color:#d4a64a;">'
+        + '<header><strong style="color:#ffe49c;">二次确认 · 指挥权交接清单</strong></header>'
+        + '<p style="margin:6px 0;font-size:13px;color:#fff4d4;"><b>你将失去 ' + loseUnits + ' 个军、' + loseCities + ' 座城镇的指挥权，转而接管 ' + gainUnits + ' 个军</b></p>'
+        + '<p class="subtext" style="margin:4px 0;">所选方案：' + escape(planLabel) + '</p>'
+        + (choice === 'self' ? '<p style="margin:4px 0;font-size:12px;color:#ffbe85;">名义自立：不与任何一方停战，实际仍会被双方攻击。</p>' : '')
+        + '<p class="subtext" style="margin:4px 0;">' + consequenceText + '</p>'
+        + '</section>'
+        + '<div class="dialog-actions"><button type="button" id="defect-back">返回重选</button>'
+        + '<button type="button" class="gold" id="defect-confirm">确认叛变</button></div>'
+        + '</div>';
+      const body = showDialog('率部叛变 / 自立门户', html);
+      body.querySelector('#defect-back').onclick = () => showStep1();
+      body.querySelector('#defect-confirm').onclick = () => {
+        if (choice === 'theater' || choice === 'self') {
+          action('setScope', ['theater', pickedArea]);
+          action('setSide', [otherSide]);
+          selfProclaimed = (choice === 'self');
+        } else if (choice === 'group' && pickedGroup) {
+          action('setSide', [otherSide]);
+          action('setGroup', [pickedGroup]);
+          selfProclaimed = false;
+        } else {
+          action('setSide', [otherSide]);
+          selfProclaimed = false;
+        }
+        pendingOrder = undefined;
+        selectedUnit = undefined;
+        selectedUnits = new Set();
+        rosterSide = 'player';
+        rosterGroup = '';
+        rosterPage = 0;
+        setMapHelp();
+        dialog.close();
+        saveAuto(true);
+        render();
+        notify('已叛变，现接管 ' + sides[state.player] + ' 阵营');
+      };
+    };
+
+    showStep1();
   }
 
   function saveSlot() { notify('当前版本不保存进度'); return false; }
@@ -3557,6 +3692,7 @@
   $('mobile-scenarios').onclick = () => openUnifiedCampaignLobby(currentTheaterMode);
   $('all-scenarios').onclick = () => openUnifiedCampaignLobby(currentTheaterMode);
   $('change-side').onclick = switchSide;
+  $('defect-btn').onclick = openDefectDialog;
   $('territory-report').onclick = territoryReport;
   $('save-menu').onclick = saves;
   $('economy').onclick = economy;
