@@ -923,5 +923,129 @@ dialog.hoi-ww2-full .dialog-body {
   .bottom { padding: 4px 8px; font-size: 10.5px; }
 }
 
+/* 兵临城下 · 招降与起义卡片面板 */
+.defect-panel-section {
+  margin: 12px 0 8px;
+}
+.defect-panel-head h3 {
+  margin: 0 0 3px;
+}
+.defect-panel-head .subtext {
+  margin: 0 0 8px;
+}
+.defect-panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 8px;
+}
+.defect-faction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+.defect-faction-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.defect-faction-head h4 {
+  margin: 0;
+  font-size: 13px;
+  color: #f4e6be;
+  word-break: break-word;
+}
+.defect-faction-sub {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #c5baa0;
+  word-break: break-word;
+}
+.defect-beiping-note {
+  margin: 0;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border-left: 2px solid #e6c26b;
+  background: rgba(230, 194, 107, 0.12);
+  font-size: 11px;
+  color: #f3d68a;
+}
+.defect-unit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+.defect-unit-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(160, 145, 110, 0.18);
+  min-width: 0;
+}
+.defect-unit-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.defect-unit-meta strong {
+  font-size: 12px;
+  color: #efe4c8;
+  word-break: break-word;
+}
+.defect-unit-meta span {
+  font-size: 11px;
+  color: #bfb59b;
+}
+.defect-unit-act {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.defect-unit-more {
+  font-size: 11px;
+  color: #bfb59b;
+  padding-top: 3px;
+}
+.defect-tier {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.defect-tier.is-high {
+  background: rgba(74, 158, 96, 0.24);
+  border: 1px solid #59b372;
+  color: #b7f2c7;
+}
+.defect-tier.is-mid {
+  background: rgba(214, 166, 68, 0.22);
+  border: 1px solid #d4a648;
+  color: #fae09c;
+}
+.defect-tier.is-low {
+  background: rgba(196, 94, 72, 0.22);
+  border: 1px solid #c45e48;
+  color: #f5b9ab;
+}
+.defect-tier.is-blocked {
+  background: rgba(130, 124, 112, 0.2);
+  border: 1px solid #7d776a;
+  color: #ccc4b4;
+}
+.defect-recruit-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 
 

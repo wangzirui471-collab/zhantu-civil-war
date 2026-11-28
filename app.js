@@ -2404,18 +2404,145 @@
       + '<button type="button" data-supply-close>关闭</button></div>');
   }
 
-  function politicsTargets(kind) {
-    if (kind === 'defect') {
-      const enemies = Engine.activeUnits(state).filter((unit) => !unit.parent && unit.side !== state.player
-        && unit.strength > 0).sort((a, b) => b.strength - a.strength).slice(0, 40);
-      return '<label class="field">策反对象<select name="unit">'
-        + enemies.map((unit) => {
-          const commander = leadersById.get(unit.leader)?.name;
-          const group = groupsById.get(unit.group)?.name;
-          return option(unit.id, [unit.name, commander, group, cityName(unit.city)].filter(Boolean).join(' · '), '');
-        }).join('')
-        + '</select></label>';
+  function evaluateDefectTier(unit) {
+    const player = state.player;
+    const politics = state.political?.[player] ?? { points: 0, cooldowns: {} };
+    const cooldown = politics.cooldowns?.defect ?? 0;
+    const nearby = cityConnected.get(unit.city) || [];
+    const contact = nearby.some((id) => state.owners[id] === player) || state.battles?.[unit.city]?.side === player;
+    const surrounded = nearby.length > 0 && nearby.every((id) => state.owners[id] !== unit.side);
+    const groupName = groupsById.get(unit.group)?.name || '';
+    const isBeipingStyle = surrounded && (
+      state.capitals?.[unit.side] === unit.city
+      || (unit.name || '').includes('剿总')
+      || groupName.includes('剿总')
+    );
+    if (!contact) {
+      return { key: 'blocked', label: '无法招降（需兵临城下）', contact: false, surrounded, isBeipingStyle, canAttempt: false, reason: 'no-contact', rank: 0 };
     }
+    if ((politics.points ?? 0) < 30) {
+      return { key: 'blocked', label: '政治点不足', contact: true, surrounded, isBeipingStyle, canAttempt: false, reason: 'no-points', rank: 1 };
+    }
+    if (cooldown > 0) {
+      return { key: 'blocked', label: '需等待 ' + cooldown + ' 天', contact: true, surrounded, isBeipingStyle, canAttempt: false, reason: 'cooldown', cooldown, rank: 1 };
+    }
+    let unfavorable = 0;
+    if ((unit.food ?? 100) >= 40) unfavorable += 1;
+    if ((valueOf(state.warSupport, player, 60) - valueOf(state.warSupport, unit.side, 60)) <= 0) unfavorable += 1;
+    if ((unit.morale ?? 70) >= 65) unfavorable += 1;
+    if (!surrounded) unfavorable += 1;
+    if (unfavorable >= 3) {
+      return { key: 'low', label: '低', contact: true, surrounded, isBeipingStyle, canAttempt: true, reason: 'ok', rank: 2 };
+    }
+    if (unfavorable >= 1) {
+      return { key: 'mid', label: '中', contact: true, surrounded, isBeipingStyle, canAttempt: true, reason: 'ok', rank: 3 };
+    }
+    return { key: 'high', label: '高', contact: true, surrounded, isBeipingStyle, canAttempt: true, reason: 'ok', rank: 4 };
+  }
+
+  function renderDefectCards() {
+    const enemies = Engine.activeUnits(state).filter((u) => !u.parent && u.side !== state.player && u.strength > 0);
+    const buckets = new Map();
+    for (const u of enemies) {
+      const key = u.leader ? 'leader:' + u.leader : (u.group ? 'group:' + u.group : 'unit:' + u.id);
+      if (!buckets.has(key)) buckets.set(key, { key, leaderId: u.leader || '', groupId: u.group || '', units: [] });
+      const bucket = buckets.get(key);
+      if (!bucket.groupId && u.group) bucket.groupId = u.group;
+      bucket.units.push(u);
+    }
+    const groups = [...buckets.values()].map((bucket) => {
+      const evaluated = bucket.units.map((u) => ({ unit: u, tier: evaluateDefectTier(u) }));
+      evaluated.sort((a, b) => (b.tier.rank - a.tier.rank) || (b.unit.strength - a.unit.strength));
+      const bestTier = evaluated[0]?.tier || { key: 'blocked', label: '无法招降（需兵临城下）', rank: 0, isBeipingStyle: false };
+      const totalStrength = bucket.units.reduce((sum, u) => sum + (u.strength || 0), 0);
+      const cities = [...new Set(bucket.units.map((u) => cityName(u.city)).filter(Boolean))];
+      const leaderName = leadersById.get(bucket.leaderId)?.name || '';
+      const groupName = groupsById.get(bucket.groupId)?.name || '';
+      const title = leaderName && groupName
+        ? leaderName + '系 · ' + groupName
+        : (leaderName ? leaderName + '所部' : (groupName || bucket.units[0]?.name || '敌方部队'));
+      const hasBeipingStyle = evaluated.some((item) => item.tier.isBeipingStyle);
+      return { ...bucket, evaluated, bestTier, totalStrength, cities, leaderName, groupName, title, hasBeipingStyle };
+    }).sort((a, b) => (b.bestTier.rank - a.bestTier.rank) || (b.totalStrength - a.totalStrength));
+
+    const cardsHtml = groups.length
+      ? groups.map((g) => {
+        const shown = g.evaluated.slice(0, 4);
+        const extra = g.evaluated.length - shown.length;
+        const cityList = g.cities.slice(0, 4).join(' / ') + (g.cities.length > 4 ? ' 等' : '');
+        const rowsHtml = shown.map(({ unit, tier }) => {
+          const btnText = tier.key === 'high' || tier.key === 'mid' || tier.key === 'low' ? '招降' : '招降';
+          return '<li class="defect-unit-row"><div class="defect-unit-meta"><strong>' + escape(unit.name)
+            + '</strong><span>' + format(unit.strength) + ' 人 · ' + escape(cityName(unit.city)) + '</span></div>'
+            + '<div class="defect-unit-act"><span class="defect-tier is-' + escape(tier.key) + '">' + escape(tier.label) + '</span>'
+            + '<button type="button" class="defect-recruit-btn" data-defect-unit="' + escape(unit.id) + '">' + btnText + '</button></div></li>';
+        }).join('') + (extra > 0 ? '<li class="defect-unit-more">等 ' + g.evaluated.length + ' 个军</li>' : '');
+        return '<article class="card defect-faction-card" data-defect-group="' + escape(g.key) + '">'
+          + '<header class="defect-faction-head"><div><h4>' + escape(g.title) + '</h4>'
+          + '<p class="defect-faction-sub">' + g.evaluated.length + ' 个军 · ' + format(g.totalStrength) + ' 人'
+          + (cityList ? ' · ' + escape(cityList) : '') + '</p></div>'
+          + '<span class="defect-tier is-' + escape(g.bestTier.key) + '">' + escape(g.bestTier.label) + '</span></header>'
+          + (g.hasBeipingStyle ? '<p class="defect-beiping-note">可争取和平改编，城市可能一并移交</p>' : '')
+          + '<ul class="defect-unit-list">' + rowsHtml + '</ul></article>';
+      }).join('')
+      : '<p class="subtext">当前战场暂无可策反的敌方主力部队。</p>';
+
+    return '<section class="defect-panel-section" id="defect-panel-section">'
+      + '<header class="defect-panel-head"><h3>兵临城下 · 招降与起义 <small>策反 · 30 政治点 · 冷却 8 天</small></h3>'
+      + '<p class="subtext">与己方接战或被围的敌军才可能倒戈；成功者整建制改编，主官随之易帜。</p></header>'
+      + '<div class="defect-panel-grid">' + cardsHtml + '</div></section>';
+  }
+
+  function openDefectUnitConfirm(unitId) {
+    const unit = (state.units || []).find((u) => u.id === unitId && !u.parent && !u.inactive && u.side !== state.player && u.strength > 0);
+    if (!unit) {
+      notify('目标部队已不存在或不再属于敌方。');
+      return;
+    }
+    const tier = evaluateDefectTier(unit);
+    if (tier.reason === 'no-contact') {
+      notify('无法招降（需兵临城下）');
+      return;
+    }
+    if (tier.reason === 'cooldown' || tier.reason === 'no-points') {
+      action('decide', ['defect', { unitId: unit.id }]);
+      return;
+    }
+    const leaderName = leadersById.get(unit.leader)?.name || groupsById.get(unit.group)?.name || unit.name;
+    const groupName = groupsById.get(unit.group)?.name || '';
+    const html = '<div id="defect-confirm-box" style="display:grid;gap:10px;">'
+      + '<section class="hoi-cipher-box">'
+      + '<p style="margin:0 0 6px;font-size:13px;"><b>招降对象：</b>' + escape(unit.name)
+      + (leaderName && leaderName !== unit.name ? '（主官：' + escape(leaderName) + '）' : '')
+      + (groupName ? ' · ' + escape(groupName) : '') + '</p>'
+      + '<p style="margin:0 0 6px;font-size:12px;">驻地：<b>' + escape(cityName(unit.city)) + '</b> · 兵力：<b>' + format(unit.strength) + ' 人</b> · 预估把握：<span class="defect-tier is-' + escape(tier.key) + '">' + escape(tier.label) + '</span></p>'
+      + '<p style="margin:0 0 4px;font-size:12px;">预计代价：<b>30 政治点</b> · 冷却时间：<b>8 天</b></p>'
+      + '<p class="subtext" style="margin:0;color:#ffbe85;">若失败政治点不退，且同样进入 8 天冷却；一次仅对单个军发起策反。</p>'
+      + (tier.isBeipingStyle ? '<p class="defect-beiping-note" style="margin-top:6px;">可争取和平改编，城市可能一并移交</p>' : '')
+      + '</section>'
+      + '<div class="dialog-actions">'
+      + '<button type="button" id="defect-confirm-back">返回政局面板</button>'
+      + '<button type="button" class="gold" id="defect-confirm-go">确认招降（消耗 30 政治点）</button>'
+      + '</div></div>';
+    const body = showDialog('确认发起招降', html);
+    body.querySelector('#defect-confirm-back')?.addEventListener('click', () => politicsPanel());
+    body.querySelector('#defect-confirm-go')?.addEventListener('click', () => {
+      const ok = action('decide', ['defect', { unitId: unit.id }]);
+      if (ok) {
+        if (lastActionResult?.success === true) {
+          notify('招降成功：' + leaderName + ' 所部归入' + sides[state.player]);
+        } else if (lastActionResult?.success === false) {
+          notify('招降未成，' + leaderName + ' 仍在观望（政治点已消耗）');
+        }
+        saveAuto(true);
+        render();
+      }
+      politicsPanel();
+    });
+  }
+
+  function politicsTargets(kind) {
+    if (kind === 'defect') return '';
     if (kind === 'reorganize' || kind === 'airlift') {
       const garrisoned = new Set(Engine.activeUnits(state)
         .filter((unit) => unit.side === state.player && unit.strength > 0).map((unit) => unit.city));
@@ -2824,7 +2951,7 @@
     const politics = state.political?.[side] ?? { points: 0, cooldowns: {} };
     const support = valueOf(state.warSupport, side, 60);
     const capital = state.capitals?.[side];
-    const cards = Object.entries(decisionInfo).map(([kind, info]) => {
+    const cards = Object.entries(decisionInfo).filter(([kind]) => kind !== 'defect').map(([kind, info]) => {
       const cooldown = politics.cooldowns?.[kind] ?? 0;
       const disabled = Boolean(cooldown) || politics.points < info.cost;
       return '<article class="card decision-card"><div><h3>' + escape(info.name) + ' <small>' + info.cost
@@ -2832,6 +2959,7 @@
         + '<button type="button" data-decide="' + escape(kind) + '"' + (disabled ? ' disabled' : '') + '>'
         + (cooldown ? cooldown + ' 天后' : politics.points < info.cost ? '点数不足' : '执行') + '</button></article>';
     }).join('');
+    const defectSectionHtml = renderDefectCards();
     const spirits = state.spirits?.[side] ?? [];
     const xp = Math.round(state.armyXp?.[side] ?? 0);
     const spiritHtml = '<h3 style="margin:8px 0 4px;">民族精神与陆军改革（当前陆军经验 ' + xp + ' 点）</h3><div class="hoi-spirit-grid">'
@@ -2886,7 +3014,7 @@
       + '<div><span>陆军经验</span><strong>' + format(xp) + '</strong></div>'
       + '<div><span>民心 / 战争支持</span><strong>' + format(support) + '</strong></div>'
       + '<div><span>首都</span><strong>' + escape(cityName(capital)) + '</strong></div></div>'
-      + timedHtml + spiritHtml + advisorHtml + '<h3 style="margin:10px 0 4px;">战时即时指令决议</h3>'
+      + timedHtml + spiritHtml + advisorHtml + defectSectionHtml + '<h3 style="margin:10px 0 4px;">战时即时指令决议</h3>'
       + cards + '<div class="dialog-actions"><button type="button" class="gold" onclick="document.getElementById(\'groups\').click()">查看地方军阀与派系</button><button type="button" data-politics-close>关闭</button></div>');
   }
 
@@ -3487,6 +3615,9 @@
       map.overlay('supply', true);
       dialog.close();
       notify('地图已显示补给覆盖与运输瓶颈。');
+    }
+    else if (d.defectUnit) {
+      openDefectUnitConfirm(d.defectUnit);
     }
     else if (d.decide) {
       const card = event.target.closest('.decision-card');
