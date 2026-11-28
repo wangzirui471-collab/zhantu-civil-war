@@ -128,9 +128,9 @@
       } else {
         land = geography?.land?.length ? geography.land : data.land;
       }
-      // 二战全球 435+ 城按重要度分级显示：宏观显示首都/大枢纽，缩放放大逐级展开全部州府、省会、港口与铁路站点（与中国 410 城一致）
+      // 二战全球 550+ 城按重要度与缩放清晰展示：战区视角即展示重要城市/省会/州府/要塞/根据地，放大后展示全部 550+ 节点
       const theaterImportant = data.theaterMode === 'ww2'
-        ? data.cities.filter((c) => (c.value || 0) >= 6 || c.port && (c.value || 0) >= 5).map((c) => c.id)
+        ? data.cities.filter((c) => (c.value || 0) >= 4 || c.terrain === 'fort' || c.port).map((c) => c.id)
         : data.theaterMode === 'korea'
           ? data.cities.map((c) => c.id)
           : [];
