@@ -114,6 +114,10 @@ async function main() {
     await poll(() => value('#date'), (label) => label === '1946.06.26');
     assert.equal(await value('#date'), '1946.06.26');
     await poll(() => evaluate('document.querySelector("#dialog").open'));
+    assert((await value('#dialog-title')).includes('开局战区选择'));
+    assert(await evaluate('!!document.querySelector("[data-uni-era=ww2]") && !!document.querySelector("[data-uni-era=civil]") && !!document.querySelector("[data-uni-era=korea]")'),
+      '开局大厅应提供二战、国共内战与朝鲜战争选项');
+    await click('#lobby-tutorial-btn');
     assert((await value('#dialog-title')).includes('新手必修'));
     assert(await evaluate('document.querySelector("#dialog-close").disabled'));
     assert(await evaluate(`(() => { const button = document.querySelector('#tutorial-skip');

@@ -114,14 +114,17 @@
     canvas.dataset.humanModel = humanRenderer ? 'webgl' : 'fallback';
     let places, groups, land, important, outlets;
     const geography = globalThis.CivilWarGeography;
+    const worldGeo = globalThis.WorldGeography;
     const grids = (geography?.grids || []).map(prepareGrid);
+    const worldGrids = (worldGeo?.grids || []).map(prepareGrid);
     function rebuildDataIndex(nextData) {
       data = nextData;
       places = new Map(data.cities.map((city) => [city.id, city]));
       groups = new Map((data.groups || []).map((group) => [group.id, group]));
-      const Wld = globalThis.CivilWarWorld;
-      if (data.theaterMode === 'korea' || data.theaterMode === 'ww2') {
-        land = (data.land || []).map((ring) => (Wld?.smoothCoast ? Wld.smoothCoast(ring, 2) : ring));
+      if (data.theaterMode === 'ww2') {
+        land = worldGeo?.land?.length ? worldGeo.land : (data.land || []);
+      } else if (data.theaterMode === 'korea') {
+        land = geography?.land?.length ? geography.land : (worldGeo?.land?.length ? worldGeo.land : (data.land || []));
       } else {
         land = geography?.land?.length ? geography.land : data.land;
       }
@@ -203,18 +206,19 @@
     }
 
     function showContours(ctx) {
-      if (!grids.length) return;
+      const activeGrids = data.theaterMode ? [...worldGrids, ...grids] : grids;
+      if (!activeGrids.length) return;
       const southwest = unproject(0, height);
       const northeast = unproject(width, 0);
       const step = camera.zoom >= 200 ? 50 : camera.zoom >= 100 ? 100 : camera.zoom >= 48 ? 200 : camera.zoom >= 24 ? 400 : 800;
       const paths = new Map();
-      for (const [index, grid] of grids.entries()) {
+      for (const [index, grid] of activeGrids.entries()) {
         const stride = camera.zoom < 19 ? 3 : camera.zoom < 35 ? 2 : 1;
         const left = Math.max(0, Math.floor((southwest[0] - grid.west) / grid.step / stride) * stride);
         const top = Math.max(0, Math.floor((grid.north - northeast[1]) / grid.step / stride) * stride);
         const right = Math.min(grid.width - stride, Math.ceil((northeast[0] - grid.west) / grid.step));
         const bottom = Math.min(grid.height - stride, Math.ceil((grid.north - southwest[1]) / grid.step));
-        const later = grids.slice(index + 1);
+        const later = activeGrids.slice(index + 1);
         for (let row = top; row < bottom; row += stride) for (let col = left; col < right; col += stride) {
           const lon = grid.west + col * grid.step;
           const lat = grid.north - row * grid.step;
@@ -271,20 +275,32 @@
         ctx.save();
         ctx.clip();
         if (data.theaterMode === 'korea' || data.theaterMode === 'ww2') {
-          const [lon0, lat1] = unproject(0, 0);
-          const [lon1, lat0] = unproject(width, height);
-          const hill = globalThis.CivilWarWorld?.getHillshadeCanvas?.(width, height, lon0, lat1, Math.max(0.5, lon1 - lon0), Math.max(0.5, lat1 - lat0), options.mode === 'contour');
-          if (hill) {
-            ctx.globalAlpha = options.mode === 'contour' ? 0.80 : 0.96;
-            ctx.drawImage(hill, 0, 0, width, height);
+          // 优先使用真实 AWS Mapzen 全球 + 欧洲高精度卫星高程 DEM（与中国地图 100% 同源同清晰度）
+          for (const grid of worldGrids) {
+            const [a, b] = project(grid.west, grid.north);
+            const [x, y] = project(grid.east, grid.south);
+            if (x < 0 || a > width || y < 0 || b > height) continue;
+            ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
+            ctx.drawImage(grid.relief, a, b, x - a, y - b);
           }
-          // 在东亚/朝鲜/中国视口内叠加真实 SRTM 卫星高程图（与国共内战地图 100% 物理同级清晰度！）
+          // 在东亚/朝鲜/中国视口内叠加 0.1° 超高清真实 SRTM 卫星高程图
           for (const grid of grids) {
             const [a, b] = project(grid.west, grid.north);
             const [x, y] = project(grid.east, grid.south);
             if (x < 0 || a > width || y < 0 || b > height) continue;
             ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
             ctx.drawImage(grid.relief, a, b, x - a, y - b);
+          }
+          // 叠加真实世界主要河流线
+          const worldRivers = globalThis.CivilWarWorld?.rivers || [];
+          if (worldRivers.length) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(72, 118, 140, 0.55)';
+            ctx.lineWidth = Math.max(0.8, Math.min(2.0, camera.zoom * 0.04));
+            ctx.beginPath();
+            for (const rv of worldRivers) trace(ctx, rv.pts, false);
+            ctx.stroke();
+            ctx.restore();
           }
         } else {
           for (const grid of grids) {
@@ -301,7 +317,17 @@
       ctx.lineWidth = .8;
       shape(ctx, land);
       ctx.stroke();
-      if (options.mode === 'contour' && !data.theaterMode) showContours(ctx);
+      if (options.mode === 'contour') showContours(ctx);
+
+      if ((data.theaterMode === 'ww2' || data.theaterMode === 'korea') && options.province && worldGeo?.borders?.length) {
+        ctx.save();
+        ctx.beginPath();
+        for (const seg of worldGeo.borders) trace(ctx, seg, false);
+        ctx.strokeStyle = '#5c66549c';
+        ctx.lineWidth = data.theaterMode === 'korea' ? 1.0 : 0.78;
+        ctx.stroke();
+        ctx.restore();
+      }
 
       if (!data.theaterMode && geography?.boundary) {
         shape(ctx, geography.boundary);

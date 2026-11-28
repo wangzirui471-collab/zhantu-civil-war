@@ -1154,12 +1154,12 @@
     notify('⚔ 已进入【' + (Data.theaterTitle || '国共内战') + ' · ' + sc.title + '】' + (prepDays > 0 ? '（提前 ' + prepDays + ' 天入场筹备！）' : '') + (sandboxEndless ? ' · ♾️ 无尽自由沙盒' : ''));
   }
 
-  function openUnifiedCampaignLobby(defaultEra = 'grand') {
+  function openUnifiedCampaignLobby(defaultEra = 'ww2', opts = {}) {
     const UT = globalThis.UnifiedTheaters;
     const kwData = UT?.buildKoreanWarCivilData(globalThis.KoreanWarData, globalThis.CivilWarWorld);
     const ww2Data = UT?.buildWW2CivilData(globalThis.WW2Data, globalThis.CivilWarWorld);
     const grandData = UT?.buildGrandWorldData(globalThis.WW2Data, globalThis.KoreanWarData, globalThis.CivilWarWorld);
-    let era = defaultEra;
+    let era = defaultEra || 'ww2';
     let pickedSide = 'ccp';
     let pickedPrep = 0;
     let sandboxEndless = true;
@@ -1170,12 +1170,13 @@
       const sideB = ds?.sideMeta?.roc?.name || '中国国民党';
       const list = (ds?.scenarios || []).slice(0, 16);
       return '<div class="hoi-start-tabs" style="margin-bottom:8px;">'
-        + '<button type="button" data-uni-era="grand" aria-pressed="' + (era === 'grand') + '">🌍 全球无缝大沙盒 (从0到100)</button>'
-        + '<button type="button" data-uni-era="civil" aria-pressed="' + (era === 'civil') + '">🇨🇳 国共内战 (1945–1950)</button>'
-        + '<button type="button" data-uni-era="ww2" aria-pressed="' + (era === 'ww2') + '">🌐 第二次世界大战 (1937–1945)</button>'
-        + '<button type="button" data-uni-era="korea" aria-pressed="' + (era === 'korea') + '">🇰🇵 抗美援朝 (1950–1953)</button>'
+        + '<button type="button" data-uni-era="ww2" aria-pressed="' + (era === 'ww2') + '">🌐 第二次世界大战 (1939–1945)</button>'
+        + '<button type="button" data-uni-era="civil" aria-pressed="' + (era === 'civil') + '">🇨🇳 国共内战 / 解放战争 (1945–1950)</button>'
+        + '<button type="button" data-uni-era="korea" aria-pressed="' + (era === 'korea') + '">🇰🇵 抗美援朝 · 朝鲜战争 (1950–1953)</button>'
+        + '<button type="button" data-uni-era="grand" aria-pressed="' + (era === 'grand') + '">🌍 全球无尽大沙盒 (从0到100)</button>'
         + '</div>'
-        + '<div class="hoi-cipher-box" style="margin-bottom:8px;"><header><strong style="color:#f5e1b0;">🎖️ 1. 选择阵营 & ⏳ 提前入场筹备期（选定后全程在主窗口游玩，永不强制结束）</strong></header>'
+        + '<div class="hoi-cipher-box" style="margin-bottom:8px;"><header style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><strong style="color:#f5e1b0;">🎖️ 1. 选择想玩的战区、阵营与入场时间（不再强制进入锦州战役）</strong>'
+        + '<button type="button" id="lobby-tutorial-btn" class="link-button" style="font-size:11.5px;color:#ffd980;">⚑ 首次游玩？点此开启锦州新手引导</button></header>'
         + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center;">'
         + '<button type="button" data-uni-side="ccp" aria-pressed="' + (pickedSide === 'ccp') + '" class="gold">★ ' + escape(sideA) + '</button>'
         + '<button type="button" data-uni-side="roc" aria-pressed="' + (pickedSide === 'roc') + '">✠ ' + escape(sideB) + '</button>'
@@ -1194,7 +1195,10 @@
         + '</div>';
     };
 
-    const body = showDialog('⚔ 战图 · 统一世界大沙盘开局大厅（HOI4 高自由度模式）', '<div id="uni-lobby-wrap">' + renderEraHtml() + '</div>');
+    const titleText = opts.isStartup
+      ? '⚔ 战图 · 开局战区选择（二战 / 国共内战 / 朝鲜战争 / 全球沙盒）'
+      : '⚔ 战图 · 统一世界大沙盘开局大厅（HOI4 高自由度模式）';
+    const body = showDialog(titleText, '<div id="uni-lobby-wrap">' + renderEraHtml() + '</div>');
     const bind = () => {
       const wrap = body.querySelector('#uni-lobby-wrap');
       if (!wrap) return;
@@ -1202,6 +1206,7 @@
       wrap.querySelectorAll('[data-uni-side]').forEach((b) => b.onclick = () => { pickedSide = b.dataset.uniSide; wrap.innerHTML = renderEraHtml(); bind(); });
       wrap.querySelectorAll('[data-uni-prep]').forEach((b) => b.onclick = () => { pickedPrep = Number(b.dataset.uniPrep); wrap.innerHTML = renderEraHtml(); bind(); });
       wrap.querySelector('#uni-endless-chk')?.addEventListener('change', (ev) => { sandboxEndless = Boolean(ev.target.checked); });
+      wrap.querySelector('#lobby-tutorial-btn')?.addEventListener('click', () => startTutorial(true));
       wrap.querySelectorAll('[data-uni-launch]').forEach((b) => b.onclick = () => launchUnifiedTheater(era, b.dataset.uniLaunch, pickedSide, { prepDays: pickedPrep, sandboxEndless }));
     };
     bind();
@@ -5156,7 +5161,7 @@
       scenarioId: 'war1946', scope: 'national', side: 'ccp', historyMode: 'dynamic', goal: 'mainland',
     });
     setActive(initial, Timeline.create(initial, Engine), false);
-  }).then(() => startTutorial(true));
+  }).then(() => openUnifiedCampaignLobby('ww2', { isStartup: true }));
 })();
 
 
