@@ -269,7 +269,18 @@
     };
   }
 
+  function syncSideNames(data) {
+    if (data?.sideMeta) {
+      sideNames.ccp = data.sideMeta.ccp?.short || data.sideMeta.ccp?.name || '共产党';
+      sideNames.roc = data.sideMeta.roc?.short || data.sideMeta.roc?.name || '国民政府';
+    } else {
+      sideNames.ccp = '共产党';
+      sideNames.roc = '国民政府';
+    }
+  }
+
   function createGame(data, options = {}) {
+    syncSideNames(data);
     const map = index(data);
     const scenarios = data.scenarios ?? [];
     const chosenScenario = scenarios.find(scenario => scenario.id === options.scenarioId)
@@ -1663,19 +1674,22 @@
       if (unit.strength <= 0 || unit.inactive) continue;
       stationed[unit.side] += unit.strength / 1000;
     }
+    // 经济规模采用幂次递减缩放（小剧本保持 1.0，大战区避免收入随总兵力线性膨胀导致 2 年 16×/94× 通胀）
+    const econScale = Math.pow(map.resourceScale, 0.52);
     for (const side of sides) {
       const economy = state.economy[side];
-      const production = value[side] * map.resourceScale;
+      const production = value[side] * econScale;
       const industry = policyLevel(state, side, 'industry');
       const recruit = policyLevel(state, side, 'recruit');
       const supply = policyLevel(state, side, 'supply');
       const publicSupport = clampValue(num(state.warSupport?.[side], 60), 0, 100);
-      economy.treasury += production * 3.4 + civilianFactories[side] * map.resourceScale * 1.6
-        - production * (industry * 0.85 + recruit * 0.6);
-      // 就地筹粮随驻军规模增长，避免大军在己方腹地因固定产量而自行崩溃。
-      economy.food += (production * 2.1 + stationed[side] * 1.15) * supply;
-      economy.arms += production * industry * 0.62;
-      economy.manpower += production * recruit * 1.15 * (0.55 + publicSupport * 0.0055);
+      const armyPay = stationed[side] * 0.16 * Math.min(2.2, econScale);
+      economy.treasury = Math.max(0, economy.treasury + production * 2.25 + civilianFactories[side] * econScale * 1.4
+        - production * (industry * 0.42 + recruit * 0.28) - armyPay);
+      // 就地筹粮与城镇农业温和匹配，停驻大军仍消耗储备粮，避免 94 倍通胀且不致己方腹地断粮。
+      economy.food += (production * 0.58 + stationed[side] * 2.95) * supply;
+      economy.arms += production * industry * 0.18;
+      economy.manpower += production * recruit * 0.20 * (0.55 + publicSupport * 0.0055);
     }
 
     for (const unit of combat) {
@@ -5274,6 +5288,7 @@
   }
 
   function step(data, state, days = 1) {
+    syncSideNames(data);
     const map = index(data);
     ensureLogistics(state);
     ensureSystems(state);

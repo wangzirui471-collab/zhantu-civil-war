@@ -296,8 +296,8 @@
       + '</p><table class="dialog-table"><thead><tr><th>城镇</th><th>开局归属</th><th>当前归属</th></tr></thead><tbody>'
       + progress.targets.map((id) => '<tr><td>' + escape(cityName(id)) + '</td><td>'
         + escape(short[timeline.origin.owners[id]]) + '</td><td>' + escape(short[state.owners[id]]) + '</td></tr>').join('')
-      + '</tbody></table><p>全国现役兵力变化 · 共产党 ' + format(current.ccpStrength - initial.ccpStrength)
-      + ' 人，国民党 ' + format(current.rocStrength - initial.rocStrength) + ' 人。</p>'
+      + '</tbody></table><p>全国现役兵力变化 · ' + escape(short.ccp) + ' ' + format(current.ccpStrength - initial.ccpStrength)
+      + ' 人，' + escape(short.roc) + ' ' + format(current.rocStrength - initial.rocStrength) + ' 人。</p>'
       + '<button id="continue-national" class="gold" type="button">继续全国战局</button>');
     $('continue-national').onclick = () => { dialog.close(); changeScope('national'); };
   }
@@ -307,16 +307,26 @@
     modelScale: 1.0,
     maxModelsMacro: 4,
     labelScale: 1.0,
+    uiFontScale: 1.0,
     audioVolume: 0.85,
     showRangeRings: true,
   };
 
+  function applyUiFontScale() {
+    const scale = Math.max(0.9, Math.min(1.3, Number(globalThis.GameSettings?.uiFontScale) || 1.0));
+    document.documentElement.style.fontSize = Math.round(scale * 16) + 'px';
+    document.body.style.fontSize = Math.round(scale * 13) + 'px';
+  }
+
   function openSettingsDialog() {
     const gs = globalThis.GameSettings;
+    if (!Number.isFinite(gs.uiFontScale)) gs.uiFontScale = 1.0;
     const body = showDialog('⚙ 画面与游戏参数设置（三战区实时生效）',
       '<div class="hoi-cipher-box">'
       + '<header><strong style="color:#f5e1b0;">🎖️ 地图兵模与视觉参数</strong></header>'
       + '<div style="display:grid;gap:10px;margin-top:8px;">'
+      + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>界面字号缩放：<b id="set-font-v">' + Math.round(gs.uiFontScale * 100) + '%</b></span>'
+      + '<input type="range" id="set-ui-font" min="0.90" max="1.30" step="0.05" value="' + gs.uiFontScale + '" style="width:220px;"></label>'
       + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>3D 兵模大小缩放：<b id="set-scale-v">' + gs.modelScale.toFixed(2) + '×</b></span>'
       + '<input type="range" id="set-model-scale" min="0.6" max="1.8" step="0.05" value="' + gs.modelScale + '" style="width:220px;"></label>'
       + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>宏观视角每纵队最大兵模数：<b id="set-max-v">' + gs.maxModelsMacro + '</b></span>'
@@ -329,7 +339,12 @@
       + '<button type="button" class="gold" id="set-reset-btn">↩️ 恢复默认参数</button>'
       + '<button type="button" id="set-close-btn">✔ 完成并应用</button>'
       + '</div></div>');
-    const sync = () => { render(); };
+    const sync = () => { applyUiFontScale(); render(); };
+    body.querySelector('#set-ui-font').oninput = (ev) => {
+      gs.uiFontScale = Number(ev.target.value);
+      body.querySelector('#set-font-v').textContent = Math.round(gs.uiFontScale * 100) + '%';
+      sync();
+    };
     body.querySelector('#set-model-scale').oninput = (ev) => {
       gs.modelScale = Number(ev.target.value);
       body.querySelector('#set-scale-v').textContent = gs.modelScale.toFixed(2) + '×';
@@ -349,7 +364,8 @@
       sync();
     };
     body.querySelector('#set-reset-btn').onclick = () => {
-      Object.assign(gs, { modelScale: 1.0, maxModelsMacro: 4, labelScale: 1.0, audioVolume: 0.85, showRangeRings: true });
+      Object.assign(gs, { modelScale: 1.0, maxModelsMacro: 4, labelScale: 1.0, uiFontScale: 1.0, audioVolume: 0.85, showRangeRings: true });
+      applyUiFontScale();
       openSettingsDialog();
       sync();
     };
@@ -524,8 +540,8 @@
       + '<p class="territory-status">' + escape(regions[area()] || '') + ' · 我方 '
       + Data.cities.filter((city) => city.region === area() && state.owners[city.id] === state.player).length + ' 城 / '
       + Data.cities.filter((city) => city.region === area()).length + ' 城</p>'
-      + '<p class="territory-status">民心 / 战争支持 · 共产党 ' + format(valueOf(state.warSupport, 'ccp', 82))
-      + ' · 国民党 ' + format(valueOf(state.warSupport, 'roc', 58)) + '</p>'
+      + '<p class="territory-status">民心 / 战争支持 · ' + escape(short.ccp) + ' ' + format(valueOf(state.warSupport, 'ccp', 82))
+      + ' · ' + escape(short.roc) + ' ' + format(valueOf(state.warSupport, 'roc', 58)) + '</p>'
       + '<p class="territory-status">稳定 ' + format(valueOf(state.stability, state.player, 60))
       + ' · 科研 ' + format(state.research?.[state.player]?.points ?? 0)
       + ' · 指挥 ' + format(state.command?.[state.player]?.points ?? 0) + '</p>';
@@ -874,7 +890,7 @@
     const pages = Math.max(1, Math.ceil(relevant.length / size));
     rosterPage = Math.min(rosterPage, pages - 1);
     return '<div class="filters"><select id="roster-side" aria-label="阵营筛选">'
-      + [['player', '当前阵营'], ['all', '全部阵营'], ['ccp', '共产党'], ['roc', '国民党']].map((item) => option(...item, rosterSide)).join('')
+      + [['player', '当前阵营'], ['all', '全部阵营'], ['ccp', short.ccp], ['roc', short.roc]].map((item) => option(...item, rosterSide)).join('')
       + '</select><select id="roster-region" aria-label="战区筛选">' + option('current', '当前战区', rosterRegion)
       + option('all', '全国', rosterRegion) + Object.entries(regions).filter(([id]) => id !== 'national')
         .map((item) => option(...item, rosterRegion)).join('') + '</select></div>'
@@ -913,14 +929,16 @@
     renderBattleHud();
     const outliner = $('hoi-theaters');
     if (outliner) {
-      const theaterKeys = ['northeast', 'north', 'east', 'central', 'northwest', 'south'];
+      const theaterKeys = Data.regions ? Object.keys(Data.regions) : ['northeast', 'north', 'east', 'central', 'northwest', 'south'];
       const activeBattles = Object.keys(state.battles || {});
       const html = theaterKeys.map((reg) => {
         const regUnits = Engine.activeUnits(state).filter((u) => !u.parent && u.side === state.player && citiesById.get(u.city)?.region === reg);
         const regBattles = activeBattles.filter((cid) => citiesById.get(cid)?.region === reg).length;
         const pressed = state.scope === 'theater' && area() === reg;
+        const rawName = regions[reg] || reg;
+        const displayName = /战区|战场|战线|海峡|群岛|本土/.test(rawName) ? rawName : (rawName + '战区');
         return '<button type="button" class="hoi-theater-card" data-hoi-theater="' + reg + '" aria-pressed="' + pressed + '">'
-          + '<div><strong>' + escape((regions[reg] || reg).replace('战区', '')) + '战区</strong><small>'
+          + '<div><strong>' + escape(displayName) + '</strong><small>'
           + regUnits.length + ' 支纵队</small></div>'
           + '<span class="hoi-theater-badge ' + (regBattles ? 'fight' : 'calm') + '">'
           + (regBattles ? '⚔ ' + regBattles + '战' : '平稳') + '</span></button>';
@@ -1116,6 +1134,15 @@
     }
     for (const k of Object.keys(regions)) delete regions[k];
     Object.assign(regions, Data.regions ? { national: '全部战区', ...Data.regions } : baseRegions);
+    const secSel = $('sector-select');
+    if (secSel) secSel.innerHTML = Object.entries(regions).map((item) => option(...item)).join('');
+    const legend = document.querySelector('.map-legend');
+    if (legend) {
+      legend.innerHTML = '<span><b class="dot ccp"></b>' + escape(short.ccp) + '</span>'
+        + '<span><b class="dot roc"></b>' + escape(short.roc) + '</span>'
+        + '<span><i></i>铁路</span><span><i class="attack-key"></i>进攻路线</span>'
+        + '<span><i class="shell-key"></i>炮火</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span>';
+    }
   }
 
   function launchUnifiedTheater(mode, scenarioId, playerSide = 'ccp', opts = {}) {
@@ -2905,7 +2932,7 @@
     const calc = (input, title) => {
       const result = Engine.forecast(Data, input, Number($('forecast-months').value));
       $('forecast-output').innerHTML = '<p class="roster-label">' + escape(title) + '</p><table class="dialog-table"><thead><tr>'
-        + '<th>日期</th><th>共产党 · 城市 / 兵员 / 粮食</th><th>国民党 · 城市 / 兵员 / 粮食</th><th>易手 / 结局</th>'
+        + '<th>日期</th><th>' + escape(short.ccp) + ' · 城市 / 兵员 / 粮食</th><th>' + escape(short.roc) + ' · 城市 / 兵员 / 粮食</th><th>易手 / 结局</th>'
         + '</tr></thead><tbody>' + result.map((row) => '<tr><td>' + row.date + '</td><td>' + row.ccp + ' / '
           + format(row.ccpStrength) + ' / ' + format(row.ccpFood) + '</td><td>' + row.roc + ' / '
           + format(row.rocStrength) + ' / ' + format(row.rocFood) + '</td><td>'
@@ -3014,8 +3041,8 @@
 
   function switchSide() {
     const body = showDialog('更换接管阵营', '<p>当前日期和双方此前的行动记录会继续保留在本次战局中。</p>'
-      + '<div class="dialog-actions"><button type="button" data-control-side="ccp">接管中国共产党</button>'
-      + '<button type="button" data-control-side="roc">接管中国国民党</button></div>');
+      + '<div class="dialog-actions"><button type="button" data-control-side="ccp">接管' + escape(sides.ccp) + '</button>'
+      + '<button type="button" data-control-side="roc">接管' + escape(sides.roc) + '</button></div>');
     body.querySelectorAll('[data-control-side]').forEach((item) => {
       item.disabled = state.player === item.dataset.controlSide;
       item.onclick = () => {

@@ -264,8 +264,13 @@
       backgroundKey = key;
       const ctx = backdrop;
       const sea = ctx.createLinearGradient(0, 0, width, height);
-      sea.addColorStop(0, '#90a99d');
-      sea.addColorStop(1, '#77978d');
+      if (data.theaterMode === 'ww2' || data.theaterMode === 'korea') {
+        sea.addColorStop(0, '#5d8499');
+        sea.addColorStop(1, '#44687d');
+      } else {
+        sea.addColorStop(0, '#7899a6');
+        sea.addColorStop(1, '#5e8291');
+      }
       ctx.fillStyle = sea;
       ctx.fillRect(0, 0, width, height);
       shape(ctx, land);
@@ -313,8 +318,8 @@
         }
         ctx.restore();
       }
-      ctx.strokeStyle = '#496d5d8c';
-      ctx.lineWidth = .8;
+      ctx.strokeStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#2a4654b8' : '#3a5d6699';
+      ctx.lineWidth = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? 1.05 : .85;
       shape(ctx, land);
       ctx.stroke();
       if (options.mode === 'contour') showContours(ctx);
@@ -1337,14 +1342,36 @@
           const cardHeight = national ? 18 : 28;
 
           const choices = idx === 0
-            ? [[ux - cardWidth / 2, uy + 8], [ux + 9, uy + 5], [ux - cardWidth - 9, uy + 5], [ux - cardWidth / 2, uy + 38], [ux - cardWidth / 2, uy - 38]]
-            : [[ux - cardWidth / 2, uy + 8], [ux - cardWidth / 2, uy + 38], [ux - cardWidth / 2, uy - 34], [ux + 8, uy + 6], [ux - cardWidth - 8, uy + 6]];
+            ? [[ux - cardWidth / 2, uy + 8], [ux + 9, uy + 5], [ux - cardWidth - 9, uy + 5], [ux - cardWidth / 2, uy + 38], [ux - cardWidth / 2, uy - 38], [ux + 12, uy - 30], [ux - cardWidth - 12, uy - 30], [ux - cardWidth / 2, uy + 66]]
+            : [[ux - cardWidth / 2, uy + 8], [ux - cardWidth / 2, uy + 38], [ux - cardWidth / 2, uy - 34], [ux + 8, uy + 6], [ux - cardWidth - 8, uy + 6], [ux + 12, uy + 36], [ux - cardWidth - 12, uy + 36]];
 
-          const fit = choices.find(([left, top]) => left > 2 && top > 4 && left + cardWidth < width - 2 && top + cardHeight < height - 4
-            && !hitCards.some((rect) => !rect.figureHit && left < rect.left + rect.width + 2 && left + cardWidth > rect.left - 2
-              && top < rect.top + rect.height + 2 && top + cardHeight > rect.top - 2)) || choices[0];
-          const [left, top] = fit;
+          const collides = ([left, top]) => hitCards.find((rect) => !rect.figureHit
+            && left < rect.left + rect.width + 2 && left + cardWidth > rect.left - 2
+            && top < rect.top + rect.height + 2 && top + cardHeight > rect.top - 2);
+          const fit = choices.find((pt) => pt[0] > 2 && pt[1] > 4 && pt[0] + cardWidth < width - 2 && pt[1] + cardHeight < height - 4 && !collides(pt));
           const focused = unit.id === selection.unit || unit.id === selection.guideUnit || chosen.has(unit.id);
+          // 屏幕空间兵牌聚合：在宏观/战区缩放下，若非选中兵牌仍与已有同方兵牌严重重叠，则聚合进该兵牌并更新 ×N 角标，避免华北/西欧文字叠成噪点
+          if (!fit && !focused && camera.zoom < 40) {
+            const host = collides(choices[0]) || hitCards.find((rect) => !rect.figureHit && rect.unit?.side === unit.side
+              && Math.hypot((rect.left + rect.width / 2) - ux, (rect.top + rect.height / 2) - uy) < 92);
+            if (host && host.unit?.side === unit.side) {
+              if (!host.stack.includes(unit.id)) host.stack.push(unit.id);
+              const n = host.stack.length;
+              brush.save();
+              brush.fillStyle = '#a67d37';
+              brush.beginPath();
+              brush.roundRect(host.left + host.width - 21, host.top + 1.5, 19, 11.5, 3);
+              brush.fill();
+              brush.fillStyle = '#fff9e6';
+              brush.font = '700 8px "Microsoft YaHei UI", sans-serif';
+              brush.textAlign = 'center';
+              brush.textBaseline = 'middle';
+              brush.fillText('×' + n, host.left + host.width - 11.5, host.top + 7.5);
+              brush.restore();
+              return;
+            }
+          }
+          const [left, top] = fit || choices[0];
 
           brush.beginPath();
           brush.moveTo(cx, cy);
