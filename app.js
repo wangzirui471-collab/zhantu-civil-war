@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  const Data = globalThis.CivilWarData;
+  const BaseCivilData = globalThis.CivilWarData;
+  let Data = BaseCivilData;
   const Engine = globalThis.CivilWarEngine;
   const Timeline = globalThis.CivilWarTimeline;
   const SaveStore = globalThis.CivilWarSaveStore;
@@ -14,8 +15,9 @@
 
   const sides = { ccp: '中国共产党', roc: '中国国民党' };
   const short = { ccp: '共产党', roc: '国民党' };
-  const regions = { national: '全国', northeast: '东北战区', north: '华北战区', east: '华东战区',
+  const baseRegions = { national: '全国', northeast: '东北战区', north: '华北战区', east: '华东战区',
     central: '中原战区', south: '华南战区', southwest: '西南战区', northwest: '西北战区', taiwan: '台湾' };
+  const regions = { ...baseRegions };
   const commands = {
     advance: '进攻', support: '支援牵制', siege: '围城', defend: '守阵地', entrench: '挖战壕',
     intercept: '围点打援', move: '行军', rest: '城内休整', hold: '原地待命', bombard: '战略轰炸',
@@ -54,10 +56,11 @@
   const roman = ['I', 'II', 'III', 'IV', 'V', 'VI'];
   const planStatusNames = { draft: '待执行', active: '执行中', paused: '已暂停', done: '已达成' };
   const transportNames = { rail: '铁路', road: '公路', sea: '海运', local: '本地' };
-  const scenariosById = new Map(Data.scenarios.map((scenario) => [scenario.id, scenario]));
-  const citiesById = new Map(Data.cities.map((city) => [city.id, city]));
-  const leadersById = new Map((Data.leaders || []).map((leader) => [leader.id, leader]));
-  const groupsById = new Map((Data.groups || []).map((group) => [group.id, group]));
+  let scenariosById = new Map(Data.scenarios.map((scenario) => [scenario.id, scenario]));
+  let citiesById = new Map(Data.cities.map((city) => [city.id, city]));
+  let leadersById = new Map((Data.leaders || []).map((leader) => [leader.id, leader]));
+  let groupsById = new Map((Data.groups || []).map((group) => [group.id, group]));
+  let currentTheaterMode = 'civil'; // civil | korea | ww2
   const priorityScenarios = ['war1946', 'liaoshen', 'huaihai', 'pingjin', 'jinzhou', 'tashan', 'siping'];
   const scenarioMarks = { liaoshen: '辽', northwest: '西', huaihai: '淮', pingjin: '平', jinzhou: '锦', tashan: '塔', siping: '四', changchun: '长', full: '全' };
   const stageTargets = new Map([['liaoshen', ['jinzhou', 'tashan', 'shenyang', 'changchun']]]);
@@ -1039,6 +1042,105 @@
     render();
   }
 
+  function rebuildAppIndexes(nextData) {
+    Data = nextData;
+    scenariosById = new Map(Data.scenarios.map((scenario) => [scenario.id, scenario]));
+    citiesById = new Map(Data.cities.map((city) => [city.id, city]));
+    leadersById = new Map((Data.leaders || []).map((leader) => [leader.id, leader]));
+    groupsById = new Map((Data.groups || []).map((group) => [group.id, group]));
+    cityConnected.clear();
+    for (const [a, b] of (Data.links || [])) {
+      if (!cityConnected.has(a)) cityConnected.set(a, []);
+      if (!cityConnected.has(b)) cityConnected.set(b, []);
+      cityConnected.get(a).push(b);
+      cityConnected.get(b).push(a);
+    }
+    if (Data.sideMeta) {
+      sides.ccp = Data.sideMeta.ccp.name;
+      sides.roc = Data.sideMeta.roc.name;
+      short.ccp = Data.sideMeta.ccp.short;
+      short.roc = Data.sideMeta.roc.short;
+    } else {
+      sides.ccp = '中国共产党'; sides.roc = '中国国民党';
+      short.ccp = '共产党'; short.roc = '国民党';
+    }
+    for (const k of Object.keys(regions)) delete regions[k];
+    Object.assign(regions, Data.regions ? { national: '全部战区', ...Data.regions } : baseRegions);
+  }
+
+  function launchUnifiedTheater(mode, scenarioId, playerSide = 'ccp') {
+    const UT = globalThis.UnifiedTheaters;
+    let nextData = BaseCivilData;
+    if (mode === 'korea' && UT) nextData = UT.buildKoreanWarCivilData(globalThis.KoreanWarData, globalThis.CivilWarWorld) || BaseCivilData;
+    else if (mode === 'ww2' && UT) nextData = UT.buildWW2CivilData(globalThis.WW2Data, globalThis.CivilWarWorld) || BaseCivilData;
+    currentTheaterMode = mode;
+    rebuildAppIndexes(nextData);
+    const sc = scenariosById.get(scenarioId) || Data.scenarios[0];
+    const created = Engine.createGame(Data, {
+      scenarioId: sc.id, scope: 'national', side: playerSide, historyMode: 'dynamic', goal: 'mainland',
+    });
+    if (sc.overrides) Object.assign(created.owners, sc.overrides);
+    // 确保各部队开局位于己方城镇
+    for (const u of created.units) {
+      if (created.owners[u.city] !== u.side) {
+        const home = Data.cities.find((c) => created.owners[c.id] === u.side && c.region === u.area)?.id
+          || Data.cities.find((c) => created.owners[c.id] === u.side)?.id;
+        if (home) u.city = home;
+      }
+    }
+    const focusObj = citiesById.get(sc.focus) || Data.cities[0];
+    const view = mode === 'korea'
+      ? { lon: 127.1, lat: 37.8, zoom: 76 }
+      : mode === 'ww2'
+        ? { lon: focusObj?.lon ?? 14, lat: focusObj?.lat ?? 48, zoom: sc.ww2Theater === 'pacific' ? 16 : 26 }
+        : { lon: 105, lat: 35, zoom: 12 };
+    map.setData(Data, view);
+    setActive(created, Timeline.create(created, Engine), false);
+    if (dialog.open) dialog.close();
+    WarAudio.bugle();
+    notify('⚔ 已进入【' + (Data.theaterTitle || '国共内战') + ' · ' + sc.title + '】，全程在主窗口高精地图指挥！');
+  }
+
+  function openUnifiedCampaignLobby(defaultEra = 'civil') {
+    const UT = globalThis.UnifiedTheaters;
+    const kwData = UT?.buildKoreanWarCivilData(globalThis.KoreanWarData, globalThis.CivilWarWorld);
+    const ww2Data = UT?.buildWW2CivilData(globalThis.WW2Data, globalThis.CivilWarWorld);
+    let era = defaultEra;
+    let pickedSide = 'ccp';
+
+    const renderEraHtml = () => {
+      const ds = era === 'korea' ? kwData : era === 'ww2' ? ww2Data : BaseCivilData;
+      const sideA = ds?.sideMeta?.ccp?.name || '中国共产党';
+      const sideB = ds?.sideMeta?.roc?.name || '中国国民党';
+      const list = (ds?.scenarios || []).slice(0, 16);
+      return '<div class="hoi-start-tabs" style="margin-bottom:8px;">'
+        + '<button type="button" data-uni-era="civil" aria-pressed="' + (era === 'civil') + '">🇨🇳 国共内战 (1945–1950)</button>'
+        + '<button type="button" data-uni-era="ww2" aria-pressed="' + (era === 'ww2') + '">🌐 第二次世界大战 (1937–1945)</button>'
+        + '<button type="button" data-uni-era="korea" aria-pressed="' + (era === 'korea') + '">🇰🇵 抗美援朝 · 朝鲜战争 (1950–1953)</button>'
+        + '</div>'
+        + '<div class="hoi-cipher-box" style="margin-bottom:8px;"><header><strong style="color:#f5e1b0;">🎖️ 1. 选择本局锁定阵营（选定后在主窗口全程指挥，不再弹出独立窗口）</strong></header>'
+        + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
+        + '<button type="button" data-uni-side="ccp" aria-pressed="' + (pickedSide === 'ccp') + '" class="gold">★ ' + escape(sideA) + '</button>'
+        + '<button type="button" data-uni-side="roc" aria-pressed="' + (pickedSide === 'roc') + '">✠ ' + escape(sideB) + '</button>'
+        + '</div></div>'
+        + '<div class="hoi-doctrine-grid">'
+        + list.map((sc) => '<article class="hoi-doctrine-card"><strong style="color:#ffe494;">' + escape(sc.title) + '</strong>'
+          + '<p class="subtext" style="margin:3px 0;">📅 ' + escape(sc.date) + ' · ' + escape((sc.summary || '').slice(0, 56)) + '</p>'
+          + '<button type="button" class="gold" data-uni-launch="' + escape(sc.id) + '" style="width:100%;font-size:11.5px;">⚔ 进入主战场开始指挥</button></article>').join('')
+        + '</div>';
+    };
+
+    const body = showDialog('⚔ 战图 · 统一战区开局大厅（同窗口畅玩三战区）', '<div id="uni-lobby-wrap">' + renderEraHtml() + '</div>');
+    const bind = () => {
+      const wrap = body.querySelector('#uni-lobby-wrap');
+      if (!wrap) return;
+      wrap.querySelectorAll('[data-uni-era]').forEach((b) => b.onclick = () => { era = b.dataset.uniEra; wrap.innerHTML = renderEraHtml(); bind(); });
+      wrap.querySelectorAll('[data-uni-side]').forEach((b) => b.onclick = () => { pickedSide = b.dataset.uniSide; wrap.innerHTML = renderEraHtml(); bind(); });
+      wrap.querySelectorAll('[data-uni-launch]').forEach((b) => b.onclick = () => launchUnifiedTheater(era, b.dataset.uniLaunch, pickedSide));
+    };
+    bind();
+  }
+
   function renderBattlePlansBar() {
     const bar = $('hoi-battle-plans');
     if (!bar || !state) return;
@@ -1051,7 +1153,9 @@
       + '<button type="button" class="hoi-bp-btn" data-map-tool="scorched" aria-pressed="' + (pendingMapTool === 'scorched') + '" title="HOI4 撤退焦土：点此后再点己方城镇（15 政治点），炸毁铁路与工事 15 天">💣 焦土</button>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="sabotage" aria-pressed="' + (pendingMapTool === 'sabotage') + '" title="地图直接铁路破袭：点此后再点敌占城镇（15 点），瘫痪敌军补给 10 天">🔧 破袭</button>'
       + '<button type="button" class="hoi-bp-btn" data-map-tool="airborne" aria-pressed="' + (pendingMapTool === 'airborne') + '" title="地图直接敌后奇袭（25 指挥点）：空城直接夺占，有守军则重创组织度并断路">' + airLabel + '</button>'
-      + '<button type="button" class="hoi-bp-btn" data-map-tool="barrage" aria-pressed="' + (pendingMapTool === 'barrage') + '" title="地图直接炮火准备（30 指挥点）：削弱目标守军防御 5 天">🎯 炮火</button>'
+      + '<button type="button" class="hoi-bp-btn" data-map-tool="barrage" aria-pressed="' + (pendingMapTool === 'barrage') + '" title="地图直接炮火准备/喀秋莎齐射（30 指挥点）：重创目标守军">🎯 炮火/导弹</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="blitz" title="同步二战模式：装甲闪电总攻，选定/前线主力全线高速突击">⚡ 闪电战</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="naval3" title="同步二战模式：发动 HOI4 三排海战阵型决战">🚢 三排海战</button>'
       + '<span class="hoi-bp-sep"></span>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="port" title="一键派兵死守沿海港口并挖战壕">⚓ 守港</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="fallback" title="一键撤往河山防线挖壕固守">↩️ 后撤</button>'
@@ -3335,9 +3439,9 @@
   document.querySelectorAll('[data-speed]').forEach((item) => {
     item.onclick = () => { speed = Number(item.dataset.speed); setRun(running); };
   });
-  $('new-game').onclick = listScenarios;
-  $('mobile-scenarios').onclick = listScenarios;
-  $('all-scenarios').onclick = listScenarios;
+  $('new-game').onclick = () => openUnifiedCampaignLobby(currentTheaterMode);
+  $('mobile-scenarios').onclick = () => openUnifiedCampaignLobby(currentTheaterMode);
+  $('all-scenarios').onclick = () => openUnifiedCampaignLobby(currentTheaterMode);
   $('change-side').onclick = switchSide;
   $('territory-report').onclick = territoryReport;
   $('save-menu').onclick = saves;
@@ -4868,8 +4972,8 @@
     if (ww2AudioOn) WarAudio.click();
   });
   $('world-map-btn')?.addEventListener('click', () => openWorldMapPanel('hybrid', 'china'));
-  $('ww2-campaign-btn')?.addEventListener('click', () => openWW2LeaderSelect('roosevelt', 'all'));
-  $('korean-war-btn')?.addEventListener('click', () => openKoreanWarPanel('pva', 'carrier', 'sim'));
+  $('ww2-campaign-btn')?.addEventListener('click', () => openUnifiedCampaignLobby('ww2'));
+  $('korean-war-btn')?.addEventListener('click', () => openUnifiedCampaignLobby('korea'));
   $('hoi-theaters')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-hoi-theater]');
     if (!btn) return;
@@ -4890,6 +4994,13 @@
       renderBattlePlansBar();
       WarAudio.click();
       notify(civilDrawFront ? '✏️ 手绘战线已开启：在地图上按住左键从前沿拖向目标城镇，松手即刻吹号突击！' : '已退出手绘战线模式。');
+    } else if (d.bpQuick === 'blitz') {
+      const targetEnemy = (selectedCity && state.owners[selectedCity] !== state.player) ? selectedCity
+        : Data.cities.find((c) => state.owners[c.id] !== state.player && (cityConnected.get(c.id) || []).some((n) => state.owners[n] === state.player))?.id;
+      if (targetEnemy) { applyMapTool('pincer', targetEnemy); WarAudio.bugle(); }
+      else notify('未找到相邻敌城，请先点击敌方前线城镇。');
+    } else if (d.bpQuick === 'naval3') {
+      if (action('civilNavalThreeLineBattle', [])) { WarAudio.artillery(); saveAuto(true); render(); defensePanel('navy'); }
     } else if (d.bpQuick === 'port') {
       const ids = selectedUnits.size ? [...selectedUnits] : selectedUnit ? [selectedUnit] : [];
       if (action('portGarrisonOrder', [ids])) { saveAuto(true); render(); notify('⚓ 已下达死守沿海港口并挖战壕指令！'); }

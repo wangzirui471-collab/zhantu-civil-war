@@ -272,3 +272,22 @@ test('国共内战主战场同步 HOI4 深度玩法：燃油、四大军工设�
   assert.equal(dc.army.unitKind, 'carrier');
   assert.equal(Sim.freeAmphibiousLandingWW2(WW2, pac, 'usa', dc.army.id, 'tokyo').ok, true);
 });
+
+test('统一单窗口战区适配器：朝鲜战争与二战全球原生跑在 CivilWarEngine 上，完整兼容国共内战底层', () => {
+  const UT = require('../unified-theaters.js');
+  const kwData = UT.buildKoreanWarCivilData(Korea, World);
+  assert.equal(kwData.theaterMode, 'korea');
+  assert.equal(kwData.cities.length, 18);
+  const kwGame = Engine.createGame(kwData, { scenarioId: 'kw-1950-10', scope: 'national', side: 'ccp' });
+  assert.ok(kwGame.units.length >= 10);
+  Engine.step(kwData, kwGame, 5);
+  assert.ok(kwGame.date > '1950-10-25');
+
+  const ww2Data = UT.buildWW2CivilData(WW2, World);
+  assert.equal(ww2Data.theaterMode, 'ww2');
+  assert.equal(ww2Data.cities.length, WW2.cities.length);
+  const ww2Game = Engine.createGame(ww2Data, { scenarioId: 'ww2-1940', scope: 'national', side: 'roc' });
+  assert.ok(ww2Game.units.length >= 20);
+  Engine.step(ww2Data, ww2Game, 5);
+  assert.ok(ww2Game.date > '1940-05-10');
+});

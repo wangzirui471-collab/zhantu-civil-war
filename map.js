@@ -112,18 +112,35 @@
     try { humanRenderer = globalThis.CivilWarHuman3D?.createRenderer() || null; }
     catch (error) { console.warn('三维人物初始化失败', error); }
     canvas.dataset.humanModel = humanRenderer ? 'webgl' : 'fallback';
-    const places = new Map(data.cities.map((city) => [city.id, city]));
-    const groups = new Map((data.groups || []).map((group) => [group.id, group]));
+    let places, groups, land, important, outlets;
     const geography = globalThis.CivilWarGeography;
     const grids = (geography?.grids || []).map(prepareGrid);
-    const land = geography?.land?.length ? geography.land : data.land;
-    const important = new Set([...(data.battleLayers || []).flatMap((layer) => layer.points || []), ...mapNames]);
-    const outlets = new Map();
-    for (const [a, b] of data.links) {
-      if (data.routeTypes?.[linkKey(a, b)] !== 'rail') continue;
-      outlets.set(a, (outlets.get(a) || 0) + 1);
-      outlets.set(b, (outlets.get(b) || 0) + 1);
+    function rebuildDataIndex(nextData) {
+      data = nextData;
+      places = new Map(data.cities.map((city) => [city.id, city]));
+      groups = new Map((data.groups || []).map((group) => [group.id, group]));
+      const Wld = globalThis.CivilWarWorld;
+      if (data.theaterMode === 'korea' || data.theaterMode === 'ww2') {
+        land = (data.land || []).map((ring) => (Wld?.smoothCoast ? Wld.smoothCoast(ring, 2) : ring));
+      } else {
+        land = geography?.land?.length ? geography.land : data.land;
+      }
+      important = new Set([...(data.battleLayers || []).flatMap((layer) => layer.points || []), ...mapNames, ...(data.theaterMode ? data.cities.map((c) => c.id) : [])]);
+      outlets = new Map();
+      for (const [a, b] of (data.links || [])) {
+        if (data.routeTypes?.[linkKey(a, b)] !== 'rail') continue;
+        outlets.set(a, (outlets.get(a) || 0) + 1);
+        outlets.set(b, (outlets.get(b) || 0) + 1);
+      }
+      if (data.sideMeta) {
+        sideNames.ccp = data.sideMeta.ccp?.short || '共产党';
+        sideNames.roc = data.sideMeta.roc?.short || '国民党';
+      } else {
+        sideNames.ccp = '共产党';
+        sideNames.roc = '国民党';
+      }
     }
+    rebuildDataIndex(data);
     const options = { mode: 'situation', terrainBack: true, rail: true, province: true, battle: true, maritime: false,
       supply: false, fort: true, models3d: true };
     let width = 1;
@@ -253,12 +270,22 @@
       if (options.mode === 'terrain' || options.mode === 'contour' || options.terrainBack) {
         ctx.save();
         ctx.clip();
-        for (const grid of grids) {
-          const [a, b] = project(grid.west, grid.north);
-          const [x, y] = project(grid.east, grid.south);
-          if (x < 0 || a > width || y < 0 || b > height) continue;
-          ctx.globalAlpha = options.mode === 'contour' ? .5 : .96;
-          ctx.drawImage(grid.relief, a, b, x - a, y - b);
+        if (data.theaterMode === 'korea' || data.theaterMode === 'ww2') {
+          const [lon0, lat1] = unproject(0, 0);
+          const [lon1, lat0] = unproject(width, height);
+          const hill = globalThis.CivilWarWorld?.getHillshadeCanvas?.(width, height, lon0, lat1, Math.max(0.5, lon1 - lon0), Math.max(0.5, lat1 - lat0), options.mode === 'contour');
+          if (hill) {
+            ctx.globalAlpha = options.mode === 'contour' ? 0.78 : 0.96;
+            ctx.drawImage(hill, 0, 0, width, height);
+          }
+        } else {
+          for (const grid of grids) {
+            const [a, b] = project(grid.west, grid.north);
+            const [x, y] = project(grid.east, grid.south);
+            if (x < 0 || a > width || y < 0 || b > height) continue;
+            ctx.globalAlpha = options.mode === 'contour' ? .5 : .96;
+            ctx.drawImage(grid.relief, a, b, x - a, y - b);
+          }
         }
         ctx.restore();
       }
@@ -266,15 +293,15 @@
       ctx.lineWidth = .8;
       shape(ctx, land);
       ctx.stroke();
-      if (options.mode === 'contour') showContours(ctx);
+      if (options.mode === 'contour' && !data.theaterMode) showContours(ctx);
 
-      if (geography?.boundary) {
+      if (!data.theaterMode && geography?.boundary) {
         shape(ctx, geography.boundary);
         ctx.strokeStyle = '#465e50';
         ctx.lineWidth = 1.2;
         ctx.stroke();
       }
-      if (options.province && geography?.provinces?.length) {
+      if (!data.theaterMode && options.province && geography?.provinces?.length) {
         for (const province of geography.provinces) {
           shape(ctx, province.rings);
           ctx.lineWidth = .7;
@@ -289,12 +316,21 @@
           ctx.fillText(province.name, x, y);
         }
       }
-      if (camera.zoom < 22) {
+      if (!data.theaterMode && camera.zoom < 22) {
         const [x, y] = project(101, 34);
         ctx.font = 'bold 29px SimSun, serif';
         ctx.textAlign = 'center';
         ctx.fillStyle = '#4858468a';
         ctx.fillText('中  国', x, y);
+      }
+      if (data.theaterMode === 'korea') {
+        const [, y38] = project(127, 38.0);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(180, 128, 36, 0.78)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([8, 5]);
+        ctx.beginPath(); ctx.moveTo(0, y38); ctx.lineTo(width, y38); ctx.stroke();
+        ctx.restore();
       }
       ctx.font = 'italic 11px "Microsoft YaHei UI", sans-serif';
       ctx.fillStyle = '#476f6994';
@@ -1219,7 +1255,8 @@
             // 全国宏观视角防密集穿模：按设置面板中的【宏观最大兵模密度】展示，战区/局部放大后自动展开完整人数阵型
             const count = national ? Math.min(rawCount, Math.max(1, gSet.maxModelsMacro || 4)) : rawCount;
             const columns = Math.min(count, 4);
-            const sprite = humanRenderer.frame(unit.side, !['idle', 'hold', 'sleep'].includes(action), now, 'human', action, unit.group || '');
+            const soldierKind = unit.nationModel || 'human';
+            const sprite = humanRenderer.frame(unit.side, !['idle', 'hold', 'sleep'].includes(action), now, soldierKind, action, unit.group || '');
             for (let n = 0; n < count; n++) {
               const px = ux + (n % columns - (columns - 1) / 2) * size * .58;
               const py = uy - size - 12 - Math.floor(n / columns) * size * .54;
@@ -1236,14 +1273,16 @@
             // 编制缺少实际车辆数时 unitTanks / unitArtillery 是估算，不能作为逐辆实有数。
             const tanks = globalThis.CivilWarHuman3D.tankIcons(globalThis.CivilWarHuman3D.unitTanks(unit));
             const guns = globalThis.CivilWarHuman3D.artilleryIcons(globalThis.CivilWarHuman3D.unitArtillery(unit));
+            const tankKind = unit.tankModel || 'tank';
+            const vSize = Math.round(34 * (gSet.modelScale || 1));
             let equipmentSlot = 0;
-            for (const [kind, amount] of [['tank', tanks], ['artillery', guns]]) {
+            for (const [kind, amount] of [[tankKind, tanks], ['artillery', guns]]) {
               if (!amount) continue;
               const vehicleAction = globalThis.CivilWarHuman3D.equipmentAction(action);
               const vehicle = humanRenderer.frame(unit.side, vehicleAction !== 'idle', now, kind, vehicleAction, unit.group || '');
               for (let n = 0; n < amount; n++, equipmentSlot++) {
-                const px = ux + 38 + (equipmentSlot % 4) * 20, py = uy - 25 - Math.floor(equipmentSlot / 4) * 18;
-                brush.drawImage(vehicle, px - 15, py - 15, 30, 30);
+                const px = ux + 40 + (equipmentSlot % 4) * (vSize * 0.74), py = uy - 26 - Math.floor(equipmentSlot / 4) * (vSize * 0.62);
+                brush.drawImage(vehicle, px - vSize / 2, py - vSize / 2, vSize, vSize);
               }
             }
           }
@@ -2268,6 +2307,16 @@
 
     return {
       update(next, nextSelection) { state = next; selection = nextSelection; queueBattleAnimations(next); draw(); },
+      setData(nextData, view) {
+        rebuildDataIndex(nextData);
+        backgroundKey = undefined;
+        territoryKey = '';
+        factionLegendKey = '';
+        if (view) camera = { lon: view.lon, lat: view.lat, zoom: view.zoom };
+        else if (nextData.defaultView) camera = { ...nextData.defaultView };
+        else camera = { lon: 105, lat: 35, zoom: 12 };
+        draw();
+      },
       layer(mode) {
         options.mode = mode;
         const note = document.getElementById('territory-note');

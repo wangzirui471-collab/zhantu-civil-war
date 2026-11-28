@@ -3254,7 +3254,7 @@
     renderKoreanWarCanvas,
   };
 
-  const api = { blocs, ww2Blocs, continents, rivers, nations, terrainFeatures, renderWorldCanvas, WW2Sim, KoreanWarSim };
+  const api = { blocs, ww2Blocs, continents, rivers, nations, terrainFeatures, renderWorldCanvas, WW2Sim, KoreanWarSim, getHillshadeCanvas, smoothCoast, koreaLandPolys };
   globalThis.CivilWarWorld = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();
