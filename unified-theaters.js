@@ -28,9 +28,11 @@
       routeTypes[linkKey(a, b)] = kind === 'sea' ? 'maritime' : kind === 'rail' ? 'rail' : 'land';
     }
 
-    const northSet = new Set(['dandong', 'sinyiju', 'unsan', 'chongchon', 'chosin', 'hungnam', 'pyongyang', 'wonsan', 'shangganling', 'cheorwon', 'kaesong']);
-    const pusanSet = new Set(['taegu', 'pusan']);
-    const unPushSet = new Set(['seoul', 'incheon', 'suwon', 'chuncheon', 'taejon', 'taegu', 'pusan', 'kaesong', 'pyongyang', 'wonsan', 'hungnam']);
+    const northSet = new Set(['dandong', 'sinyiju', 'unsan', 'chongchon', 'chosin', 'hungnam', 'pyongyang', 'wonsan', 'shangganling', 'cheorwon', 'kaesong',
+      ...cities.filter((c) => c.lat >= 38.04).map((c) => c.id)]);
+    const pusanSet = new Set(['taegu', 'pusan', 'pohang', 'masan']);
+    const unPushSet = new Set(['seoul', 'incheon', 'suwon', 'chuncheon', 'taejon', 'taegu', 'pusan', 'kaesong', 'pyongyang', 'wonsan', 'hungnam', 'hamhung', 'sariwon', 'haeju', 'nampo',
+      ...cities.filter((c) => c.lat < 39.2).map((c) => c.id)]);
 
     const scenarios = (Korea.scenarios || []).map((sc) => {
       const overrides = {};

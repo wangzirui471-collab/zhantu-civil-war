@@ -186,7 +186,7 @@ test('抗美援朝 HOI4 全屏战略沙盘：5大剧本、18城铁路海运、�
 
   for (const sc of Korea.scenarios) {
     const st = KSim.createKoreanWarGame(Korea, sc.id, 'dprk_coalition');
-    assert.equal(Object.keys(st.owners).length, 18);
+    assert.equal(Object.keys(st.owners).length, Korea.cities.length);
     assert.ok(st.armies.length >= 10);
   }
 
@@ -277,7 +277,7 @@ test('统一单窗口战区适配器：朝鲜战争与二战全球原生跑在 C
   const UT = require('../unified-theaters.js');
   const kwData = UT.buildKoreanWarCivilData(Korea, World);
   assert.equal(kwData.theaterMode, 'korea');
-  assert.equal(kwData.cities.length, 18);
+  assert.equal(kwData.cities.length, Korea.cities.length);
   const kwGame = Engine.createGame(kwData, { scenarioId: 'kw-1950-10', scope: 'national', side: 'ccp' });
   assert.ok(kwGame.units.length >= 10);
   Engine.step(kwData, kwGame, 5);

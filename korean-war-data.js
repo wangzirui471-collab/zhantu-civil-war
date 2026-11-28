@@ -208,6 +208,33 @@
     { id: 'taejon', name: '大田', lon: 127.38, lat: 36.35, side: 'un', terrain: 'rail', value: 6 },
     { id: 'taegu', name: '大邱（洛东江）', lon: 128.60, lat: 35.87, side: 'un', terrain: 'river', value: 6 },
     { id: 'pusan', name: '釜山港', lon: 129.07, lat: 35.18, side: 'un', terrain: 'port', value: 8 },
+    // ── 精细扩充：朝鲜半岛全境 24 座真实城镇/港口/山地关隘（总计 42 城）──
+    { id: 'manpo', name: '满浦', lon: 126.29, lat: 41.16, side: 'dprk', terrain: 'mountain', value: 5 },
+    { id: 'kanggye', name: '江界(临时首府)', lon: 126.59, lat: 40.97, side: 'dprk', terrain: 'mountain', value: 6 },
+    { id: 'hyesan', name: '惠山', lon: 128.18, lat: 41.40, side: 'dprk', terrain: 'mountain', value: 5 },
+    { id: 'chongjin', name: '清津港', lon: 129.78, lat: 41.80, side: 'dprk', terrain: 'port', value: 6 },
+    { id: 'songjin', name: '城津(金策)', lon: 129.20, lat: 40.67, side: 'dprk', terrain: 'port', value: 5 },
+    { id: 'hamhung', name: '咸兴', lon: 127.54, lat: 39.92, side: 'dprk', terrain: 'urban', value: 6 },
+    { id: 'tokchon', name: '德川', lon: 126.31, lat: 39.77, side: 'dprk', terrain: 'mountain', value: 6 },
+    { id: 'sunchon', name: '顺川', lon: 125.93, lat: 39.43, side: 'dprk', terrain: 'plain', value: 5 },
+    { id: 'nampo', name: '镇南浦港', lon: 125.41, lat: 38.73, side: 'dprk', terrain: 'port', value: 6 },
+    { id: 'sariwon', name: '沙里院', lon: 125.76, lat: 38.51, side: 'dprk', terrain: 'plain', value: 5 },
+    { id: 'haeju', name: '海州港', lon: 125.71, lat: 38.04, side: 'dprk', terrain: 'port', value: 5 },
+    { id: 'koksan', name: '谷山', lon: 126.67, lat: 38.78, side: 'dprk', terrain: 'mountain', value: 4 },
+    { id: 'kumhwa', name: '金化', lon: 127.46, lat: 38.28, side: 'dprk', terrain: 'mountain', value: 6 },
+    { id: 'hwacheon', name: '华川', lon: 127.71, lat: 38.11, side: 'un', terrain: 'mountain', value: 5 },
+    { id: 'inje', name: '麟蹄', lon: 128.17, lat: 38.07, side: 'un', terrain: 'mountain', value: 5 },
+    { id: 'gangneung', name: '江陵港', lon: 128.88, lat: 37.75, side: 'un', terrain: 'port', value: 6 },
+    { id: 'wonju', name: '原州', lon: 127.95, lat: 37.34, side: 'un', terrain: 'mountain', value: 6 },
+    { id: 'chungju', name: '忠州', lon: 127.93, lat: 36.99, side: 'un', terrain: 'plain', value: 5 },
+    { id: 'cheongju', name: '清州', lon: 127.49, lat: 36.64, side: 'un', terrain: 'plain', value: 5 },
+    { id: 'gunsan', name: '群山港', lon: 126.71, lat: 35.97, side: 'un', terrain: 'port', value: 5 },
+    { id: 'jeonju', name: '全州', lon: 127.15, lat: 35.82, side: 'un', terrain: 'plain', value: 5 },
+    { id: 'gwangju', name: '光州', lon: 126.85, lat: 35.16, side: 'un', terrain: 'urban', value: 6 },
+    { id: 'mokpo', name: '木浦港', lon: 126.39, lat: 34.81, side: 'un', terrain: 'port', value: 5 },
+    { id: 'pohang', name: '浦项港', lon: 129.37, lat: 36.02, side: 'un', terrain: 'port', value: 6 },
+    { id: 'andong_kr', name: '安东(庆北)', lon: 128.73, lat: 36.57, side: 'un', terrain: 'mountain', value: 5 },
+    { id: 'masan', name: '马山/晋州', lon: 128.57, lat: 35.20, side: 'un', terrain: 'port', value: 6 },
   ];
 
   // 朝鲜半岛铁路、山地公路与两栖海运航线网
@@ -238,6 +265,19 @@
     ['hungnam', 'pusan', 'sea'],
     ['wonsan', 'pusan', 'sea'],
     ['incheon', 'wonsan', 'sea'],
+    // ── 精细扩充 26 城铁路、山地公路与沿海航线 ──
+    ['dandong', 'manpo', 'road'], ['manpo', 'kanggye', 'rail'], ['kanggye', 'unsan', 'road'], ['kanggye', 'chosin', 'road'],
+    ['kanggye', 'hyesan', 'road'], ['hyesan', 'chongjin', 'road'], ['chongjin', 'songjin', 'rail'], ['songjin', 'hamhung', 'rail'],
+    ['hamhung', 'hungnam', 'rail'], ['hamhung', 'chosin', 'road'], ['unsan', 'tokchon', 'road'], ['tokchon', 'sunchon', 'road'],
+    ['chongchon', 'sunchon', 'rail'], ['sunchon', 'pyongyang', 'rail'], ['pyongyang', 'nampo', 'rail'], ['pyongyang', 'sariwon', 'rail'],
+    ['sariwon', 'kaesong', 'rail'], ['sariwon', 'haeju', 'rail'], ['haeju', 'kaesong', 'road'], ['pyongyang', 'koksan', 'road'],
+    ['koksan', 'wonsan', 'road'], ['koksan', 'cheorwon', 'road'], ['shangganling', 'kumhwa', 'road'], ['kumhwa', 'cheorwon', 'road'],
+    ['kumhwa', 'hwacheon', 'road'], ['hwacheon', 'chuncheon', 'road'], ['hwacheon', 'inje', 'road'], ['inje', 'gangneung', 'road'],
+    ['wonsan', 'gangneung', 'road'], ['chuncheon', 'wonju', 'road'], ['wonju', 'gangneung', 'road'], ['wonju', 'chungju', 'rail'],
+    ['suwon', 'cheongju', 'rail'], ['cheongju', 'chungju', 'road'], ['cheongju', 'taejon', 'rail'], ['chungju', 'andong_kr', 'rail'],
+    ['andong_kr', 'taegu', 'rail'], ['andong_kr', 'pohang', 'road'], ['gangneung', 'pohang', 'road'], ['pohang', 'taegu', 'rail'], ['pohang', 'pusan', 'rail'],
+    ['taejon', 'jeonju', 'rail'], ['jeonju', 'gunsan', 'rail'], ['jeonju', 'gwangju', 'rail'], ['gwangju', 'mokpo', 'rail'],
+    ['gwangju', 'masan', 'road'], ['masan', 'taegu', 'road'], ['masan', 'pusan', 'rail'], ['gunsan', 'incheon', 'sea'], ['mokpo', 'pusan', 'sea'],
   ];
 
   // 朝鲜战争 HOI4 分支国策树
