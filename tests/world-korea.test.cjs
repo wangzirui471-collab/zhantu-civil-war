@@ -253,4 +253,22 @@ test('国共内战主战场同步 HOI4 深度玩法：燃油、四大军工设�
   const nav = Engine.civilNavalThreeLineBattle(Data, st);
   assert.equal(nav.ok, true);
   assert.ok(st.hoiExtra.lastNavalBattle && st.hoiExtra.lastNavalBattle.atk && st.hoiExtra.lastNavalBattle.def);
+
+  // 免换装直出地图：国共内战直接编组坦克军/空军/航母舰队/导弹阵地
+  assert.equal(Engine.deployDirectForceCivil(Data, st, 'tank').ok, true);
+  assert.equal(Engine.deployDirectForceCivil(Data, st, 'air').ok, true);
+  assert.equal(Engine.deployDirectForceCivil(Data, st, 'navy').ok, true);
+  assert.equal(Engine.deployDirectForceCivil(Data, st, 'missile').ok, true);
+
+  // 二战全球免换装直出地图 + 任意港自由两栖登陆 + 严格导弹射程校验
+  const Sim = World.WW2Sim;
+  const pac = Sim.createWW2Game(WW2, 'ww2-1945-okinawa', 'usa');
+  pac.nations.usa.pp = 200; pac.nations.usa.cp = 100;
+  const dt = Sim.deployDirectForceWW2(WW2, pac, 'usa', 'tank');
+  const da = Sim.deployDirectForceWW2(WW2, pac, 'usa', 'air');
+  const dc = Sim.deployDirectForceWW2(WW2, pac, 'usa', 'carrier');
+  const dm = Sim.deployDirectForceWW2(WW2, pac, 'usa', 'missile');
+  assert.equal(dt.ok && da.ok && dc.ok && dm.ok, true);
+  assert.equal(dc.army.unitKind, 'carrier');
+  assert.equal(Sim.freeAmphibiousLandingWW2(WW2, pac, 'usa', dc.army.id, 'tokyo').ok, true);
 });

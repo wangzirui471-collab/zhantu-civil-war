@@ -834,4 +834,47 @@ dialog.hoi-ww2-full .dialog-body {
 .hoi-focus-col .hoi-focus-node.active { border-color: #ffd866; box-shadow: 0 0 14px rgba(255, 216, 102, 0.38); }
 .hoi-focus-col .hoi-focus-node.locked { opacity: 0.72; }
 
+/* HOI4 战役锁定侧边框 + 直属机动力量部署 */
+.hoi-sidebar {
+  background: linear-gradient(180deg, #212824 0%, #151a17 100%) !important;
+  border-right: 1px solid #7f6c47 !important;
+}
+.hoi-lock-card {
+  padding: 8px 9px;
+  border-radius: 5px;
+  border: 1px solid #8a754c;
+  background: linear-gradient(180deg, #2a332d, #1a211d);
+  font-size: 11.5px;
+  color: #e6dcc0;
+  line-height: 1.5;
+}
+.hoi-lock-card .lock-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #ffe599;
+  font-weight: 700;
+  font-size: 12.5px;
+  margin-bottom: 3px;
+}
+.hoi-deploy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.hoi-deploy-grid button {
+  padding: 5px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid #786643;
+  background: linear-gradient(180deg, #2c362f, #1d2420);
+  color: #f4e6be;
+  cursor: pointer;
+}
+.hoi-deploy-grid button:hover {
+  border-color: #f0cf7b;
+  background: linear-gradient(180deg, #42371d, #2b2312);
+}
+
+
 

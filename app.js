@@ -299,12 +299,71 @@
     $('continue-national').onclick = () => { dialog.close(); changeScope('national'); };
   }
 
+  // 全局画面与游戏参数设置（跨三大战区实时生效）
+  globalThis.GameSettings = globalThis.GameSettings || {
+    modelScale: 1.0,
+    maxModelsMacro: 4,
+    labelScale: 1.0,
+    audioVolume: 0.85,
+    showRangeRings: true,
+  };
+
+  function openSettingsDialog() {
+    const gs = globalThis.GameSettings;
+    const body = showDialog('⚙ 画面与游戏参数设置（三战区实时生效）',
+      '<div class="hoi-cipher-box">'
+      + '<header><strong style="color:#f5e1b0;">🎖️ 地图兵模与视觉参数</strong></header>'
+      + '<div style="display:grid;gap:10px;margin-top:8px;">'
+      + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>3D 兵模大小缩放：<b id="set-scale-v">' + gs.modelScale.toFixed(2) + '×</b></span>'
+      + '<input type="range" id="set-model-scale" min="0.6" max="1.8" step="0.05" value="' + gs.modelScale + '" style="width:220px;"></label>'
+      + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>宏观视角每纵队最大兵模数：<b id="set-max-v">' + gs.maxModelsMacro + '</b></span>'
+      + '<input type="range" id="set-max-macro" min="1" max="8" step="1" value="' + gs.maxModelsMacro + '" style="width:220px;"></label>'
+      + '<label style="display:flex;justify-content:space-between;align-items:center;gap:10px;"><span>战争音效音量：<b id="set-vol-v">' + Math.round(gs.audioVolume * 100) + '%</b></span>'
+      + '<input type="range" id="set-audio-vol" min="0" max="1" step="0.05" value="' + gs.audioVolume + '" style="width:220px;"></label>'
+      + '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="set-range-rings" ' + (gs.showRangeRings ? 'checked' : '') + '> 显示 B-29 航程圈与红色导弹射程圈</label>'
+      + '</div>'
+      + '<div style="display:flex;gap:8px;margin-top:12px;">'
+      + '<button type="button" class="gold" id="set-reset-btn">↩️ 恢复默认参数</button>'
+      + '<button type="button" id="set-close-btn">✔ 完成并应用</button>'
+      + '</div></div>');
+    const sync = () => { render(); };
+    body.querySelector('#set-model-scale').oninput = (ev) => {
+      gs.modelScale = Number(ev.target.value);
+      body.querySelector('#set-scale-v').textContent = gs.modelScale.toFixed(2) + '×';
+      sync();
+    };
+    body.querySelector('#set-max-macro').oninput = (ev) => {
+      gs.maxModelsMacro = Number(ev.target.value);
+      body.querySelector('#set-max-v').textContent = String(gs.maxModelsMacro);
+      sync();
+    };
+    body.querySelector('#set-audio-vol').oninput = (ev) => {
+      gs.audioVolume = Number(ev.target.value);
+      body.querySelector('#set-vol-v').textContent = Math.round(gs.audioVolume * 100) + '%';
+    };
+    body.querySelector('#set-range-rings').onchange = (ev) => {
+      gs.showRangeRings = Boolean(ev.target.checked);
+      sync();
+    };
+    body.querySelector('#set-reset-btn').onclick = () => {
+      Object.assign(gs, { modelScale: 1.0, maxModelsMacro: 4, labelScale: 1.0, audioVolume: 0.85, showRangeRings: true });
+      openSettingsDialog();
+      sync();
+    };
+    body.querySelector('#set-close-btn').onclick = () => dialog.close();
+  }
+
   function renderScenarios() {
+    const sc = scenariosById.get(state.scenarioId) || Data.scenarios[0];
+    const sideLabel = sides[state.player] || state.player;
+    const ownUnits = Engine.activeUnits(state).filter((u) => !u.parent && u.side === state.player);
     const list = priorityScenarios.map((id) => scenariosById.get(id)).filter(Boolean);
-    $('scenario-list').innerHTML = list.map((scenario) => '<button class="scenario-card" type="button" data-scenario="'
-      + escape(scenario.id) + '" aria-pressed="' + (state.scenarioId === scenario.id) + '"><span class="scenario-symbol">'
-      + escape(scenarioMarks[scenario.id] || '战') + '</span><div><strong>' + escape(scenario.title)
-      + '</strong><small>' + fmtDate(scenario.date) + '</small></div><span aria-hidden="true">›</span></button>').join('');
+    $('scenario-list').innerHTML =
+      '<div class="lock-title"><span>' + escape(sc?.title || '全面内战') + '</span><span style="font-size:10px;color:#7ee094;">● 进行中</span></div>'
+      + '<div><b>锁定阵营：</b>' + escape(sideLabel) + '</div>'
+      + '<div><b>当前日期：</b>' + fmtDate(state.date) + ' · 纵队 ' + ownUnits.length + ' 支</div>'
+      + '<div style="color:#a8b8a4;font-size:10.5px;margin-top:3px;">🔒 已锁定当前战役存档，需点击右上角「🚪 退出重选」才可切换战役。</div>'
+      + '<div hidden aria-hidden="true">' + list.map((s) => '<button type="button" data-scenario="' + escape(s.id) + '" aria-pressed="' + (state.scenarioId === s.id) + '"></button>').join('') + '</div>';
   }
 
   function renderHeader() {
@@ -4393,6 +4452,11 @@
         + '<button type="button" class="gold" id="ww2-nuke-btn" style="border-color:#ff7b54;" title="B-29 起飞投掷原子弹：飞行轨迹 + 强光闪爆 + 冲击波与蘑菇云（35政点）">☢️ 发射原子弹(35政)</button>'
         + '<button type="button" class="gold" id="ww2-v2-btn" title="发射超音速 V-2 弹道导弹远程轰击敌城（20政点）">🚀 V-2导弹(20政)</button>'
         + '<button type="button" class="gold" id="ww2-railgun-btn" title="800mm 古斯塔夫重型列车炮摧毁 2 级要塞（20指点）">🚂 列车炮(20指)</button>'
+        + '<button type="button" class="gold" id="ww2-free-land-btn" title="选中我方部队或航母舰队后，想在哪个敌方沿海港口登陆就能直接抢滩登陆（15指点）">⚓ 任意港自由登陆(15指)</button>'
+        + '<button type="button" data-ww2-direct="tank" title="免换装直接编组独立重装坦克军出现在地图上（15政点）">🚜 直出坦克军(15政)</button>'
+        + '<button type="button" data-ww2-direct="air" title="直接派遣独立空军联队出现在地图上（15政点）">✈️ 直出空军联队(15政)</button>'
+        + '<button type="button" data-ww2-direct="carrier" title="直接派遣航母特混舰队停驻港口/出击（15政点）">🚢 直出航母舰队(15政)</button>'
+        + '<button type="button" data-ww2-direct="missile" title="直接部署远程导弹发射旅并显示红色射程圈（15政点）">🚀 部署导弹旅(15政)</button>'
         + '<button type="button" id="ww2-fortify-btn">🏰 筑要塞(15政)</button>'
         + '<button type="button" id="ww2-radar-btn">📡 建雷达(15政)</button>'
         + '<button type="button" id="ww2-suppress-btn">👮 宪兵镇压(10政)</button>'
@@ -4436,6 +4500,17 @@
         const tgt = Sim.isHostile(WW2, st.player, st.owners[selectedCityId], st) ? selectedCityId : null;
         const r = Sim.launchV2MissileWW2(WW2, st, st.player, tgt);
         if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('🚀 V-2 弹道导弹已点火升空！'); redrawAll(); startFxLoop(); }
+      });
+      cmdPanel.querySelector('#ww2-free-land-btn')?.addEventListener('click', () => {
+        pushWW2Undo();
+        const tgt = Sim.isHostile(WW2, st.player, st.owners[selectedCityId], st) ? selectedCityId : null;
+        const r = Sim.freeAmphibiousLandingWW2(WW2, st, st.player, selectedArmy, tgt);
+        if (!r.ok) notify(r.error); else { WarAudio.artillery(); notify('⚓ 自由两栖登陆已发动！'); redrawAll(); startFxLoop(); }
+      });
+      cmdPanel.querySelectorAll('[data-ww2-direct]').forEach((b) => b.onclick = () => {
+        pushWW2Undo();
+        const r = Sim.deployDirectForceWW2(WW2, st, st.player, b.dataset.ww2Direct, selectedCityId);
+        if (!r.ok) notify(r.error); else { selectedArmy = r.army.id; WarAudio.bugle(); notify('⚔️ ' + r.army.name + ' 已免换装直出地图，可自由调用！'); redrawAll(); }
       });
       cmdPanel.querySelector('#ww2-railgun-btn')?.addEventListener('click', () => {
         const tgt = Sim.isHostile(WW2, st.player, st.owners[selectedCityId], st) ? selectedCityId : null;
@@ -4775,6 +4850,17 @@
     };
   }
 
+  $('game-settings-btn')?.addEventListener('click', openSettingsDialog);
+  $('hoi-quick-deploy')?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-quick-deploy]');
+    if (!btn) return;
+    if (action('deployDirectForceCivil', [btn.dataset.quickDeploy, selectedCity])) {
+      WarAudio.bugle();
+      saveAuto(true);
+      render();
+      notify('⚔️ 特种机动力量已免换装直出地图，随时可点选自由调动！');
+    }
+  });
   $('global-audio-toggle')?.addEventListener('click', (ev) => {
     ww2AudioOn = !ww2AudioOn;
     ev.currentTarget.setAttribute('aria-pressed', String(ww2AudioOn));

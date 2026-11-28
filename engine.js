@@ -5488,6 +5488,53 @@
     return { ok: true, battle: hoi.lastNavalBattle };
   }
 
+  // ── 陆海空直属机动力量免换装直出地图（坦克军 / 空军联队 / 航母战舰 / 导弹重炮阵地）──
+  function deployDirectForceCivil(data, state, kind = 'tank', cityId = null) {
+    const side = state.player;
+    const pol = state.political?.[side];
+    if (!pol || pol.points < 15) return { ok: false, error: '直接部署特种机动力量需要 15 政治点。' };
+    const tgtCity = (cityId && state.owners[cityId] === side) ? cityId
+      : data.cities.find((c) => state.owners[c.id] === side && (kind !== 'navy' || c.port))?.id
+        || data.cities.find((c) => state.owners[c.id] === side)?.id;
+    if (!tgtCity) return { ok: false, error: '未找到可部署的己方城镇。' };
+    pol.points -= 15;
+    const cityObj = data.cities.find((c) => c.id === tgtCity);
+    const id = 'direct-' + kind + '-' + state.units.length + '-' + Date.now().toString(36).slice(-3);
+    const nameMap = {
+      tank: (side === 'ccp' ? '解放军独立装甲坦克军' : '国军装甲突击总队'),
+      air: (side === 'ccp' ? '人民空军前线混成联队' : '空军战区轰炸驱逐大队'),
+      navy: (side === 'ccp' ? '华东海军渡海特混舰队' : '海军第一机动特混舰队'),
+      missile: (side === 'ccp' ? '炮兵喀秋莎远程火箭旅' : '重炮远程火力打击群'),
+    };
+    if (kind === 'air' && state.air) {
+      if (typeof state.air[side] === 'number') state.air[side] += 18;
+      else if (state.air[side]) state.air[side].planes = (state.air[side].planes || 0) + 18;
+    } else if (kind === 'navy' && state.navy?.[side]) {
+      state.navy[side].warships = (state.navy[side].warships || 0) + 4;
+      state.navy[side].transports = (state.navy[side].transports || 0) + 8;
+      ensureCivilHoi(state)[side].taskForce.dd += 4;
+      ensureCivilHoi(state)[side].taskForce.ca += 1;
+    }
+    const newUnit = {
+      id, side, name: nameMap[kind] || '直属机动军',
+      city: tgtCity, area: cityObj?.region || state.area || 'east',
+      strength: kind === 'tank' ? 18000 : kind === 'missile' ? 12000 : 14000,
+      maxStrength: kind === 'tank' ? 18000 : 14000,
+      org: 95, morale: 85, supply: 1, entrench: 0,
+      equipment: kind === 'tank' ? 'mechanized' : 'standard',
+      support: {
+        infantry: kind === 'tank' ? 1 : 2,
+        artillery: kind === 'missile' ? 4 : 2,
+        armor: kind === 'tank' ? 4 : 1,
+        engineer: 1, recon: 1,
+      },
+      order: { type: 'hold' },
+    };
+    state.units.push(newUnit);
+    state.log.push({ date: state.date, text: `⚔️ 【免换装直属部署】${newUnit.name} 已直接编组进驻 ${cityObj?.name || tgtCity}，随时可在地图上自由调动！` });
+    return { ok: true, unit: newUnit };
+  }
+
   const api = {
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
@@ -5495,7 +5542,7 @@
     launchTimedDecision, resolveEventChoice,
     scorchedEarth, sabotageRail, buildSpyNetwork, activateCipherBreak,
     setAirRegion, setDoctrine, setMotorization, airborneInfiltrate, callSovietSupport,
-    ensureCivilHoi, upgradeCivilMIO, designCivilEquipment, buildCivilRadar, relocateCivilIndustry, suppressCivilResistance, civilNavalThreeLineBattle,
+    ensureCivilHoi, upgradeCivilMIO, designCivilEquipment, buildCivilRadar, relocateCivilIndustry, suppressCivilResistance, civilNavalThreeLineBattle, deployDirectForceCivil,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,

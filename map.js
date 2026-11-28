@@ -1213,10 +1213,11 @@
           if (show3D && strength > 0) {
             const battle = state.battles?.[unit.order?.target] || state.battles?.[unit.city];
             const action = globalThis.CivilWarHuman3D.orderAction(unit, Boolean(battle), nightMode);
-            const size = national ? 22 : zoomLevel() === 'detail' ? 44 : 34;
+            const gSet = globalThis.GameSettings || { modelScale: 1, maxModelsMacro: 4 };
+            const size = Math.round((national ? 22 : zoomLevel() === 'detail' ? 44 : 34) * (gSet.modelScale || 1));
             const rawCount = globalThis.CivilWarHuman3D.iconCount(strength);
-            // 全国宏观视角防密集穿模：每纵队清爽展示最多 4 个代表兵模，战区/局部放大后自动展开完整人数阵型
-            const count = national ? Math.min(rawCount, 4) : rawCount;
+            // 全国宏观视角防密集穿模：按设置面板中的【宏观最大兵模密度】展示，战区/局部放大后自动展开完整人数阵型
+            const count = national ? Math.min(rawCount, Math.max(1, gSet.maxModelsMacro || 4)) : rawCount;
             const columns = Math.min(count, 4);
             const sprite = humanRenderer.frame(unit.side, !['idle', 'hold', 'sleep'].includes(action), now, 'human', action, unit.group || '');
             for (let n = 0; n < count; n++) {

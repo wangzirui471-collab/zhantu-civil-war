@@ -41,6 +41,7 @@
         </div>
       </div>
       <div class="top-actions">
+        <button type="button" id="game-settings-btn" class="control" title="调整 3D 兵模大小、密度、字号、音量与射程圈" style="font-size:11.5px;padding:3px 8px;">⚙ 设置</button>
         <button type="button" id="global-audio-toggle" class="control" aria-pressed="true" title="开关全战区战争音效（军号/炮火/核爆）" style="font-size:11.5px;padding:3px 8px;">🔊 音效</button>
         <details class="sys-menu" id="sys-menu">
           <summary title="系统菜单：剧本、存档、新开局、战史与说明">⚙ 菜单 ▾</summary>
@@ -77,10 +78,19 @@
     </nav>
 
     <main class="workspace">
-      <aside class="rail" aria-label="战役和统帅面板">
-        <section class="scenario-rail">
-          <div class="section-title"><h2>战役剧本</h2><button class="link-button" type="button" id="all-scenarios">全部</button></div>
-          <div id="scenario-list" class="scenario-list"></div>
+      <aside class="rail hoi-sidebar" aria-label="HOI4 战区总司令部侧边框">
+        <section class="hoi-rail-lock">
+          <div class="section-title"><h2>🔒 当前战役档案</h2><button class="link-button" type="button" id="all-scenarios" title="退出当前战役并返回大厅重选">🚪 退出重选</button></div>
+          <div id="scenario-list" class="hoi-lock-card"></div>
+        </section>
+        <section class="hoi-rail-deploy">
+          <div class="section-title"><h2>⚔️ 直属机动部署</h2><span style="font-size:10.5px;color:#b8aa82;">免换装直出地图</span></div>
+          <div id="hoi-quick-deploy" class="hoi-deploy-grid">
+            <button type="button" data-quick-deploy="tank" title="直接编组独立坦克军并部署到当前选中城镇（无需反复换装）">🚜 坦克军</button>
+            <button type="button" data-quick-deploy="air" title="直接派遣空军联队部署到前线机场">✈️ 空军联队</button>
+            <button type="button" data-quick-deploy="navy" title="直接派遣航母/战舰特混编队至沿海港口">🚢 航母战舰</button>
+            <button type="button" data-quick-deploy="missile" title="在当前城市部署远程导弹/重炮发射阵地">🚀 导弹阵地</button>
+          </div>
         </section>
         <section class="ledger-section">
           <div class="section-title"><h2>全国控制</h2><div><button class="link-button" type="button" id="territory-report">变化</button><button class="link-button" type="button" id="change-side">换边</button></div></div>
