@@ -361,12 +361,56 @@
     const sideLabel = sides[state.player] || state.player;
     const ownUnits = Engine.activeUnits(state).filter((u) => !u.parent && u.side === state.player);
     const list = priorityScenarios.map((id) => scenariosById.get(id)).filter(Boolean);
+    const prepHtml = (state.prepDaysLeft || 0) > 0
+      ? '<div style="margin:4px 0;padding:4px 6px;border-radius:4px;background:#3a3016;border:1px solid #d4b054;color:#ffe79e;font-size:11px;">⏳ 战前筹备期：剩 <b>' + state.prepDaysLeft + '</b> 天开战 <button type="button" id="rail-end-prep" style="font-size:10px;padding:1px 5px;margin-left:4px;">⚡ 提前开战</button></div>'
+      : '';
+    const endlessBadge = state.sandboxEndless ? '<span style="font-size:10px;color:#7ee094;">♾️ 无尽沙盒</span>' : '<span style="font-size:10px;color:#7ee094;">● 进行中</span>';
     $('scenario-list').innerHTML =
-      '<div class="lock-title"><span>' + escape(sc?.title || '全面内战') + '</span><span style="font-size:10px;color:#7ee094;">● 进行中</span></div>'
+      '<div class="lock-title"><span>' + escape(sc?.title || '全面内战') + '</span>' + endlessBadge + '</div>'
       + '<div><b>锁定阵营：</b>' + escape(sideLabel) + '</div>'
       + '<div><b>当前日期：</b>' + fmtDate(state.date) + ' · 纵队 ' + ownUnits.length + ' 支</div>'
-      + '<div style="color:#a8b8a4;font-size:10.5px;margin-top:3px;">🔒 已锁定当前战役存档，需点击右上角「🚪 退出重选」才可切换战役。</div>'
+      + prepHtml
+      + '<div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;">'
+      + '<button type="button" id="rail-sandbox-war" style="flex:1;font-size:10.5px;padding:3px 5px;" title="HOI4 自由跨国宣战（东征日本 / 美苏开战 / 称霸全球）">🌍 自由宣战</button>'
+      + '<button type="button" id="rail-continue-endless" style="flex:1;font-size:10.5px;padding:3px 5px;" title="开启无尽模式，统一后不结束">♾️ 无尽模式</button>'
+      + '</div>'
+      + '<div style="color:#a8b8a4;font-size:10.5px;margin-top:3px;">🔒 已锁定当前战役存档，需点击「🚪 退出重选」才可切换战役。</div>'
       + '<div hidden aria-hidden="true">' + list.map((s) => '<button type="button" data-scenario="' + escape(s.id) + '" aria-pressed="' + (state.scenarioId === s.id) + '"></button>').join('') + '</div>';
+    $('rail-end-prep')?.addEventListener('click', () => {
+      if (action('endPrepEarly', [])) { WarAudio.bugle(); saveAuto(true); render(); notify('⚡ 已提前结束筹备期，全线正式开战！'); }
+    });
+    $('rail-continue-endless')?.addEventListener('click', () => {
+      if (action('continueSandboxMode', [])) { WarAudio.click(); saveAuto(true); render(); notify('♾️ 无尽自由沙盒已开启：统一或任务完成后永不强制结束！'); }
+    });
+    $('rail-sandbox-war')?.addEventListener('click', openSandboxWarDialog);
+  }
+
+  function openSandboxWarDialog() {
+    const body = showDialog('🌍 HOI4 自由外交宣战与全球跨国征服',
+      '<div class="hoi-cipher-box">'
+      + '<header><strong style="color:#f5e1b0;">🔥 制造战争借口并自由宣战（每次 20 政点 · 自动开启无尽沙盒）</strong></header>'
+      + '<p class="subtext" style="margin:4px 0;">无论你刚统一中国想东征日本，还是打完二战想开启美苏冷战热战，都可以直接对任意目标宣战或一键升格至无缝全球大沙盘！</p>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
+      + '<button type="button" class="gold" data-sw-target="japan">🇯🇵 对日本宣战（东征冲绳/东京）</button>'
+      + '<button type="button" class="gold" data-sw-target="ussr">☭ 对苏联宣战（冷战不可思议行动）</button>'
+      + '<button type="button" class="gold" data-sw-target="usa">🇺🇸 对美国宣战（进军珍珠港/太平洋）</button>'
+      + '<button type="button" class="gold" data-sw-target="germany">🇩🇪 对德国宣战（决战柏林/欧洲）</button>'
+      + '<button type="button" data-sw-target="uk">🇬🇧 对英国宣战（进攻伦敦/新加坡）</button>'
+      + '<button type="button" class="gold" id="sw-goto-grand">🌍 立即切入《1949 林彪东征日本》全球大图</button>'
+      + '</div></div>');
+    body.querySelectorAll('[data-sw-target]').forEach((b) => b.onclick = () => {
+      if (currentTheaterMode === 'civil') {
+        launchUnifiedTheater('grand', b.dataset.swTarget === 'ussr' ? 'grand-1945-unthinkable' : 'grand-1949-linbiao', state.player, { prepDays: 0, sandboxEndless: true });
+        return;
+      }
+      if (action('declareSandboxWar', [b.dataset.swTarget])) {
+        WarAudio.bugle(); saveAuto(true); render(); dialog.close();
+        notify('🔥 已正式向目标大国宣战！全球战火重燃！');
+      }
+    });
+    body.querySelector('#sw-goto-grand')?.addEventListener('click', () => {
+      launchUnifiedTheater('grand', 'grand-1949-linbiao', 'ccp', { prepDays: 0, sandboxEndless: true });
+    });
   }
 
   function renderHeader() {
@@ -1068,19 +1112,22 @@
     Object.assign(regions, Data.regions ? { national: '全部战区', ...Data.regions } : baseRegions);
   }
 
-  function launchUnifiedTheater(mode, scenarioId, playerSide = 'ccp') {
+  function launchUnifiedTheater(mode, scenarioId, playerSide = 'ccp', opts = {}) {
     const UT = globalThis.UnifiedTheaters;
     let nextData = BaseCivilData;
     if (mode === 'korea' && UT) nextData = UT.buildKoreanWarCivilData(globalThis.KoreanWarData, globalThis.CivilWarWorld) || BaseCivilData;
     else if (mode === 'ww2' && UT) nextData = UT.buildWW2CivilData(globalThis.WW2Data, globalThis.CivilWarWorld) || BaseCivilData;
+    else if (mode === 'grand' && UT) nextData = UT.buildGrandWorldData(globalThis.WW2Data, globalThis.KoreanWarData, globalThis.CivilWarWorld) || BaseCivilData;
     currentTheaterMode = mode;
     rebuildAppIndexes(nextData);
     const sc = scenariosById.get(scenarioId) || Data.scenarios[0];
+    const prepDays = Math.max(0, Math.floor(Number(opts.prepDays) || 0));
+    const sandboxEndless = opts.sandboxEndless !== false;
     const created = Engine.createGame(Data, {
       scenarioId: sc.id, scope: 'national', side: playerSide, historyMode: 'dynamic', goal: 'mainland',
+      prepDays, sandboxEndless,
     });
     if (sc.overrides) Object.assign(created.owners, sc.overrides);
-    // 确保各部队开局位于己方城镇
     for (const u of created.units) {
       if (created.owners[u.city] !== u.side) {
         const home = Data.cities.find((c) => created.owners[c.id] === u.side && c.region === u.area)?.id
@@ -1090,53 +1137,66 @@
     }
     const focusObj = citiesById.get(sc.focus) || Data.cities[0];
     const view = mode === 'korea'
-      ? { lon: 127.1, lat: 37.8, zoom: 76 }
-      : mode === 'ww2'
+      ? { lon: 127.0, lat: 37.8, zoom: 76 }
+      : (mode === 'ww2' || mode === 'grand')
         ? { lon: focusObj?.lon ?? 14, lat: focusObj?.lat ?? 48, zoom: sc.ww2Theater === 'pacific' ? 16 : 26 }
         : { lon: 105, lat: 35, zoom: 12 };
     map.setData(Data, view);
     setActive(created, Timeline.create(created, Engine), false);
     if (dialog.open) dialog.close();
     WarAudio.bugle();
-    notify('⚔ 已进入【' + (Data.theaterTitle || '国共内战') + ' · ' + sc.title + '】，全程在主窗口高精地图指挥！');
+    notify('⚔ 已进入【' + (Data.theaterTitle || '国共内战') + ' · ' + sc.title + '】' + (prepDays > 0 ? '（提前 ' + prepDays + ' 天入场筹备！）' : '') + (sandboxEndless ? ' · ♾️ 无尽自由沙盒' : ''));
   }
 
-  function openUnifiedCampaignLobby(defaultEra = 'civil') {
+  function openUnifiedCampaignLobby(defaultEra = 'grand') {
     const UT = globalThis.UnifiedTheaters;
     const kwData = UT?.buildKoreanWarCivilData(globalThis.KoreanWarData, globalThis.CivilWarWorld);
     const ww2Data = UT?.buildWW2CivilData(globalThis.WW2Data, globalThis.CivilWarWorld);
+    const grandData = UT?.buildGrandWorldData(globalThis.WW2Data, globalThis.KoreanWarData, globalThis.CivilWarWorld);
     let era = defaultEra;
     let pickedSide = 'ccp';
+    let pickedPrep = 0;
+    let sandboxEndless = true;
 
     const renderEraHtml = () => {
-      const ds = era === 'korea' ? kwData : era === 'ww2' ? ww2Data : BaseCivilData;
+      const ds = era === 'korea' ? kwData : era === 'ww2' ? ww2Data : era === 'grand' ? grandData : BaseCivilData;
       const sideA = ds?.sideMeta?.ccp?.name || '中国共产党';
       const sideB = ds?.sideMeta?.roc?.name || '中国国民党';
       const list = (ds?.scenarios || []).slice(0, 16);
       return '<div class="hoi-start-tabs" style="margin-bottom:8px;">'
+        + '<button type="button" data-uni-era="grand" aria-pressed="' + (era === 'grand') + '">🌍 全球无缝大沙盒 (从0到100)</button>'
         + '<button type="button" data-uni-era="civil" aria-pressed="' + (era === 'civil') + '">🇨🇳 国共内战 (1945–1950)</button>'
         + '<button type="button" data-uni-era="ww2" aria-pressed="' + (era === 'ww2') + '">🌐 第二次世界大战 (1937–1945)</button>'
-        + '<button type="button" data-uni-era="korea" aria-pressed="' + (era === 'korea') + '">🇰🇵 抗美援朝 · 朝鲜战争 (1950–1953)</button>'
+        + '<button type="button" data-uni-era="korea" aria-pressed="' + (era === 'korea') + '">🇰🇵 抗美援朝 (1950–1953)</button>'
         + '</div>'
-        + '<div class="hoi-cipher-box" style="margin-bottom:8px;"><header><strong style="color:#f5e1b0;">🎖️ 1. 选择本局锁定阵营（选定后在主窗口全程指挥，不再弹出独立窗口）</strong></header>'
-        + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">'
+        + '<div class="hoi-cipher-box" style="margin-bottom:8px;"><header><strong style="color:#f5e1b0;">🎖️ 1. 选择阵营 & ⏳ 提前入场筹备期（选定后全程在主窗口游玩，永不强制结束）</strong></header>'
+        + '<div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;align-items:center;">'
         + '<button type="button" data-uni-side="ccp" aria-pressed="' + (pickedSide === 'ccp') + '" class="gold">★ ' + escape(sideA) + '</button>'
         + '<button type="button" data-uni-side="roc" aria-pressed="' + (pickedSide === 'roc') + '">✠ ' + escape(sideB) + '</button>'
+        + '<label style="margin-left:auto;font-size:11.5px;color:#ffe699;display:inline-flex;align-items:center;gap:5px;cursor:pointer;">'
+        + '<input type="checkbox" id="uni-endless-chk" ' + (sandboxEndless ? 'checked' : '') + '> ♾️ 无尽沙盒（统一后不结束，继续跨国征战）</label>'
+        + '</div>'
+        + '<div style="display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;align-items:center;">'
+        + '<span style="font-size:11.5px;color:#dfd4b4;">⏳ 提前多久进入该战役：</span>'
+        + [[0, '当日直接开战'], [30, '提前 30 天'], [90, '提前 90 天 (3个月)'], [180, '提前 180 天 (半年)'], [365, '提前 365 天 (1年从零备战)']].map(([d, lbl]) =>
+          '<button type="button" data-uni-prep="' + d + '" aria-pressed="' + (pickedPrep === d) + '" style="font-size:11px;padding:3px 7px;">' + lbl + '</button>').join('')
         + '</div></div>'
         + '<div class="hoi-doctrine-grid">'
         + list.map((sc) => '<article class="hoi-doctrine-card"><strong style="color:#ffe494;">' + escape(sc.title) + '</strong>'
-          + '<p class="subtext" style="margin:3px 0;">📅 ' + escape(sc.date) + ' · ' + escape((sc.summary || '').slice(0, 56)) + '</p>'
+          + '<p class="subtext" style="margin:3px 0;">📅 ' + escape(sc.date) + ' · ' + escape((sc.summary || '').slice(0, 62)) + '</p>'
           + '<button type="button" class="gold" data-uni-launch="' + escape(sc.id) + '" style="width:100%;font-size:11.5px;">⚔ 进入主战场开始指挥</button></article>').join('')
         + '</div>';
     };
 
-    const body = showDialog('⚔ 战图 · 统一战区开局大厅（同窗口畅玩三战区）', '<div id="uni-lobby-wrap">' + renderEraHtml() + '</div>');
+    const body = showDialog('⚔ 战图 · 统一世界大沙盘开局大厅（HOI4 高自由度模式）', '<div id="uni-lobby-wrap">' + renderEraHtml() + '</div>');
     const bind = () => {
       const wrap = body.querySelector('#uni-lobby-wrap');
       if (!wrap) return;
       wrap.querySelectorAll('[data-uni-era]').forEach((b) => b.onclick = () => { era = b.dataset.uniEra; wrap.innerHTML = renderEraHtml(); bind(); });
       wrap.querySelectorAll('[data-uni-side]').forEach((b) => b.onclick = () => { pickedSide = b.dataset.uniSide; wrap.innerHTML = renderEraHtml(); bind(); });
-      wrap.querySelectorAll('[data-uni-launch]').forEach((b) => b.onclick = () => launchUnifiedTheater(era, b.dataset.uniLaunch, pickedSide));
+      wrap.querySelectorAll('[data-uni-prep]').forEach((b) => b.onclick = () => { pickedPrep = Number(b.dataset.uniPrep); wrap.innerHTML = renderEraHtml(); bind(); });
+      wrap.querySelector('#uni-endless-chk')?.addEventListener('change', (ev) => { sandboxEndless = Boolean(ev.target.checked); });
+      wrap.querySelectorAll('[data-uni-launch]').forEach((b) => b.onclick = () => launchUnifiedTheater(era, b.dataset.uniLaunch, pickedSide, { prepDays: pickedPrep, sandboxEndless }));
     };
     bind();
   }

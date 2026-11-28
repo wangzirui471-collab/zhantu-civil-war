@@ -244,7 +244,96 @@
     };
   }
 
-  const api = { buildKoreanWarCivilData, buildWW2CivilData };
+  // ── 🌍 无缝全球大沙盘（中国 + 朝鲜 + 日本 + 苏联 + 欧洲 + 北非 + 太平洋 + 美国，支持从0到100无尽征战！）──
+  function buildGrandWorldData(WW2, Korea, World) {
+    const base = buildWW2CivilData(WW2, World);
+    if (!base) return null;
+    const existing = new Set(base.cities.map((c) => c.id));
+    // 融入朝鲜半岛核心重镇并打通中-朝-日-太平洋海陆航线
+    const extraKorea = [
+      { id: 'pyongyang', name: '平壤', lon: 125.76, lat: 39.03, region: 'china', terrain: 'urban', value: 6, port: false },
+      { id: 'pusan', name: '釜山港', lon: 129.07, lat: 35.18, region: 'pacific', terrain: 'port', value: 6, port: true },
+      { id: 'incheon', name: '仁川港', lon: 126.70, lat: 37.45, region: 'pacific', terrain: 'port', value: 5, port: true },
+    ];
+    for (const c of extraKorea) {
+      if (!existing.has(c.id)) { base.cities.push(c); existing.add(c.id); }
+    }
+    const extraLinks = [
+      ['shenyang', 'pyongyang', 'rail'],
+      ['pyongyang', 'seoul', 'rail'],
+      ['seoul', 'incheon', 'rail'],
+      ['seoul', 'pusan', 'rail'],
+      ['pusan', 'hiroshima', 'maritime'],
+      ['shanghai', 'okinawa', 'maritime'],
+      ['shenyang', 'vladivostok', 'rail'],
+    ];
+    for (const [a, b, kind] of extraLinks) {
+      if (existing.has(a) && existing.has(b)) {
+        base.links.push([a, b]);
+        base.routeTypes[linkKey(a, b)] = kind;
+      }
+    }
+
+    const allCcp = Object.fromEntries(base.cities.map((c) => [c.id, 'ccp']));
+    const linbiaoOverrides = { ...allCcp };
+    for (const id of ['tokyo', 'hiroshima', 'osaka', 'okinawa', 'iwo_jima', 'guam', 'midway', 'pearl_harbor', 'san_francisco', 'washington', 'new_york', 'pusan', 'seoul', 'incheon']) {
+      if (existing.has(id)) linbiaoOverrides[id] = 'roc';
+    }
+    const unthinkableOverrides = Object.fromEntries(base.cities.map((c) => {
+      const isEastBloc = ['moscow', 'leningrad', 'stalingrad', 'kiev', 'minsk', 'warsaw', 'berlin', 'vladivostok', 'shenyang', 'yanan', 'pyongyang'].includes(c.id);
+      return [c.id, isEastBloc ? 'ccp' : 'roc'];
+    }));
+
+    const grandScenarios = [
+      {
+        id: 'grand-1936',
+        title: '🌍 1936 全球大沙盒（从 0 玩到 100 · 自由发展）',
+        date: '1936-01-01',
+        focus: 'nanjing',
+        area: 'china',
+        ww2Theater: 'china',
+        summary: '1936 年战前大沙盒开局！可自由选择任意大国从零种田、扩军工、点国策、造航母坦克，想何时向谁宣战完全由你掌控。',
+        overrides: base.scenarios[0]?.overrides || allCcp,
+      },
+      {
+        id: 'grand-1949-linbiao',
+        title: '🇨🇳➡️🇯🇵 1949 林彪统一中国后 · 渡海东征日本',
+        date: '1949-10-01',
+        focus: 'shanghai',
+        area: 'china',
+        ww2Theater: 'pacific',
+        summary: '解放军统一中国大陆后不再结束！林彪四野主力与华东渡海舰队直指冲绳、九州与东京，向太平洋展开跨国大决战！',
+        overrides: linbiaoOverrides,
+      },
+      {
+        id: 'grand-1945-unthinkable',
+        title: '🇺🇸⚔️☭ 1945 不可思议行动（美苏冷战全面热战）',
+        date: '1945-07-01',
+        focus: 'berlin',
+        area: 'europe',
+        ww2Theater: 'europe',
+        summary: '二战刚落幕，美英联军与苏联红军在柏林易北河与远东爆发第三次世界大战！朱可夫装甲洪流正面硬刚巴顿与艾森豪威尔！',
+        overrides: unthinkableOverrides,
+      },
+      {
+        id: 'grand-1950-asia',
+        title: '🌏 1950 东亚全局博弈（中/朝/苏/美/日同图决战）',
+        date: '1950-06-25',
+        focus: 'seoul',
+        area: 'pacific',
+        ww2Theater: 'pacific',
+        summary: '中国大陆、朝鲜半岛、日本列岛与美军太平洋基地同图实时推演，既可抗美援朝，也可顺势跨海进攻日本或北上西进！',
+        overrides: linbiaoOverrides,
+      },
+    ];
+
+    base.theaterMode = 'ww2';
+    base.theaterTitle = '🌍 全球无缝大沙盒（从 0 到 100 · 无限自由征战）';
+    base.scenarios = [...grandScenarios, ...base.scenarios];
+    return base;
+  }
+
+  const api = { buildKoreanWarCivilData, buildWW2CivilData, buildGrandWorldData };
   globalThis.UnifiedTheaters = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

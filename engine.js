@@ -293,8 +293,14 @@
       if (map.cities.has(id) && sides.includes(side)) owners[id] = side;
     }
 
+    const prepDays = Math.max(0, Math.min(730, Math.floor(Number(options.prepDays) || 0)));
+    const actualDate = prepDays > 0 ? shiftDays(date, -prepDays) : date;
     const state = {
-      date, player, scenarioId: chosenScenario?.id ?? null, group: null,
+      date: actualDate, player, scenarioId: chosenScenario?.id ?? null, group: null,
+      sandboxEndless: Boolean(options.sandboxEndless),
+      prepDaysLeft: prepDays,
+      warStartDate: date,
+      declaredWars: [],
       difficulty: ['normal', 'hard', 'devil'].includes(options.difficulty) ? options.difficulty : 'normal',
       scope: options.scope === 'theater' ? 'theater' : 'national',
       area: options.area ?? chosenScenario?.area ?? map.cities.get(chosenScenario?.focus)?.region
@@ -5181,6 +5187,18 @@
 
   function checkVictory(data, state) {
     if (state.ceasefire) { state.winner = null; state.endReason = 'ceasefire'; return; }
+    // HOI4 无尽自由沙盒模式：统一或达成阶段目标绝不强制结束，仅记录里程碑并继续全球自由推演！
+    if (state.sandboxEndless) {
+      const objective = data.cities.filter(city => state.goal === 'all' || !isTaiwan(city));
+      if (objective.length) {
+        const leader = state.owners[objective[0].id];
+        if (sides.includes(leader) && objective.every(city => state.owners[city.id] === leader) && !state.milestoneUnified) {
+          state.milestoneUnified = leader;
+          addLog(state, '🏆 【无尽沙盒里程碑】' + sideNames[leader] + '已达成当前战区统一！战局不会结束，你可在外交中自由宣战攻打日本/苏联/欧美列强！', 'victory', { side: leader });
+        }
+      }
+      return;
+    }
     const objective = data.cities.filter(city => state.goal === 'all' || !isTaiwan(city));
     if (!objective.length) return;
     const leader = state.owners[objective[0].id];
@@ -5242,6 +5260,12 @@
     const elapsed = Number.isFinite(Number(days)) ? Math.max(0, Math.floor(Number(days))) : 0;
     for (let day = 0; day < elapsed && !state.winner && !state.ceasefire; day += 1) {
       state.date = shiftDays(state.date, 1);
+      if ((state.prepDaysLeft || 0) > 0) {
+        state.prepDaysLeft -= 1;
+        if (state.prepDaysLeft === 0) {
+          addLog(state, '⚔️ 【战前筹备期结束】预定战役日期已到，全面战争正式爆发！', 'event');
+        }
+      }
       let tree = unitTree(state);
       const count = state.units.length;
       applyHistory(data, map, state, tree);
@@ -5535,6 +5559,66 @@
     return { ok: true, unit: newUnit };
   }
 
+  // ── HOI4 无尽沙盒解锁 / 提前结束筹备开战 / 自由跨国宣战（东征日本 / 美苏冷战热战 / 征服全球）──
+  function continueSandboxMode(data, state) {
+    state.winner = null;
+    state.ceasefire = false;
+    state.endReason = null;
+    state.sandboxEndless = true;
+    addLog(state, '♾️ 【开启无尽自由沙盒】已解除胜利结束限制，你可以继续全球扩张或自由向任意列强宣战！', 'event');
+    return { ok: true };
+  }
+
+  function endPrepEarly(data, state) {
+    if (!(state.prepDaysLeft > 0)) return { ok: false, error: '当前已处于正式交战状态。' };
+    state.prepDaysLeft = 0;
+    addLog(state, '⚡ 【提前发动总攻】统帅下令提前结束战前筹备期，全线立即开战！', 'event');
+    return { ok: true };
+  }
+
+  function declareSandboxWar(data, state, targetTag = 'japan') {
+    const side = state.player;
+    const enemy = side === 'ccp' ? 'roc' : 'ccp';
+    const pol = state.political?.[side];
+    if (!pol || pol.points < 20) return { ok: false, error: '制造战争借口并自由宣战需要 20 政治点。' };
+    pol.points -= 20;
+    state.sandboxEndless = true;
+    state.winner = null;
+    state.declaredWars = state.declaredWars || [];
+    const presets = {
+      japan: { name: '日本帝国（东京/广岛/冲绳）', cities: ['tokyo', 'hiroshima', 'osaka', 'okinawa', 'iwo_jima', 'taipei'], strength: 160000, model: 'soldier_japan', tank: 'chiha' },
+      ussr: { name: '苏维埃联盟（莫斯科/列宁格勒/海参崴）', cities: ['moscow', 'leningrad', 'stalingrad', 'kiev', 'vladivostok'], strength: 220000, model: 'soldier_ussr', tank: 't34' },
+      usa: { name: '美利坚合众国（珍珠港/旧金山/华盛顿）', cities: ['pearl_harbor', 'midway', 'guam', 'san_francisco', 'washington', 'new_york'], strength: 200000, model: 'soldier_usa', tank: 'sherman' },
+      germany: { name: '德意志帝国（柏林/鲁尔/慕尼黑）', cities: ['berlin', 'ruhr', 'munich', 'hamburg', 'warsaw'], strength: 210000, model: 'soldier_germany', tank: 'tiger' },
+      uk: { name: '大英帝国（伦敦/新加坡/开罗）', cities: ['london', 'singapore', 'cairo', 'gibraltar', 'new_delhi'], strength: 170000, model: 'soldier_uk', tank: 'churchill' },
+    };
+    const p = presets[targetTag] || presets.japan;
+    if (!state.declaredWars.includes(targetTag)) state.declaredWars.push(targetTag);
+    let flipped = 0;
+    for (const cid of p.cities) {
+      if (state.owners[cid] !== undefined) {
+        state.owners[cid] = enemy;
+        flipped += 1;
+        const cObj = data.cities.find((c) => c.id === cid);
+        if (!state.units.some((u) => u.city === cid && u.side === enemy && u.strength > 0)) {
+          state.units.push({
+            id: `war-def-${targetTag}-${cid}-${state.units.length}`,
+            name: `${p.name.split('（')[0]}守备主力`,
+            side: enemy, city: cid, area: cObj?.region || 'pacific',
+            strength: Math.round(p.strength / Math.max(1, Math.min(3, p.cities.length))),
+            maxStrength: Math.round(p.strength / 2),
+            org: 90, morale: 82, supply: 1, entrench: 3,
+            nationModel: p.model, tankModel: p.tank,
+            support: { infantry: 3, artillery: 2, armor: 2, engineer: 1, recon: 1 },
+            order: { type: 'defend', target: cid },
+          });
+        }
+      }
+    }
+    addLog(state, `🔥 【HOI4 自由外交宣战】${sideNames[side]}正式向【${p.name}】宣战！全球战火重燃（${flipped} 座目标重镇进入交战状态）！`, 'event');
+    return { ok: true, target: targetTag, flipped };
+  }
+
   const api = {
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
@@ -5543,6 +5627,7 @@
     scorchedEarth, sabotageRail, buildSpyNetwork, activateCipherBreak,
     setAirRegion, setDoctrine, setMotorization, airborneInfiltrate, callSovietSupport,
     ensureCivilHoi, upgradeCivilMIO, designCivilEquipment, buildCivilRadar, relocateCivilIndustry, suppressCivilResistance, civilNavalThreeLineBattle, deployDirectForceCivil,
+    continueSandboxMode, endPrepEarly, declareSandboxWar,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,

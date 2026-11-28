@@ -290,4 +290,19 @@ test('统一单窗口战区适配器：朝鲜战争与二战全球原生跑在 C
   assert.ok(ww2Game.units.length >= 20);
   Engine.step(ww2Data, ww2Game, 5);
   assert.ok(ww2Game.date > '1940-05-10');
+
+  // 全球无缝大沙盘（1936从0到100 / 林彪东征日本 / 美苏不可思议行动）+ 提前 N 天筹备 + 无尽沙盒不结束 + 自由宣战
+  const grand = UT.buildGrandWorldData(WW2, Korea, World);
+  assert.ok(grand.cities.length >= 65);
+  const g1 = Engine.createGame(grand, { scenarioId: 'grand-1949-linbiao', scope: 'national', side: 'ccp', prepDays: 90, sandboxEndless: true });
+  assert.equal(g1.prepDaysLeft, 90);
+  assert.equal(g1.date, '1949-07-03');
+  Engine.step(grand, g1, 10);
+  assert.equal(g1.prepDaysLeft, 80);
+  assert.equal(Engine.endPrepEarly(grand, g1).ok, true);
+  assert.equal(g1.prepDaysLeft, 0);
+  g1.political.ccp.points = 100;
+  assert.equal(Engine.declareSandboxWar(grand, g1, 'japan').ok, true);
+  assert.equal(Engine.declareSandboxWar(grand, g1, 'ussr').ok, true);
+  assert.equal(g1.winner, null, '无尽沙盒模式下绝不强制结束');
 });
