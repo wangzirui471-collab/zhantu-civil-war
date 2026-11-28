@@ -4888,6 +4888,53 @@
     return { ok: true, captured: false };
   }
 
+  function callSovietSupport(data, state, kind, cityId) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    const side = state.player;
+    if (side !== 'ccp') return { ok: false, error: '仅共产党/志愿军阵营可调用苏联秘密空军与苏械军援。' };
+    if (kind === 'mig_corridor') {
+      if (state.political[side].points < 25) return { ok: false, error: '政治点不足（调用苏联米格-15 机群需 25 点）。' };
+      state.political[side].points -= 25;
+      state.airWar[side].planes = Math.round((state.airWar[side].planes ?? 0) + 18);
+      state.air[side] = Math.min(100, (state.air[side] ?? 16) + 24);
+      addLog(state, '🇷🇺 苏联第64歼击航空兵军米格-15 机群升空掩护「米格走廊」：可用战机 +18、制空支援大幅提升！', 'soviet-aid', { side, kind });
+      return { ok: true, kind, planes: state.airWar[side].planes };
+    }
+    if (kind === 'katyusha_salvo') {
+      if (!map_has(data, cityId)) return { ok: false, error: '请选择有效的敌占目标城镇。' };
+      if (state.owners[cityId] === side) return { ok: false, error: '喀秋莎齐射只能针对敌占城镇。' };
+      const cmd = state.command?.[side];
+      if ((cmd?.points ?? 0) < 25) return { ok: false, error: '指挥点不足（调用喀秋莎齐射需 25 点）。' };
+      cmd.points -= 25;
+      const map = index(data);
+      const tree = unitTree(state);
+      const defenders = tree.combat.filter(u => u.city === cityId && u.side !== side && u.strength > 0);
+      for (const u of defenders) u.org = Math.max(4, unitOrg(u) - 30);
+      if (state.forts?.[cityId]) {
+        for (const k of Object.keys(state.forts[cityId])) {
+          if (state.forts[cityId][k] > 0) { state.forts[cityId][k] -= 1; break; }
+        }
+      }
+      state.buffs ??= [];
+      state.buffs.push({ kind: 'barrage', target: cityId, side, until: shiftDays(state.date, 5) });
+      const name = map.cities.get(cityId)?.name ?? cityId;
+      addLog(state, '🚀 苏式 BM-13 喀秋莎火箭炮齐射覆盖' + name + '！敌军组织度重创 -30，工事遭摧毁！', 'soviet-aid', { side, kind, city: cityId });
+      return { ok: true, kind, city: cityId };
+    }
+    if (kind === 'soviet_armor_aid') {
+      if (state.political[side].points < 35) return { ok: false, error: '政治点不足（换装苏械步炮坦需 35 点）。' };
+      state.political[side].points -= 35;
+      state.stock[side].infantry = (state.stock[side].infantry ?? 0) + 220;
+      state.stock[side].artillery = (state.stock[side].artillery ?? 0) + 65;
+      state.stock[side].armor = (state.stock[side].armor ?? 0) + 35;
+      state.economy[side].arms = (state.economy[side].arms ?? 0) + 320;
+      addLog(state, '🇷🇺 苏械换装列车抵运前线：波波莎/莫辛纳甘步枪 +220、M-30 122mm/喀秋莎火炮 +65、T-34/85 坦克 +35！', 'soviet-aid', { side, kind });
+      return { ok: true, kind };
+    }
+    return { ok: false, error: '无法识别该苏联支援项目。' };
+  }
+
   function systemsStep(data, state) {
     for (const [cityId, days] of Object.entries(state.railCooldown ?? {})) {
       if (days <= 1) delete state.railCooldown[cityId];
@@ -5320,7 +5367,7 @@
     reformSpirit, hireAdvisor, applyDivisionPreset, portGarrisonOrder, fallbackLineOrder,
     launchTimedDecision, resolveEventChoice,
     scorchedEarth, sabotageRail, buildSpyNetwork, activateCipherBreak,
-    setAirRegion, setDoctrine, setMotorization, airborneInfiltrate,
+    setAirRegion, setDoctrine, setMotorization, airborneInfiltrate, callSovietSupport,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,

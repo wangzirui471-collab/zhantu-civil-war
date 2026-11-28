@@ -1202,6 +1202,8 @@
     setRun(false);
     $('dialog-title').textContent = title;
     $('dialog-body').innerHTML = html;
+    const skipButton = $('tutorial-skip');
+    if (skipButton) skipButton.hidden = true;
     if (!dialog.open) dialog.showModal();
     return $('dialog-body');
   }
@@ -1680,9 +1682,20 @@
     $('dialog-close').disabled = required;
     showDialog('锦州第一局 · 新手必修', '<p>先学习选部队、进攻和查看战报。教程完成后，可从左侧选择1946年全面内战或其他剧本。当前版本不保存进度，刷新后需要重新学习。</p>'
       + '<button type="button" id="tutorial-start" class="gold">开始锦州引导</button>');
+    const skipButton = $('tutorial-skip');
+    skipButton.hidden = !required;
+    skipButton.onclick = () => {
+      $('dialog-close').disabled = false;
+      skipButton.hidden = true;
+      tutorial = undefined;
+      if (dialog.open) dialog.close();
+      render();
+      notify('已跳过新手教程。可从左侧「战役剧本」选择想玩的剧本，需要时点顶部「⚑ 锦州引导」随时重开。');
+    };
     $('tutorial-start').onclick = () => {
       if (state.date > timeline.origin.date || timeline.commands.length) saveSlot();
       $('dialog-close').disabled = false;
+      skipButton.hidden = true;
       const fresh = Engine.createGame(Data, { scenarioId: 'jinzhou', side: 'ccp',
         scope: 'theater', historyMode: 'dynamic', goal: 'mainland' });
       setActive(fresh, Timeline.create(fresh, Engine));
@@ -3385,23 +3398,37 @@
         + (per ? '（' + scaleIcons(item.qty, per) + '标）' : '') + '</td><td>' + escape(item.caliber || item.armor || item.speed || item.class || '')
         + (item.gun ? ' / ' + escape(item.gun) : '') + '</td><td>' + escape(item.role) + '</td></tr>').join('') + '</tbody></table>';
     const previewTabs = [
-      ['carrier', '🚢 埃塞克斯级航母'],
-      ['jet', '✈️ 米格-15 / F-86 喷气机'],
-      ['tank', '🚜 主力坦克'],
-      ['artillery', '💣 重型火炮'],
-      ['ship', '⚓ 战列舰/驱逐舰'],
+      ['carrier', '🚢 埃塞克斯航母'],
+      ['battleship', '⚓ 密苏里战列舰'],
+      ['mig15', '✈️ 苏式米格-15'],
+      ['f86', '✈️ 美军 F-86佩刀'],
+      ['b29', '🛫 B-29轰炸机'],
+      ['t34', '🚜 苏式 T-34/85'],
+      ['m26', '🚜 美军 M26潘兴'],
+      ['katyusha', '🚀 BM-13喀秋莎'],
+      ['artillery', '💣 155/122重炮'],
       ['human', '🎖️ 步兵兵模'],
     ];
+    const sovietActionBar = '<div class="hoi-cipher-box" style="margin:6px 0 10px;"><header style="display:flex;justify-content:space-between;align-items:center;">'
+      + '<strong style="color:#f5e1b0;">🇷🇺 历史苏械配置与苏联空军/重炮支援调用（共方/志愿军可用）</strong>'
+      + '<span class="plan-status is-active">第64航空军 · 60个苏械师援华</span></header>'
+      + '<div class="unit-actions">'
+      + '<button type="button" class="gold" data-soviet-aid="mig_corridor" title="消耗 25 政治点：召唤苏联米格-15 机群掩护米格走廊，战机 +18、制空大增">✈️ 调用米格-15机群（25政点）</button>'
+      + '<button type="button" class="gold" data-soviet-aid="katyusha_salvo" title="消耗 25 指挥点：对当前选中/最近敌城实施苏式 BM-13 喀秋莎齐射，重创敌组织度 -30">🚀 喀秋莎火箭炮齐射（25指点）</button>'
+      + '<button type="button" data-soviet-aid="soviet_armor_aid" title="消耗 35 政治点：换装波波莎步枪 +220、122mm/喀秋莎火炮 +65、T-34/85 坦克 +35">🚜 换装苏械步炮坦（35政点）</button>'
+      + '</div></div>';
     const scenarioCards = '<h4 style="margin:12px 0 6px;color:#f4dfaa;">朝鲜战争 5 大历史战役节点（1950–1953）</h4><div class="hoi-doctrine-grid">'
       + Korea.scenarios.map((sc) => '<article class="hoi-doctrine-card"><strong style="color:#f5e1b0;">' + escape(sc.title)
         + ' · ' + escape(sc.date) + '</strong><p class="subtext" style="margin:0;">' + escape(sc.summary) + '</p></article>').join('') + '</div>';
 
-    const body = showDialog('🇰🇵 抗美援朝 · 朝鲜战争（1950–1953）参战国全编制与装备库',
-      tabsHtml
-      + '<div style="display:grid;grid-template-columns:230px minmax(0,1fr);gap:12px;align-items:start;margin:6px 0 10px;">'
+    const body = showDialog('🇰🇵 抗美援朝 · 朝鲜战争（1950–1953）参战国全编制与 3D 武器库',
+      tabsHtml + sovietActionBar
+      + '<div style="display:grid;grid-template-columns:255px minmax(0,1fr);gap:12px;align-items:start;margin:6px 0 10px;">'
       + '<div style="padding:8px;border-radius:6px;border:1px solid #8f7a52;background:#161d19;text-align:center;">'
-      + '<canvas id="kw-3d-canvas" width="210" height="210" style="width:100%;height:auto;border-radius:4px;background:#101715;display:block;"></canvas>'
-      + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;justify-content:center;">'
+      + '<canvas id="kw-3d-canvas" width="235" height="235" style="width:100%;height:auto;border-radius:4px;background:#101715;display:block;"></canvas>'
+      + '<div style="display:flex;justify-content:center;gap:6px;margin:6px 0 4px;">'
+      + '<button type="button" id="kw-act-toggle" style="font-size:11px;padding:3px 9px;">🔥 切换作战/开火姿态</button></div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;justify-content:center;">'
       + previewTabs.map(([k, lbl]) => '<button type="button" data-kw-model="' + k + '" aria-pressed="' + (previewKind === k)
         + '" style="font-size:10.5px;padding:3px 6px;">' + lbl + '</button>').join('')
       + '</div></div>'
@@ -3424,6 +3451,24 @@
       btn.onclick = () => openKoreanWarPanel(btn.dataset.kwFaction, previewKind);
     });
     let activeModel = previewKind;
+    let combatPose = false;
+    body.querySelector('#kw-act-toggle')?.addEventListener('click', (ev) => {
+      combatPose = !combatPose;
+      ev.currentTarget.textContent = combatPose ? '🛑 切回静态检视' : '🔥 切换作战/开火姿态';
+    });
+    body.querySelectorAll('[data-soviet-aid]').forEach((btn) => {
+      btn.onclick = () => {
+        const kind = btn.dataset.sovietAid;
+        const targetCity = state.owners[selectedCity] !== state.player ? selectedCity
+          : (Object.keys(state.battles || {})[0] || Data.cities.find((c) => state.owners[c.id] !== state.player)?.id);
+        if (action('callSovietSupport', [kind, targetCity])) {
+          saveAuto(true); render();
+          notify(kind === 'mig_corridor' ? '✈️ 苏联米格-15 机群已入列掩护米格走廊！'
+            : kind === 'katyusha_salvo' ? '🚀 苏式喀秋莎火箭炮齐射已覆盖 ' + cityName(targetCity) + '！'
+              : '🚜 苏械步枪、122mm 榴弹炮与 T-34/85 坦克已入库！');
+        }
+      };
+    });
     body.querySelectorAll('[data-kw-model]').forEach((btn) => {
       btn.onclick = () => {
         activeModel = btn.dataset.kwModel;
@@ -3438,7 +3483,8 @@
         if (!document.body.contains(kwCanvas) || !dialog.open) return;
         kctx.clearRect(0, 0, kwCanvas.width, kwCanvas.height);
         const orbit = (t * 0.00055) % (Math.PI * 2);
-        kctx.drawImage(preview3DRenderer.frame(renderSide, true, t, activeModel, activeModel === 'jet' ? 'march' : 'idle', '', orbit), 0, 0, kwCanvas.width, kwCanvas.height);
+        const act = combatPose ? 'attack' : (activeModel === 'mig15' || activeModel === 'f86' || activeModel === 'b29' ? 'march' : 'idle');
+        kctx.drawImage(preview3DRenderer.frame(renderSide, true, t, activeModel, act, '', orbit), 0, 0, kwCanvas.width, kwCanvas.height);
         requestAnimationFrame(spin);
       };
       requestAnimationFrame(spin);

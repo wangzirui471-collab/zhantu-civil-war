@@ -116,6 +116,10 @@ async function main() {
     await poll(() => evaluate('document.querySelector("#dialog").open'));
     assert((await value('#dialog-title')).includes('新手必修'));
     assert(await evaluate('document.querySelector("#dialog-close").disabled'));
+    assert(await evaluate(`(() => { const button = document.querySelector('#tutorial-skip');
+      return !!button && !button.hidden && button.offsetParent !== null; })()`),
+    '必修教程右上角应提供跳过按钮');
+    assert.equal(await evaluate('document.querySelector("#tutorial-skip").textContent.trim()'), '跳过教程');
     await click('#tutorial-start');
     assert.equal(await evaluate('!!document.querySelector("[data-tutorial-skip]")'), false);
     await click('[data-scenario=liaoshen]');

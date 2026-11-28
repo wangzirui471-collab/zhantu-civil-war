@@ -148,6 +148,35 @@
         navy: [{ name: '巨像级轻型航母（凯旋号 / 忒修斯号 / 荣耀号）', qty: 2, class: '轻型航空母舰 (CVL)', role: '西海岸制海与近距航空支援', modelKind: 'carrier' }],
       },
     },
+    ussr: {
+      id: 'ussr', side: 'dprk_coalition', name: '苏联空军第64军与苏械后援 (USSR)', short: '苏联支援',
+      flag: '☭', color: '#9e1c1c', commander: '洛博夫 · 阔日杜布（第64歼击航空兵军）',
+      totalPeakPersonnel: 72000, initialEntryPersonnel: 26000,
+      doctrine: '米格走廊高空截击 · 60个苏械师装备援华',
+      summary: '苏联空军第64歼击航空兵军秘密驻防安东与辽东机场，与志愿军空军共同开辟「米格走廊」截击美军 B-29 与 F-86；同时向志愿军与人民军提供 60 个师苏式步枪、喀秋莎火箭炮、M-30 榴弹炮与 T-34/85 坦克换装。',
+      corps: [
+        { id: 'ussr-64iac', name: '苏军第64歼击航空兵军（第324/303师）', commander: '阔日杜布 / 洛博夫', strength: 26000, divisions: ['第324歼击机师', '第303歼击机师', '高射炮兵师'], city: 'dandong', role: '米格走廊高空防空截击' },
+        { id: 'ussr-aa', name: '苏军防空雷达与探照灯团', commander: '别洛夫', strength: 14000, divisions: ['第10探照灯团', '第28高炮师'], city: 'sinyiju', role: '鸭绿江大桥防空掩护' },
+      ],
+      arsenal: {
+        infantryWeapons: ['PPSh-41 波波莎冲锋枪（大量援华）', '莫辛纳甘 M1944 卡宾枪', 'DP-28 / RP-46 机枪', 'SKS 半自动步枪'],
+        artillery: [
+          { name: 'BM-13 喀秋莎 132mm 火箭炮（援华换装）', qty: 240, caliber: '132mm', role: '志愿军火箭炮师主力装备' },
+          { name: 'M-30 122mm / ML-20 152mm 加榴炮', qty: 500, caliber: '122–152mm', role: '重炮援华与坑道压制' },
+          { name: 'KS-19 100mm / 85mm 高射炮', qty: 360, caliber: '85–100mm', role: '掩护鸭绿江桥与后勤枢纽' },
+        ],
+        tanks: [
+          { name: 'T-34/85 中型坦克（苏援坦克团）', qty: 300, armor: '45–90mm', gun: '85mm', role: '整建制移交志愿军与人民军' },
+          { name: 'IS-2 重型坦克', qty: 60, armor: '120mm', gun: '122mm', role: '重装甲突击支援' },
+        ],
+        aircraft: [
+          { name: '米格-15 比斯 (MiG-15bis) 王牌机群', qty: 320, speed: '1076 km/h', role: '阔日杜布王牌联队，专打 B-29 与 F-86', modelKind: 'mig15' },
+        ],
+        navy: [
+          { name: '旅顺港太平洋舰队支援分队', qty: 6, class: '近海警戒', role: '威慑黄海北岸与后勤保障', modelKind: 'ship' },
+        ],
+      },
+    },
   };
 
   // 朝鲜半岛 5 大历史剧本

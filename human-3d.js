@@ -1234,73 +1234,249 @@
   }
 
   function buildCarrier(b, side, action = 'idle', phase = 0) {
-    const bob = action === 'march' ? Math.sin(phase) * 0.03 : 0;
-    const hull = MAT.navalGrey;
-    const deck = MAT.deckDark;
-    const redHull = MAT.hullRed;
-    const lineCol = MAT.eyeWhite;
-    const planeCol = side === 'ccp' ? MAT.brightStl : MAT.navalLight;
-    // 舰体吃水线与船身
-    b.box(0, 0.14 + bob, 0, 0.62, 0.18, 2.55, redHull);
-    b.box(0, 0.32 + bob, 0, 0.68, 0.24, 2.65, hull);
-    // 宽大直通飞行甲板
-    b.box(0, 0.49 + bob, 0, 0.86, 0.09, 2.85, deck);
-    // 飞行甲板白色中线与起降标线
-    b.box(-0.08, 0.54 + bob, 0, 0.04, 0.015, 2.55, lineCol);
-    b.box(-0.08, 0.54 + bob, 1.18, 0.32, 0.015, 0.06, lineCol);
-    b.box(-0.08, 0.54 + bob, -1.18, 0.32, 0.015, 0.06, lineCol);
-    // 右舷埃塞克斯级舰岛 + 烟囱 + 雷达桅杆
-    b.box(0.32, 0.72 + bob, -0.05, 0.18, 0.38, 0.78, MAT.navalLight);
-    b.box(0.33, 0.96 + bob, 0.12, 0.16, 0.22, 0.26, MAT.gunmetal);
-    b.box(0.33, 1.02 + bob, -0.18, 0.14, 0.34, 0.22, MAT.rubber); // 烟囱
-    b.box(0.33, 1.24 + bob, 0.10, 0.04, 0.36, 0.04, MAT.brightStl); // 主桅杆
-    b.box(0.33, 1.36 + bob, 0.10, 0.24, 0.04, 0.08, MAT.brass); // 雷达横桁
-    // 两舷防空炮位
-    for (const z of [-0.95, 0.85]) {
-      b.box(-0.46, 0.46 + bob, z, 0.12, 0.08, 0.18, MAT.gunmetal);
-      b.box(0.46, 0.46 + bob, z, 0.12, 0.08, 0.18, MAT.gunmetal);
+    const bob = action === 'march' ? Math.sin(phase) * 0.025 : 0;
+    // 9 段流线型埃塞克斯级航母船体（外飘飞剪舰首 + 防锈红船底 + 水线 + 海灰船身）
+    const sections = [
+      [-1.58, 0.04, 0.44, 0.24, 1.04],
+      [-1.25, 0.02, 0.45, 0.34, 1.08],
+      [-0.70, 0.01, 0.46, 0.39, 1.12],
+      [ 0.00, 0.01, 0.46, 0.40, 1.12],
+      [ 0.65, 0.01, 0.47, 0.37, 1.16],
+      [ 1.15, 0.02, 0.49, 0.27, 1.24],
+      [ 1.48, 0.05, 0.52, 0.14, 1.32],
+      [ 1.66, 0.12, 0.54, 0.04, 1.38],
+    ];
+    b.loftHullZ(sections, MAT.hullRed, 0.00, 0.15);
+    b.loftHullZ(sections, MAT.rubber, 0.145, 0.19);
+    b.loftHullZ(sections, MAT.navalGrey, 0.185, 0.65);
+
+    // 宽大直通飞行甲板（柚木/深灰防滑甲板 + 外悬甲板支撑桁架）
+    b.box(0, 0.50 + bob, 0.02, 0.92, 0.07, 3.10, MAT.deckDark);
+    b.box(0, 0.54 + bob, 0.02, 0.86, 0.012, 2.96, MAT.deckTeak);
+    // 白色中线、弹射滑槽、阻拦索与甲板升降机框线
+    b.box(-0.08, 0.552 + bob, 0.02, 0.032, 0.008, 2.80, MAT.eyeWhite);
+    b.box(-0.22, 0.552 + bob, 0.95, 0.018, 0.008, 0.72, MAT.gunmetal); // 左舷弹射器
+    b.box( 0.06, 0.552 + bob, 0.95, 0.018, 0.008, 0.72, MAT.gunmetal); // 右舷弹射器
+    for (const z of [-1.25, -1.12, -0.99, -0.86]) {
+      b.box(-0.08, 0.552 + bob, z, 0.58, 0.008, 0.012, MAT.rubber); // 阻拦索
     }
-    // 停放在飞行甲板上的 3 架舰载机（F4U / 喷气舰载机示意）
-    for (const [px, pz] of [[-0.14, -0.78], [-0.14, -0.15], [-0.14, 0.55]]) {
-      b.box(px, 0.59 + bob, pz, 0.08, 0.06, 0.30, planeCol);
-      b.box(px, 0.59 + bob, pz + 0.02, 0.34, 0.025, 0.09, planeCol);
-      b.box(px, 0.63 + bob, pz - 0.12, 0.11, 0.07, 0.04, planeCol);
+    b.box(-0.08, 0.551 + bob, 0.18, 0.34, 0.01, 0.34, MAT.armorDark); // 舯部升降机
+
+    // 右舷标志性埃塞克斯级舰岛：双层罗经舰桥 + 大倾角扁烟囱 + 三脚主桅 + SK-2 网格雷达
+    b.box(0.35, 0.72 + bob, 0.02, 0.18, 0.38, 0.92, MAT.navalLight);
+    b.box(0.36, 0.95 + bob, 0.22, 0.16, 0.16, 0.34, MAT.navalGrey);
+    b.box(0.36, 0.99 + bob, 0.38, 0.14, 0.06, 0.05, MAT.glass); // 舰桥舷窗
+    b.box(0.36, 1.00 + bob, -0.14, 0.13, 0.36, 0.30, MAT.navalGrey); // 扁长烟囱
+    b.box(0.36, 1.19 + bob, -0.14, 0.14, 0.05, 0.31, MAT.rubber); // 烟囱黑顶
+    b.cyl(0.36, 1.03 + bob, 0.18, 0.36, 1.52 + bob, 0.14, 0.022, 0.012, MAT.brightStl, 8); // 主桅
+    b.cyl(0.36, 1.03 + bob, 0.28, 0.36, 1.38 + bob, 0.16, 0.012, 0.008, MAT.brightStl, 6); // 撑杆
+    b.box(0.36, 1.44 + bob, 0.15, 0.28, 0.14, 0.04, MAT.brass); // SK-2 雷达网
+    // 舰岛前后 4 座双联装 127mm Mk.12 高平两用炮塔
+    for (const z of [0.58, 0.42, -0.44, -0.60]) {
+      b.box(0.34, 0.62 + bob, z, 0.13, 0.11, 0.14, MAT.navalLight);
+      b.cyl(0.32, 0.64 + bob, z + 0.05, 0.32, 0.69 + bob, z + 0.22, 0.014, 0.011, MAT.gunmetal, 6);
+      b.cyl(0.36, 0.64 + bob, z + 0.05, 0.36, 0.69 + bob, z + 0.22, 0.014, 0.011, MAT.gunmetal, 6);
+    }
+    // 两舷 40mm 博福斯高炮防空平台
+    for (const z of [-1.10, -0.35, 0.45, 1.12]) {
+      b.box(-0.48, 0.46 + bob, z, 0.12, 0.07, 0.20, MAT.gunmetal);
+      b.box( 0.48, 0.46 + bob, z, 0.12, 0.07, 0.20, MAT.gunmetal);
+    }
+    // 飞行甲板停放 4 架精细 F4U 海盗舰载机（深海蓝涂装 + 倒鸥翼 + 螺旋桨）
+    for (const [px, pz] of [[-0.22, -0.82], [-0.02, -0.46], [-0.22, 0.38], [-0.04, 0.88]]) {
+      b.cyl(px, 0.59 + bob, pz - 0.15, px, 0.60 + bob, pz + 0.15, 0.032, 0.026, MAT.navalGrey, 8);
+      b.box(px, 0.585 + bob, pz + 0.02, 0.34, 0.02, 0.08, MAT.navalLight);
+      b.box(px, 0.625 + bob, pz - 0.12, 0.11, 0.06, 0.03, MAT.navalLight);
+      b.box(px, 0.60 + bob, pz + 0.16, 0.09, 0.012, 0.012, MAT.brass); // 螺旋桨
     }
   }
 
-  function buildJetFighter(b, side, action = 'idle', phase = 0) {
-    const hover = 0.88 + Math.sin(phase * 1.5) * 0.06;
+  function buildBattleship(b, side, action = 'idle', phase = 0) {
+    const bob = action === 'march' ? Math.sin(phase) * 0.02 : 0;
+    const isFiring = action === 'attack' || action === 'fire';
+    // 衣阿华级高速战列舰 9 段修长船体
+    const sections = [
+      [-1.70, 0.04, 0.38, 0.20, 1.04],
+      [-1.25, 0.02, 0.39, 0.30, 1.08],
+      [-0.50, 0.01, 0.40, 0.35, 1.10],
+      [ 0.30, 0.01, 0.42, 0.33, 1.14],
+      [ 0.95, 0.02, 0.48, 0.24, 1.24],
+      [ 1.45, 0.05, 0.54, 0.11, 1.34],
+      [ 1.75, 0.12, 0.58, 0.03, 1.42],
+    ];
+    b.loftHullZ(sections, MAT.hullRed, 0.00, 0.14);
+    b.loftHullZ(sections, MAT.rubber, 0.135, 0.18);
+    b.loftHullZ(sections, MAT.navalGrey, 0.175, 0.62);
+    b.box(0, 0.42 + bob, -0.05, 0.56, 0.03, 2.70, MAT.deckTeak);
+    // 标志性前二后一 3 座三联装 406mm Mk.7 巨炮炮塔
+    for (const [ty, tz, dir] of [[0.49, 0.86, 1], [0.60, 0.48, 1], [0.48, -0.96, -1]]) {
+      b.box(0, ty + bob, tz, 0.26, 0.13, 0.30, MAT.navalLight);
+      for (const bx of [-0.075, 0, 0.075]) {
+        b.cyl(bx, ty + 0.02 + bob, tz + dir * 0.14, bx, ty + 0.08 + bob, tz + dir * 0.54, 0.020, 0.015, MAT.gunmetal, 8);
+        if (isFiring) b.box(bx, ty + 0.09 + bob, tz + dir * 0.60, 0.09, 0.09, 0.14, MAT.flameOuter);
+      }
+    }
+    // 高耸宝塔舰桥 + 双大倾角烟囱 + 雷达火控塔
+    b.box(0, 0.66 + bob, 0.08, 0.34, 0.36, 0.56, MAT.navalLight);
+    b.box(0, 0.94 + bob, 0.16, 0.24, 0.26, 0.28, MAT.navalGrey);
+    b.box(0, 1.12 + bob, 0.16, 0.18, 0.12, 0.18, MAT.gunmetal); // 主炮测距火控仪
+    b.cyl(0, 1.18 + bob, 0.16, 0, 1.56 + bob, 0.14, 0.024, 0.010, MAT.brightStl, 8);
+    b.box(0, 1.46 + bob, 0.15, 0.32, 0.04, 0.05, MAT.brass);
+    // 前后双烟囱
+    for (const fz of [-0.08, -0.44]) {
+      b.cyl(0, 0.56 + bob, fz, 0, 0.96 + bob, fz - 0.08, 0.09, 0.075, MAT.navalGrey, 10);
+      b.cyl(0, 0.95 + bob, fz - 0.08, 0, 1.00 + bob, fz - 0.09, 0.08, 0.08, MAT.rubber, 10);
+    }
+    // 两舷 127mm 副炮塔
+    for (const sx of [-0.26, 0.26]) for (const z of [-0.40, -0.05, 0.28]) {
+      b.box(sx, 0.50 + bob, z, 0.11, 0.09, 0.12, MAT.navalLight);
+    }
+  }
+
+  function buildJetFighter(b, side, action = 'idle', phase = 0, variant = '') {
+    const isMig = variant === 'mig15' || (variant !== 'f86' && side === 'ccp');
+    const hover = 0.88 + Math.sin(phase * 1.6) * 0.05;
     const body = MAT.brightStl;
-    const trim = side === 'ccp' ? MAT.hullRed : MAT.brass; // 米格-15 红鼻 / F-86 佩刀黄带
-    const canopy = MAT.glass;
-    // 流线型喷气机身 + 机头进气道 + 尾喷口
-    b.box(0, hover, 0, 0.24, 0.24, 1.58, body);
-    b.box(0, hover, 0.76, 0.22, 0.22, 0.14, trim);
-    b.box(0, hover, 0.84, 0.13, 0.13, 0.04, MAT.rubber); // 机头进气口
-    b.box(0, hover, -0.82, 0.16, 0.16, 0.08, MAT.gunmetal); // 尾喷口
+    const trim = isMig ? MAT.hullRed : MAT.brass; // 米格-15 红鼻红星 / F-86 佩刀经典黄黑识别带
+    // 圆柱流线型喷气机身（机头进气道 + 中段 + 渐缩尾喷口）
+    b.cyl(0, hover, 0.78, 0, hover, 0.15, 0.13, 0.155, body, 14);
+    b.cyl(0, hover, 0.15, 0, hover, -0.82, 0.155, 0.10, body, 14);
+    b.cyl(0, hover, 0.82, 0, hover, 0.72, 0.125, 0.132, trim, 14); // 机头涂装环
+    b.cyl(0, hover, 0.84, 0, hover, 0.80, 0.078, 0.078, MAT.rubber, 12); // 进气口黑洞
+    if (isMig) {
+      b.box(0, hover, 0.83, 0.015, 0.15, 0.04, body); // 米格-15 标志性进气道垂直隔板
+      b.cyl(0.05, hover - 0.12, 0.82, 0.05, hover - 0.12, 0.96, 0.014, 0.012, MAT.gunmetal, 6); // 37mm 航炮
+      b.cyl(-0.05, hover - 0.12, 0.80, -0.05, hover - 0.12, 0.91, 0.010, 0.009, MAT.gunmetal, 6); // 23mm 航炮
+    } else {
+      // F-86 佩刀经典中机身黄黑条纹识别带
+      b.cyl(0, hover, -0.18, 0, hover, -0.34, 0.145, 0.135, MAT.brass, 14);
+      b.cyl(0, hover, -0.34, 0, hover, -0.38, 0.135, 0.132, MAT.rubber, 14);
+    }
+    b.cyl(0, hover, -0.82, 0, hover, -0.90, 0.095, 0.08, MAT.gunmetal, 12); // 尾喷口
     if (action !== 'idle') {
-      b.box(0, hover, -0.96, 0.11, 0.11, 0.22, MAT.flameOuter); // 喷气尾焰
+      b.cyl(0, hover, -0.90, 0, hover, -1.25, 0.07, 0.02, MAT.flameOuter, 10);
+      b.cyl(0, hover, -0.90, 0, hover, -1.12, 0.045, 0.01, MAT.flameCore, 8);
     }
-    // 水滴形气泡座舱盖
-    b.box(0, hover + 0.15, 0.20, 0.14, 0.12, 0.42, canopy);
-    // 标志性 35° 后掠主翼（分段后掠）
-    for (let s = 1; s <= 4; s++) {
-      const x = s * 0.22, z = 0.16 - s * 0.14;
-      b.box(x, hover - 0.02, z, 0.24, 0.04, 0.34 - s * 0.04, body);
-      b.box(-x, hover - 0.02, z, 0.24, 0.04, 0.34 - s * 0.04, body);
+    // 气泡水滴座舱盖
+    b.cyl(0, hover + 0.12, 0.44, 0, hover + 0.12, -0.02, 0.075, 0.068, MAT.glass, 10);
+    // 35° 后掠主翼（6 段平滑后掠 + 翼下副油箱 + 米格-15 翼刀）
+    for (let s = 1; s <= 6; s++) {
+      const x = s * 0.165, z = 0.24 - s * 0.115, chord = 0.36 - s * 0.032;
+      b.box( x, hover - 0.02, z, 0.18, 0.032, chord, s === 5 ? trim : body);
+      b.box(-x, hover - 0.02, z, 0.18, 0.032, chord, s === 5 ? trim : body);
     }
-    // 翼尖涂装带
-    b.box(0.88, hover - 0.01, -0.38, 0.12, 0.045, 0.18, trim);
-    b.box(-0.88, hover - 0.01, -0.38, 0.12, 0.045, 0.18, trim);
-    // 高耸后掠垂尾 + 水平尾翼
-    b.box(0, hover + 0.28, -0.62, 0.04, 0.44, 0.32, body);
-    b.box(0, hover + 0.42, -0.66, 0.66, 0.035, 0.16, body);
+    if (isMig) {
+      for (const sx of [-1, 1]) {
+        b.box(sx * 0.42, hover + 0.01, 0.00, 0.012, 0.045, 0.26, MAT.gunmetal); // 翼刀 1
+        b.box(sx * 0.72, hover + 0.01, -0.20, 0.012, 0.045, 0.20, MAT.gunmetal); // 翼刀 2
+      }
+    }
+    for (const sx of [-0.48, 0.48]) {
+      b.cyl(sx, hover - 0.09, 0.08, sx, hover - 0.09, -0.24, 0.035, 0.028, body, 8); // 副油箱
+    }
+    // 后掠垂尾 + 高位平尾（米格-15 为 T 尾，F-86 为低置后掠平尾）
+    for (let v = 0; v < 4; v++) {
+      b.box(0, hover + 0.16 + v * 0.11, -0.58 - v * 0.06, 0.032, 0.12, 0.32 - v * 0.04, body);
+    }
+    const tailY = isMig ? hover + 0.44 : hover + 0.04;
+    const tailZ = isMig ? -0.76 : -0.68;
+    for (let t = 1; t <= 3; t++) {
+      b.box( t * 0.12, tailY, tailZ - t * 0.06, 0.13, 0.025, 0.16 - t * 0.02, body);
+      b.box(-t * 0.12, tailY, tailZ - t * 0.06, 0.13, 0.025, 0.16 - t * 0.02, body);
+    }
+  }
+
+  function buildB29(b, action = 'idle', phase = 0) {
+    const hover = 0.90 + Math.sin(phase * 1.1) * 0.03;
+    // B-29 超级空中堡垒修长圆柱机身 + 透明温室机头
+    b.cyl(0, hover, 1.05, 0, hover, -1.08, 0.145, 0.11, MAT.brightStl, 14);
+    b.cyl(0, hover, 1.24, 0, hover, 1.02, 0.075, 0.145, MAT.glass, 12);
+    // 超长高展弦比主翼 + 4 台 R-3350 发动机短舱与旋转螺旋桨
+    b.box(0, hover + 0.02, 0.10, 2.70, 0.045, 0.34, MAT.brightStl);
+    b.box(0, hover + 0.02, 0.04, 2.40, 0.042, 0.24, MAT.navalLight);
+    for (const ex of [-0.88, -0.44, 0.44, 0.88]) {
+      b.cyl(ex, hover - 0.01, 0.32, ex, hover - 0.01, -0.08, 0.065, 0.055, MAT.navalGrey, 10);
+      const ang = action !== 'idle' ? phase * 6 : 0.4;
+      const dx = Math.cos(ang) * 0.15, dy = Math.sin(ang) * 0.15;
+      b.cyl(ex - dx, hover - dy, 0.35, ex + dx, hover + dy, 0.35, 0.010, 0.010, MAT.rubber, 6);
+      b.cyl(ex + dy, hover - dx, 0.35, ex - dy, hover + dx, 0.35, 0.010, 0.010, MAT.rubber, 6);
+    }
+    // 机背双联遥控炮塔 + 高耸垂尾与水平尾翼
+    b.cyl(0, hover + 0.15, 0.35, 0, hover + 0.21, 0.35, 0.065, 0.05, MAT.gunmetal, 8);
+    b.box(0, hover + 0.28, -0.94, 0.04, 0.46, 0.34, MAT.brightStl);
+    b.box(0, hover + 0.04, -0.96, 0.96, 0.032, 0.20, MAT.brightStl);
+  }
+
+  function buildHistoricalTank(b, variant = 't34', action = 'idle', phase = 0) {
+    const isT34 = variant === 't34';
+    const isFiring = action === 'attack' || action === 'fire';
+    const armor = isT34 ? MAT.armorSov : MAT.armorGrn;
+    const bounce = action === 'march' ? Math.sin(phase * 3) * 0.015 : 0;
+    // 两侧履带 + 负重轮（T-34 为 5 对大负重轮，M26 潘兴为 6 对小负重轮）
+    for (const sx of [-0.46, 0.46]) {
+      b.box(sx, 0.19 + bounce, 0, 0.22, 0.26, 1.62, MAT.rubber);
+      const wheels = isT34 ? 5 : 6;
+      for (let w = 0; w < wheels; w++) {
+        const wz = -0.60 + (w * 1.20) / (wheels - 1);
+        b.cyl(sx - 0.12, 0.16 + bounce, wz, sx + 0.12, 0.16 + bounce, wz, isT34 ? 0.125 : 0.10, isT34 ? 0.125 : 0.10, MAT.gunmetal, 10);
+      }
+    }
+    // 倾斜装甲车体（T-34 标志性大倾角首上 + 车尾双圆桶副油箱）
+    b.box(0, 0.34 + bounce, -0.02, 0.84, 0.24, 1.54, armor);
+    b.box(0, 0.34 + bounce, 0.72, 0.80, 0.18, 0.28, armor, -0.45, 0, 0);
+    if (isT34) {
+      for (const sx of [-0.46, 0.46]) {
+        b.cyl(sx, 0.44 + bounce, -0.32, sx, 0.44 + bounce, -0.66, 0.075, 0.075, MAT.armorDark, 10); // 外挂圆桶油箱
+      }
+    }
+    // 炮塔（T-34/85 圆润大炮塔 vs M26 潘兴长后部配重炮塔）
+    b.cyl(0, 0.46 + bounce, 0.08, 0, 0.72 + bounce, 0.08, isT34 ? 0.34 : 0.36, isT34 ? 0.27 : 0.30, armor, 14);
+    if (!isT34) b.box(0, 0.60 + bounce, -0.22, 0.42, 0.22, 0.34, armor); // 潘兴炮塔尾舱
+    b.cyl(-0.10, 0.72 + bounce, -0.02, -0.10, 0.80 + bounce, -0.02, 0.10, 0.09, MAT.armorDark, 10); // 车长指挥塔
+    // 主炮（T-34/85 85mm 长管 vs M26 90mm 带双室炮口制退器）
+    b.cyl(0, 0.60 + bounce, 0.36, 0, 0.61 + bounce, isT34 ? 1.48 : 1.58, 0.044, 0.034, MAT.gunmetal, 10);
+    if (!isT34) {
+      b.box(0, 0.61 + bounce, 1.58, 0.11, 0.08, 0.14, MAT.bluedSteel); // 90mm 双室炮口制退器
+      b.cyl(0.14, 0.76 + bounce, -0.12, 0.14, 0.86 + bounce, 0.18, 0.015, 0.012, MAT.gunmetal, 6); // M2 高射机枪
+    }
+    if (isFiring) {
+      b.cyl(0, 0.61 + bounce, 1.56, 0, 0.61 + bounce, 1.98, 0.14, 0.03, MAT.flameOuter, 10);
+      b.cyl(0, 0.61 + bounce, 1.56, 0, 0.61 + bounce, 1.82, 0.08, 0.02, MAT.flameCore, 8);
+    }
+  }
+
+  function buildKatyusha(b, action = 'idle', phase = 0) {
+    const isFiring = action === 'attack' || action === 'fire';
+    // 苏式 ZIS-151 6x6 军用卡车底盘 + 驾驶室 + 引擎盖
+    b.box(0, 0.28, -0.08, 0.62, 0.14, 1.72, MAT.armorDark); // 车架
+    b.box(0, 0.56, 0.34, 0.66, 0.44, 0.48, MAT.armorSov); // 驾驶室
+    b.box(0, 0.62, 0.58, 0.54, 0.16, 0.04, MAT.glass); // 前挡风玻璃
+    b.box(0, 0.46, 0.74, 0.54, 0.28, 0.42, MAT.armorSov); // 引擎盖
+    for (const sx of [-0.36, 0.36]) for (const wz of [0.68, -0.34, -0.74]) {
+      b.cyl(sx - 0.07, 0.18, wz, sx + 0.07, 0.18, wz, 0.17, 0.17, MAT.rubber, 12);
+      b.cyl(sx - 0.08, 0.18, wz, sx + 0.08, 0.18, wz, 0.08, 0.08, MAT.armorDark, 8);
+    }
+    // 倾斜高扬的 BM-13 喀秋莎滑轨发射架 + 双排 16 枚 132mm M-13 火箭弹
+    b.box(0, 0.64, -0.44, 0.58, 0.10, 0.96, MAT.gunmetal, -0.42, 0, 0);
+    for (let r = 0; r < 8; r++) {
+      const rx = -0.28 + r * 0.08;
+      b.cyl(rx, 0.50, -0.82, rx, 0.96, 0.14, 0.022, 0.022, MAT.armorDark, 8); // 上排火箭弹
+      b.cyl(rx, 0.96, 0.14, rx, 1.00, 0.22, 0.022, 0.008, MAT.hullRed, 6); // 红色弹头
+      b.cyl(rx, 0.40, -0.80, rx, 0.86, 0.16, 0.022, 0.022, MAT.gunmetal, 8); // 下排火箭弹
+      if (isFiring && r % 2 === 0) {
+        b.cyl(rx, 0.46, -0.84, rx, 0.26, -1.24, 0.055, 0.015, MAT.flameOuter, 8);
+      }
+    }
   }
 
   function buildKindScene(kind, side, action = 'idle', phase = 0, variant = '') {
     const b = createBuilder();
     if (kind === 'carrier') buildCarrier(b, side, action, phase);
-    else if (kind === 'jet') buildJetFighter(b, side, action, phase);
+    else if (kind === 'battleship') buildBattleship(b, side, action, phase);
+    else if (kind === 'jet' || kind === 'mig15' || kind === 'f86') buildJetFighter(b, side, action, phase, kind === 'jet' ? variant : kind);
+    else if (kind === 'b29') buildB29(b, action, phase);
+    else if (kind === 't34' || kind === 'm26') buildHistoricalTank(b, kind, action, phase);
+    else if (kind === 'katyusha') buildKatyusha(b, action, phase);
     else if (kind === 'ship' || kind === 'warship') buildWarship(b, side, action, phase);
     else if (kind === 'tank') buildMapTank(b, side, action, phase);
     else if (kind === 'artillery') buildMapArtillery(b, side, action, phase);
@@ -1560,11 +1736,14 @@
 
     function cameraFor(kind, action, side) {
       const dir = side === 'ccp' ? 1 : -1;
-      if (kind === 'carrier') {
-        return { eye: [dir * 3.8, 2.3, 3.9], center: [0, 0.62, 0.0], fov: 0.98 };
+      if (kind === 'carrier' || kind === 'battleship') {
+        return { eye: [dir * 3.9, 2.2, 4.0], center: [0, 0.58, 0.0], fov: 0.98 };
       }
-      if (kind === 'jet' || kind === 'aircraft') {
-        return { eye: [dir * 3.5, 2.4, 3.4], center: [0, 0.86, 0.02], fov: 1.0 };
+      if (kind === 'jet' || kind === 'mig15' || kind === 'f86' || kind === 'b29' || kind === 'aircraft') {
+        return { eye: [dir * 3.6, 2.3, 3.6], center: [0, 0.88, 0.02], fov: 1.0 };
+      }
+      if (kind === 't34' || kind === 'm26' || kind === 'katyusha') {
+        return { eye: [dir * 3.2, 1.8, 3.2], center: [0, 0.52, 0.06], fov: 0.96 };
       }
       if (kind === 'ship' || kind === 'warship') {
         return { eye: [dir * 3.4, 1.9, 3.5], center: [0, 0.56, 0.06], fov: 0.98 };

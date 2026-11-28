@@ -527,6 +527,22 @@ dialog {
   letter-spacing: 0.06em;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
+.dialog-head-actions { display: flex; align-items: center; gap: 8px; }
+.dialog-skip {
+  background: transparent !important;
+  border: 1px solid #7d6a46 !important;
+  color: #e0c18a !important;
+  padding: 6px 12px !important;
+  border-radius: 4px;
+  font: 600 12px/1.2 var(--sans) !important;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.dialog-skip:hover:not(:disabled) {
+  border-color: #d6b66f !important;
+  color: #f6e4b6 !important;
+  background: rgba(214, 182, 111, 0.14) !important;
+}
 button, .hoi-core-btn {
   background: linear-gradient(180deg, #343d37 0%, #222924 100%);
   border: 1px solid #6b5e43;
