@@ -326,6 +326,8 @@
 
       if ((data.theaterMode === 'ww2' || data.theaterMode === 'korea') && options.province && worldGeo?.borders?.length) {
         ctx.save();
+        shape(ctx, land);
+        ctx.clip();
         ctx.beginPath();
         for (const seg of worldGeo.borders) trace(ctx, seg, false);
         ctx.strokeStyle = '#5c66549c';
@@ -372,10 +374,15 @@
         ctx.restore();
       }
       ctx.font = 'italic 11px "Microsoft YaHei UI", sans-serif';
-      ctx.fillStyle = '#476f6994';
+      ctx.fillStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#c9e2ed8c' : '#476f6994';
       ctx.textAlign = 'center';
-      for (const [name, lon, lat] of [['黄  海', 124, 34.7], ['东  海', 125, 28.9], ['渤  海', 119.8, 38.45]]) {
-        ctx.fillText(name, ...project(lon, lat));
+      const seas = data.theaterMode === 'ww2'
+        ? [['黄  海', 124, 34.7], ['东  海', 125, 28.9], ['南  海', 114, 15.0], ['太平洋', 155, 20],
+           ['大西洋', -32, 34], ['地中海', 18, 35.2], ['北  海', 3.5, 56.2], ['波罗的海', 19.5, 57.8], ['印度洋', 76, 4]]
+        : [['黄  海', 124, 34.7], ['东  海', 125, 28.9], ['渤  海', 119.8, 38.45]];
+      for (const [name, lon, lat] of seas) {
+        const [sx, sy] = project(lon, lat);
+        if (sx >= -40 && sx <= width + 40 && sy >= -20 && sy <= height + 20) ctx.fillText(name, sx, sy);
       }
       ctx.textAlign = 'start';
     }
@@ -412,6 +419,15 @@
         if ((type === 'rail' && (!options.rail || level === 'national' && !mainLink))
           || (type === 'maritime' && !options.maritime)
           || (type === 'land' && (level === 'national' || level === 'theater' && (!mainLink || camera.zoom < 30)))) continue;
+        // 跨太平洋 180° 日界线航线：拆分为向东/向西两端出海航道，避免直线横穿整个欧亚大陆！
+        if (Math.abs(city.lon - to.lon) > 180) {
+          const midLat = (city.lat + to.lat) / 2;
+          const eastPt = city.lon > 0 ? city : to;
+          const westPt = city.lon > 0 ? to : city;
+          line([[eastPt.lon, eastPt.lat], [180, midLat]], '#6eb4d9c8', 1.4, [6, 5]);
+          line([[westPt.lon, westPt.lat], [-180, midLat]], '#6eb4d9c8', 1.4, [6, 5]);
+          continue;
+        }
         const route = [[city.lon, city.lat], [to.lon, to.lat]];
         if (type === 'rail') {
           line(route, '#474b3ec2', level === 'detail' ? 2.5 : mainLink && level === 'theater' ? 2.05 : 1.25);
@@ -823,7 +839,7 @@
           if (factionMode && factionLegendKey !== signature) {
             factionLegendKey = signature;
             const groupIds = [...new Set(nodes.filter(node => node.owner === 'roc' && factionZoneColors[node.group]).map(node => node.group))];
-            const entries = [['共产党', factionZoneColors.ccp], ['国民党（未归派系）', '#3c5e78'],
+            const entries = [[sideNames.ccp, factionZoneColors.ccp], [sideNames.roc + '（未归派系）', '#3c5e78'],
               ...groupIds.map(id => [groups.get(id)?.name || id, factionZoneColors[id]])];
             legend.replaceChildren(...entries.map(([name, color]) => {
               const row = document.createElement('span'), swatch = document.createElement('i');
@@ -833,16 +849,17 @@
             }));
           }
         }
-        const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, signature].join('|');
+        const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, data.theaterMode || 'civil', signature].join('|');
         if (key !== territoryKey) {
           territoryKey = key;
           const step = 6;
+          const maxRadius = data.theaterMode === 'ww2' ? 11.5 : data.theaterMode === 'korea' ? 2.6 : 3.5;
           territoryCanvas.width = Math.ceil(width / step);
           territoryCanvas.height = Math.ceil(height / step);
           const pixels = territoryBrush.createImageData(territoryCanvas.width, territoryCanvas.height);
           for (let y = 0; y < territoryCanvas.height; y++) for (let x = 0; x < territoryCanvas.width; x++) {
             const [lon, lat] = unproject((x + .5) * step, (y + .5) * step);
-            const node = nearestTerritory(lon, lat, nodes);
+            const node = nearestTerritory(lon, lat, nodes, maxRadius);
             if (!node) continue;
             const color = factionMode && node.owner === 'roc' && factionZoneColors[node.group]
               ? factionZoneColors[node.group] : node.owner === 'ccp' ? '#9e3c38' : '#3c5e78';
@@ -850,12 +867,13 @@
             pixels.data[offset] = parseInt(color.slice(1, 3), 16);
             pixels.data[offset + 1] = parseInt(color.slice(3, 5), 16);
             pixels.data[offset + 2] = parseInt(color.slice(5, 7), 16);
-            pixels.data[offset + 3] = 130;
+            pixels.data[offset + 3] = data.theaterMode === 'ww2' ? 105 : 130;
           }
           territoryBrush.putImageData(pixels, 0, 0);
         }
         brush.save();
-        shape(brush, geography?.boundary?.length ? geography.boundary : land); brush.clip();
+        const clipRings = data.theaterMode ? land : (geography?.boundary?.length ? geography.boundary : land);
+        shape(brush, clipRings); brush.clip();
         brush.imageSmoothingEnabled = true;
         brush.drawImage(territoryCanvas, 0, 0, width, height);
         brush.restore();
@@ -906,7 +924,7 @@
         const aId = link[0], bId = link[1];
         if (state.owners[aId] === state.owners[bId]) continue;
         const a = places.get(aId), b = places.get(bId);
-        if (!a || !b) continue;
+        if (!a || !b || Math.abs(a.lon - b.lon) > 180) continue;
         const pa = project(a.lon, a.lat), pb = project(b.lon, b.lat);
         if (!inMap(pa[0], pa[1]) && !inMap(pb[0], pb[1])) continue;
         const mx = (pa[0] + pb[0]) / 2, my = (pa[1] + pb[1]) / 2;

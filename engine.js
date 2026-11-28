@@ -5307,13 +5307,14 @@
       economyStep(data, map, state, tree.combat);
       if (state.units.length !== count) tree = unitTree(state);
       state.supplyReport = supplyStep(data, map, state, tree.combat);
+      const inPrep = (state.prepDaysLeft || 0) > 0;
       politicalStep(data, state);
       systemsStep(data, state);
-      systemsAI(data, state);
+      if (!inPrep) systemsAI(data, state);
       completeWorks(data, state);
-      aiOrders(map, state, tree);
+      if (!inPrep) aiOrders(map, state, tree);
       aiGarrison(map, state, tree);
-      delegatedPlans(data, map, state, tree);
+      if (!inPrep) delegatedPlans(data, map, state, tree);
       advanceOrders(map, state, tree);
       syncPlans(map, state);
       advanceConstruction(data, state);
@@ -5559,15 +5560,19 @@
     pol.points -= 15;
     const cityObj = data.cities.find((c) => c.id === tgtCity);
     const id = 'direct-' + kind + '-' + state.units.length + '-' + Date.now().toString(36).slice(-3);
+    const sName = sideNames[side] || (side === 'ccp' ? '我方' : '敌方');
     const nameMap = {
-      tank: (side === 'ccp' ? '解放军独立装甲坦克军' : '国军装甲突击总队'),
-      air: (side === 'ccp' ? '人民空军前线混成联队' : '空军战区轰炸驱逐大队'),
-      navy: (side === 'ccp' ? '华东海军渡海特混舰队' : '海军第一机动特混舰队'),
-      missile: (side === 'ccp' ? '炮兵喀秋莎远程火箭旅' : '重炮远程火力打击群'),
+      tank: `${sName}独立装甲坦克军`,
+      air: `${sName}前线空军混成联队`,
+      navy: `${sName}航母战舰特混舰队`,
+      missile: `${sName}远程导弹重炮旅`,
     };
-    if (kind === 'air' && state.air) {
-      if (typeof state.air[side] === 'number') state.air[side] += 18;
-      else if (state.air[side]) state.air[side].planes = (state.air[side].planes || 0) + 18;
+    if (kind === 'air') {
+      if (state.air) {
+        if (typeof state.air[side] === 'number') state.air[side] += 18;
+        else if (state.air[side]) state.air[side].planes = (state.air[side].planes || 0) + 18;
+      }
+      if (state.airWar?.[side]) state.airWar[side].planes = (state.airWar[side].planes || 0) + 18;
     } else if (kind === 'navy' && state.navy?.[side]) {
       state.navy[side].warships = (state.navy[side].warships || 0) + 4;
       state.navy[side].transports = (state.navy[side].transports || 0) + 8;
@@ -5623,11 +5628,16 @@
     const presets = {
       japan: { name: '日本帝国（东京/广岛/冲绳）', cities: ['tokyo', 'hiroshima', 'osaka', 'okinawa', 'iwo_jima', 'taipei'], strength: 160000, model: 'soldier_japan', tank: 'chiha' },
       ussr: { name: '苏维埃联盟（莫斯科/列宁格勒/海参崴）', cities: ['moscow', 'leningrad', 'stalingrad', 'kiev', 'vladivostok'], strength: 220000, model: 'soldier_ussr', tank: 't34' },
-      usa: { name: '美利坚合众国（珍珠港/旧金山/华盛顿）', cities: ['pearl_harbor', 'midway', 'guam', 'san_francisco', 'washington', 'new_york'], strength: 200000, model: 'soldier_usa', tank: 'sherman' },
+      usa: { name: '美利坚合众国（珍珠港/旧金山/华盛顿）', cities: ['pearl_harbor', 'midway', 'san_francisco', 'washington', 'new_york'], strength: 200000, model: 'soldier_usa', tank: 'sherman' },
       germany: { name: '德意志帝国（柏林/鲁尔/慕尼黑）', cities: ['berlin', 'ruhr', 'munich', 'hamburg', 'warsaw'], strength: 210000, model: 'soldier_germany', tank: 'tiger' },
-      uk: { name: '大英帝国（伦敦/新加坡/开罗）', cities: ['london', 'singapore', 'cairo', 'gibraltar', 'new_delhi'], strength: 170000, model: 'soldier_uk', tank: 'churchill' },
+      uk: { name: '大英帝国（伦敦/新加坡/开罗/新德里）', cities: ['london', 'singapore', 'cairo', 'gibraltar', 'delhi'], strength: 170000, model: 'soldier_uk', tank: 'churchill' },
     };
     const p = presets[targetTag] || presets.japan;
+    const matchedCities = p.cities.filter((cid) => state.owners[cid] !== undefined);
+    if (!matchedCities.length) {
+      pol.points += 20;
+      return { ok: false, error: `当前局部地图不含【${p.name}】本土城市，请先点下方「🌍 立即切入全球大图」后再跨国宣战！` };
+    }
     if (!state.declaredWars.includes(targetTag)) state.declaredWars.push(targetTag);
     let flipped = 0;
     for (const cid of p.cities) {

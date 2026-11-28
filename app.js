@@ -1174,6 +1174,13 @@
       : (mode === 'ww2' || mode === 'grand')
         ? { lon: focusObj?.lon ?? 14, lat: focusObj?.lat ?? 48, zoom: sc.ww2Theater === 'pacific' ? 16 : 26 }
         : { lon: 105, lat: 35, zoom: 12 };
+    setRun(false);
+    selectedUnits.clear();
+    selectedUnit = null;
+    selectedCity = sc.focus || Data.cities[0]?.id || null;
+    pendingOrder = null;
+    tutorial = undefined;
+    recentBrief = null;
     map.setData(Data, view);
     setActive(created, Timeline.create(created, Engine), false);
     if (dialog.open) dialog.close();
