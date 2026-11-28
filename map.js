@@ -2098,7 +2098,13 @@
       const city = places.get(cityId);
       const local = data.cities.filter((item) => item.region === area);
       if (area === 'national' || !local.length) {
-        camera = { lon: 104.2, lat: 35.2, zoom: Math.min((width - 28) / 48, (height - 45) / 36) };
+        if (data.theaterMode === 'korea') {
+          camera = { lon: 127.0, lat: 37.8, zoom: Math.min((width - 28) / 9.2, (height - 45) / 7.2) };
+        } else if (data.theaterMode === 'ww2') {
+          camera = { lon: city?.lon ?? data.defaultView?.lon ?? 14, lat: city?.lat ?? data.defaultView?.lat ?? 48, zoom: Math.min((width - 28) / 36, (height - 45) / 26) };
+        } else {
+          camera = { lon: 104.2, lat: 35.2, zoom: Math.min((width - 28) / 48, (height - 45) / 36) };
+        }
       } else if (area === 'northeast') {
         camera = { lon: 123.2, lat: 42.9, zoom: Math.min((width - 25) / 11, (height - 62) / 10) };
       } else {
