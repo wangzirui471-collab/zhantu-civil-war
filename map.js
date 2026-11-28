@@ -117,16 +117,99 @@
     const worldGeo = globalThis.WorldGeography;
     const grids = (geography?.grids || []).map(prepareGrid);
     const worldGrids = (worldGeo?.grids || []).map(prepareGrid);
+    let globalBackdropCities = [];
+    let globalDeployments = [];
+    let globalHitItems = [];
+
+    const GLOBAL_DEPLOYMENTS_KOREA = [
+      { id: 'gd-kw-moscow', name: '苏军莫斯科军区近卫集群', short: '苏·莫斯科近卫', commander: '华西列夫斯基', strength: 180000, lon: 37.62, lat: 55.75, city: '莫斯科', bloc: 'red', icon: '★', kind: '装甲/战略预备', note: '苏联最高统帅部中央战略总预备队，威慑欧洲与远东全局。' },
+      { id: 'gd-kw-berlin', name: '苏军驻德集群（GSFG）', short: '苏·驻德集群', commander: '崔可夫', strength: 350000, lon: 13.40, lat: 52.52, city: '柏林', bloc: 'red', icon: '⛨', kind: '重装甲机械化集群', note: '冷战欧洲前线最精锐机械化集群，牵制北约主力东调。' },
+      { id: 'gd-kw-warsaw', name: '苏军北方集群', short: '苏·北方集群', commander: '罗科索夫斯基', strength: 120000, lon: 21.01, lat: 52.23, city: '华沙', bloc: 'red', icon: '★', kind: '步兵与装甲师群', note: '守卫东欧铁路干线与波罗的海方向侧翼。' },
+      { id: 'gd-kw-vladivostok', name: '苏军远东军区 · 太平洋舰队', short: '苏·远东/太平洋舰队', commander: '马利诺夫斯基', strength: 220000, lon: 131.89, lat: 43.12, city: '海参崴军港', bloc: 'red', icon: '⚓', kind: '海军舰队与远东集团军', note: '扼守日本海北大门，为中朝后勤与米格走廊提供战略纵深。' },
+      { id: 'gd-kw-lushun', name: '苏军驻旅顺海军要塞与第39集团军', short: '苏·旅顺基地', commander: '别洛博罗多夫', strength: 60000, lon: 121.25, lat: 38.80, city: '旅顺港', bloc: 'red', icon: '⚓', kind: '要塞海军与航空师', note: '拱卫渤海湾与辽东半岛，与志愿军共同防卫黄海北岸。' },
+      { id: 'gd-kw-beijing', name: '解放军华北军区战略总预备队', short: '解放军·华北预备', commander: '聂荣臻', strength: 280000, lon: 116.40, lat: 39.90, city: '北京', bloc: 'red', icon: '★', kind: '野战兵团预备队', note: '拱卫京津与华北铁路枢纽，源源不断轮换兵团入朝。' },
+      { id: 'gd-kw-shenyang', name: '东北军区与志愿军后勤总基地', short: '东北后勤/预备兵团', commander: '高岗 / 贺晋年', strength: 240000, lon: 123.43, lat: 41.80, city: '沈阳', bloc: 'red', icon: '★', kind: '后勤铁道与高炮师', note: '抗美援朝大后方核心，统筹弹药、粮秣、苏械换装与空军机场。' },
+      { id: 'gd-kw-shanghai', name: '解放军华东军区（东南海防）', short: '解放军·华东军区', commander: '陈毅 / 粟裕', strength: 320000, lon: 121.47, lat: 31.23, city: '上海港', bloc: 'red', icon: '★', kind: '野战兵团与海防部队', note: '防卫长江口与台湾海峡方向，应对美第7舰队与国民党反攻威胁。' },
+      { id: 'gd-kw-guangzhou', name: '解放军中南军区（华南防务）', short: '解放军·中南军区', commander: '叶剑英', strength: 250000, lon: 113.26, lat: 23.13, city: '广州港', bloc: 'red', icon: '★', kind: '野战军与援越顾问团', note: '扼守华南海疆并支援印支方向反法抗战。' },
+      { id: 'gd-kw-tokyo', name: '美远东司令部（FECOM · 东京总部）', short: '美·远东司令部', commander: '麦克阿瑟 / 李奇微', strength: 80000, lon: 139.69, lat: 35.69, city: '东京', bloc: 'blue', icon: '★', kind: '战区最高司令部', note: '联合国军总指挥部，统筹日本列岛全部美军陆海空基地与补给。' },
+      { id: 'gd-kw-yokosuka', name: '美海军第7舰队 · 横须贺/佐世保军港', short: '美·第7舰队(TF77)', commander: '斯特鲁布尔 / 克拉克', strength: 65000, lon: 130.40, lat: 33.59, city: '佐世保/福冈军港', bloc: 'blue', icon: '⚓', kind: '6艘航母与战列舰特混编队', note: '掌控黄海、日本海制海权，承担仁川登陆与沿岸舰炮支援。' },
+      { id: 'gd-kw-okinawa', name: '美远东空军 B-29 战略轰炸机群', short: '美·冲绳B-29机群', commander: '斯特拉特迈耶', strength: 45000, lon: 127.68, lat: 26.21, city: '冲绳那霸', bloc: 'blue', icon: '✈', kind: '战略轰炸与战斗机联队', note: '嘉手纳基地起飞，对朝鲜北部铁路、电站与桥梁实施战略轰炸。' },
+      { id: 'gd-kw-taipei', name: '台海巡弋编队 & 国民党驻台部队', short: '台海第7舰队/驻台军', commander: '蒋介石 / 孙立人', strength: 450000, lon: 121.56, lat: 25.03, city: '台北/基隆港', bloc: 'blue', icon: '⚓', kind: '海峡封锁与岛屿守军', note: '美军派第7舰队进驻台湾海峡，牵制华东解放军兵力。' },
+      { id: 'gd-kw-guam', name: '美太平洋海空战略中转基地', short: '美·关岛海空基地', commander: '太平洋司令部', strength: 38000, lon: 144.79, lat: 13.44, city: '关岛阿普拉港', bloc: 'blue', icon: '⚓', kind: '海军补给与重轰炸机基地', note: '西太平洋第二岛链核心枢纽，保障跨洋兵力与弹药转运。' },
+      { id: 'gd-kw-pearl', name: '美太平洋舰队司令部（CINCPAC）', short: '美·太平洋舰队', commander: '雷德福', strength: 120000, lon: -157.86, lat: 21.31, city: '珍珠港', bloc: 'blue', icon: '⚓', kind: '航母预备舰队与陆战后备', note: '统筹太平洋全域海运护航、舰队轮换与陆战队增援。' },
+      { id: 'gd-kw-sf', name: '美军西海岸战略投送港与预备师', short: '美·西海岸投送港', commander: '第6集团军', strength: 180000, lon: -122.42, lat: 37.77, city: '旧金山/圣迭戈港', bloc: 'blue', icon: '⚓', kind: '跨洋海运与预备兵团', note: '美军赴朝人员、M26/M46坦克与海量炮弹的主要装船母港。' },
+      { id: 'gd-kw-dc', name: '美军本土总预备队与大西洋舰队', short: '美·本土/大西洋舰队', commander: '布莱德雷', strength: 350000, lon: -77.04, lat: 38.90, city: '华盛顿/诺福克港', bloc: 'blue', icon: '★', kind: '本土战略预备与大西洋舰队', note: '美军参谋长联席会议统筹全球防务与动员体系。' },
+      { id: 'gd-kw-london', name: '英国皇家海军与英联邦本土陆军', short: '英·皇家海军/本土军', commander: '斯利姆', strength: 160000, lon: -0.13, lat: 51.51, city: '伦敦/朴茨茅斯港', bloc: 'blue', icon: '⚓', kind: '轻型航母与英联邦师群', note: '向朝鲜派遣英联邦第1师及巨像级轻型航母编队。' },
+      { id: 'gd-kw-paris', name: '北约西欧盟军司令部（SHAPE）', short: '北约·西欧集群', commander: '艾森豪威尔', strength: 260000, lon: 2.35, lat: 48.86, city: '巴黎/法兰克福', bloc: 'blue', icon: '⛨', kind: '美第7集团军与西欧盟军', note: '美军战略重心仍在欧洲防务，与驻德苏军隔铁幕对峙。' },
+      { id: 'gd-kw-singapore', name: '英军远东司令部 / 法军印支远征军', short: '英法·东南亚驻军', commander: '塔西尼 / 坦普勒', strength: 140000, lon: 103.82, lat: 1.35, city: '新加坡/西贡港', bloc: 'blue', icon: '⚓', kind: '远东舰队与殖民地野战军', note: '守卫马六甲海峡并与越盟在印度支那激战。' },
+      { id: 'gd-kw-sydney', name: '澳新联军太平洋后备队', short: '澳新·太平洋后备', commander: '罗伯逊', strength: 45000, lon: 151.21, lat: -33.87, city: '悉尼港', bloc: 'blue', icon: '⚓', kind: '联邦旅与驱逐舰编队', note: '派遣皇家澳军步兵营与驱逐舰加入联合国军作战。' },
+    ];
+
+    const GLOBAL_DEPLOYMENTS_CIVIL = [
+      { id: 'gd-cw-moscow', name: '苏军莫斯科战略预备集群', short: '苏·莫斯科预备', commander: '华西列夫斯基', strength: 220000, lon: 37.62, lat: 55.75, city: '莫斯科', bloc: 'red', icon: '★', kind: '近卫坦克与步兵集群', note: '战后苏联最高统帅部中枢与战略总预备队。' },
+      { id: 'gd-cw-berlin', name: '苏军驻德占领军集群', short: '苏·驻德占领军', commander: '索科洛夫斯基', strength: 400000, lon: 13.40, lat: 52.52, city: '柏林', bloc: 'red', icon: '⛨', kind: '重装甲机械化集团军', note: '控制东德与中欧要冲，柏林危机期间与西方盟军正面峙立。' },
+      { id: 'gd-cw-vladivostok', name: '苏军远东军区与太平洋舰队', short: '苏·远东/太平洋舰队', commander: '马利诺夫斯基', strength: 280000, lon: 131.89, lat: 43.12, city: '海参崴军港', bloc: 'red', icon: '⚓', kind: '远东集团军与太平洋舰队', note: '曾出兵东北击溃关东军，战后扼守东北亚北翼并提供通道支持。' },
+      { id: 'gd-cw-lushun', name: '苏军旅顺海军要塞驻军', short: '苏·旅顺要塞', commander: '第39集团军', strength: 55000, lon: 121.25, lat: 38.80, city: '旅顺/大连港', bloc: 'red', icon: '⚓', kind: '海军基地与步兵师', note: '依中苏协定驻守旅大地区，客观上形成辽东半岛海上屏障。' },
+      { id: 'gd-cw-ulaanbaatar', name: '苏蒙联军外蒙古防卫集群', short: '苏蒙·外蒙集群', commander: '乔巴山', strength: 60000, lon: 106.91, lat: 47.92, city: '乌兰巴托', bloc: 'red', icon: '★', kind: '骑兵机械化师', note: '稳固蒙古高原与漠北铁路、公路交通线。' },
+      { id: 'gd-cw-pyongyang', name: '苏军驻北朝鲜第25集团军 & 人民军', short: '苏/朝·三八线北', commander: '奇斯佳科夫 / 金日成', strength: 120000, lon: 125.76, lat: 39.03, city: '平壤', bloc: 'red', icon: '★', kind: '驻朝苏军与朝鲜人民军', note: '掩护东北解放区东侧后方，并协助伤员转运与物资过境。' },
+      { id: 'gd-cw-tokyo', name: '美军驻日占领军（SCAP · 第8集团军）', short: '美·驻日第8集团军', commander: '麦克阿瑟 / 艾克尔伯格', strength: 150000, lon: 139.69, lat: 35.69, city: '东京/横须贺港', bloc: 'blue', icon: '★', kind: '占领军与远东海空军', note: '美军西太平洋核心基地，管控日本列岛与横须贺军港。' },
+      { id: 'gd-cw-okinawa', name: '美军琉球海空战略基地', short: '美·冲绳基地', commander: '远东空军', strength: 60000, lon: 127.68, lat: 26.21, city: '冲绳那霸', bloc: 'blue', icon: '✈', kind: '航空联队与海运中转', note: '距中国东海沿岸仅数百公里，负责对国民党军空运与海运补给。' },
+      { id: 'gd-cw-seoul', name: '美军驻南朝鲜第24军', short: '美·驻韩第24军', commander: '霍奇', strength: 50000, lon: 126.98, lat: 37.57, city: '汉城/仁川港', bloc: 'blue', icon: '⛨', kind: '步兵师与仁川港口勤务', note: '驻守三八线以南，监控黄海与东北亚海上动向。' },
+      { id: 'gd-cw-manila', name: '美军菲律宾克拉克/苏比克基地', short: '美·菲律宾海空基地', commander: '西太平洋海军', strength: 80000, lon: 120.98, lat: 14.60, city: '马尼拉/苏比克港', bloc: 'blue', icon: '⚓', kind: '海空联队与剩余军火库', note: '大量太平洋战争美军剩余军火由此海运援助国民党军。' },
+      { id: 'gd-cw-guam', name: '美军关岛西太平洋海军枢纽', short: '美·关岛基地', commander: '太平洋舰队', strength: 45000, lon: 144.79, lat: 13.44, city: '关岛港', bloc: 'blue', icon: '⚓', kind: '海军补给与战略航空基地', note: '连接珍珠港与冲绳、上海、青岛的跨洋运输中继站。' },
+      { id: 'gd-cw-pearl', name: '美海军太平洋舰队司令部', short: '美·太平洋舰队', commander: '尼米兹 / 登菲尔德', strength: 140000, lon: -157.86, lat: 21.31, city: '珍珠港', bloc: 'blue', icon: '⚓', kind: '航母舰队与登陆舰群', note: '曾动用美海军登陆舰协助运送国民党美械主力北上东北、华北。' },
+      { id: 'gd-cw-sf', name: '美军西海岸军港与美援装运港', short: '美·旧金山/圣迭戈港', commander: '第6集团军', strength: 160000, lon: -122.42, lat: 37.77, city: '旧金山/圣迭戈港', bloc: 'blue', icon: '⚓', kind: '海军基地与援华运输港', note: '美援武器、舰艇、燃油与工业物资发往上海、青岛的主港口。' },
+      { id: 'gd-cw-dc', name: '美军本土战略预备队与大西洋舰队', short: '美·本土/大西洋舰队', commander: '艾森豪威尔 / 马歇尔', strength: 400000, lon: -77.04, lat: 38.90, city: '华盛顿/诺福克港', bloc: 'blue', icon: '★', kind: '本土总预备队与大西洋舰队', note: '马歇尔调停与美国全球战略决策中枢，战略重心置于欧洲。' },
+      { id: 'gd-cw-london', name: '英国皇家海军与远东护航舰队', short: '英·皇家海军', commander: '蒙哥马利', strength: 180000, lon: -0.13, lat: 51.51, city: '伦敦/朴茨茅斯港', bloc: 'blue', icon: '⚓', kind: '皇家海军舰队与本土陆军', note: '维系大英帝国经苏伊士至香港、新加坡的海上交通线。' },
+      { id: 'gd-cw-paris', name: '英美法西欧占领军集群', short: '西欧盟军集群', commander: '克莱 / 塔西尼', strength: 240000, lon: 2.35, lat: 48.86, city: '巴黎/法兰克福', bloc: 'blue', icon: '⛨', kind: '盟军西德占领军', note: '冷战初起时在西欧与苏联红军形成战略均势。' },
+      { id: 'gd-cw-singapore', name: '英军远东司令部（新加坡/香港）', short: '英·新加坡远东军', commander: '远东司令部', strength: 95000, lon: 103.82, lat: 1.35, city: '新加坡军港', bloc: 'blue', icon: '⚓', kind: '远东舰队与廓尔喀旅', note: '扼守马六甲海峡与南海航道，增援香港防务。' },
+      { id: 'gd-cw-delhi', name: '南亚与印度洋防卫集群', short: '印/英·南亚军团', commander: '奥金莱克', strength: 180000, lon: 77.21, lat: 28.61, city: '新德里/孟买港', bloc: 'amber', icon: '★', kind: '南亚陆军与孟买海军', note: '印巴分治前后南亚次大陆主力部队与印度洋核心港口。' },
+      { id: 'gd-cw-sydney', name: '澳大利亚战后本土防卫军', short: '澳·悉尼防卫军', commander: '布莱梅', strength: 50000, lon: 151.21, lat: -33.87, city: '悉尼港', bloc: 'blue', icon: '⚓', kind: '西南太平洋海军与陆军', note: '守护南太平洋航线并派兵参加盟军驻日占领任务。' },
+    ];
+
+    const GLOBAL_SEA_CORRIDORS = [
+      [[139.69, 35.69], [144.79, 13.44]],
+      [[144.79, 13.44], [-157.86, 21.31]],
+      [[-157.86, 21.31], [-122.42, 37.77]],
+      [[139.69, 35.69], [127.68, 26.21], [120.98, 14.60], [103.82, 1.35]],
+      [[103.82, 1.35], [72.88, 19.08], [32.30, 31.26], [-5.35, 36.14], [-0.13, 51.51]],
+      [[-0.13, 51.51], [-74.01, 40.71]],
+      [[-76.29, 36.85], [-5.35, 36.14]],
+      [[131.89, 43.12], [129.07, 35.18], [121.25, 38.80]],
+      [[103.82, 1.35], [151.21, -33.87]],
+      [[-122.42, 37.77], [-79.52, 8.98], [-76.29, 36.85]],
+    ];
+
+    const GLOBAL_RAIL_TRUNKS = [
+      [[37.62, 55.75], [60.60, 56.84], [82.93, 55.01], [104.28, 52.29], [117.43, 49.60], [131.89, 43.12]],
+      [[37.62, 55.75], [21.01, 52.23], [13.40, 52.52], [2.35, 48.86]],
+      [[-74.01, 40.71], [-87.63, 41.88], [-104.99, 39.74], [-122.42, 37.77]],
+    ];
+
     function rebuildDataIndex(nextData) {
       data = nextData;
       places = new Map(data.cities.map((city) => [city.id, city]));
       groups = new Map((data.groups || []).map((group) => [group.id, group]));
-      if (data.theaterMode === 'ww2') {
-        land = worldGeo?.land?.length ? worldGeo.land : (data.land || []);
-      } else if (data.theaterMode === 'korea') {
-        land = geography?.land?.length ? geography.land : (worldGeo?.land?.length ? worldGeo.land : (data.land || []));
+      // 三大战区统一接入 Natural Earth 50m 完整全球真实陆地轮廓，支持随时缩放查看全球布兵与重大城市港口
+      land = worldGeo?.land?.length ? worldGeo.land : (geography?.land?.length ? geography.land : (data.land || []));
+
+      // 为国共内战与朝鲜战争构建去重后的全球重大城市/港口底图节点与全球战略布兵数据
+      if (data.theaterMode !== 'ww2') {
+        if (typeof globalThis.applyWorldCitiesExt === 'function' && globalThis.WW2Data) {
+          globalThis.applyWorldCitiesExt(globalThis.WW2Data);
+        }
+        const ww2Cities = globalThis.WW2Data?.cities || [];
+        const localCoords = (data.cities || []).map((c) => [c.lon, c.lat]);
+        globalBackdropCities = ww2Cities.filter((wc) => {
+          for (const [lon, lat] of localCoords) {
+            if (Math.abs(wc.lon - lon) < 0.65 && Math.abs(wc.lat - lat) < 0.55) return false;
+          }
+          return true;
+        });
+        globalDeployments = data.theaterMode === 'korea' ? GLOBAL_DEPLOYMENTS_KOREA : GLOBAL_DEPLOYMENTS_CIVIL;
       } else {
-        land = geography?.land?.length ? geography.land : data.land;
+        globalBackdropCities = [];
+        globalDeployments = [];
       }
       // 二战全球 550+ 城按重要度与缩放清晰展示：战区视角即展示重要城市/省会/州府/要塞/根据地，放大后展示全部 550+ 节点
       const theaterImportant = data.theaterMode === 'ww2'
@@ -151,7 +234,7 @@
     }
     rebuildDataIndex(data);
     const options = { mode: 'situation', terrainBack: true, rail: true, province: true, battle: true, maritime: false,
-      supply: false, fort: true, models3d: true };
+      supply: false, fort: true, models3d: true, globalLayer: true };
     let width = 1;
     let height = 1;
     let camera = { lon: 105, lat: 35, zoom: 12 };
@@ -212,7 +295,7 @@
     }
 
     function showContours(ctx) {
-      const activeGrids = data.theaterMode ? [...worldGrids, ...grids] : grids;
+      const activeGrids = [...worldGrids, ...grids];
       if (!activeGrids.length) return;
       const southwest = unproject(0, height);
       const northeast = unproject(width, 0);
@@ -285,42 +368,31 @@
       if (options.mode === 'terrain' || options.mode === 'contour' || options.terrainBack) {
         ctx.save();
         ctx.clip();
-        if (data.theaterMode === 'korea' || data.theaterMode === 'ww2') {
-          // 优先使用真实 AWS Mapzen 全球 + 欧洲高精度卫星高程 DEM（与中国地图 100% 同源同清晰度）
-          for (const grid of worldGrids) {
-            const [a, b] = project(grid.west, grid.north);
-            const [x, y] = project(grid.east, grid.south);
-            if (x < 0 || a > width || y < 0 || b > height) continue;
-            ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
-            ctx.drawImage(grid.relief, a, b, x - a, y - b);
-          }
-          // 在东亚/朝鲜/中国视口内叠加 0.1° 超高清真实 SRTM 卫星高程图
-          for (const grid of grids) {
-            const [a, b] = project(grid.west, grid.north);
-            const [x, y] = project(grid.east, grid.south);
-            if (x < 0 || a > width || y < 0 || b > height) continue;
-            ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
-            ctx.drawImage(grid.relief, a, b, x - a, y - b);
-          }
-          // 叠加真实世界主要河流线
-          const worldRivers = globalThis.CivilWarWorld?.rivers || [];
-          if (worldRivers.length) {
-            ctx.save();
-            ctx.strokeStyle = 'rgba(72, 118, 140, 0.55)';
-            ctx.lineWidth = Math.max(0.8, Math.min(2.0, camera.zoom * 0.04));
-            ctx.beginPath();
-            for (const rv of worldRivers) trace(ctx, rv.pts, false);
-            ctx.stroke();
-            ctx.restore();
-          }
-        } else {
-          for (const grid of grids) {
-            const [a, b] = project(grid.west, grid.north);
-            const [x, y] = project(grid.east, grid.south);
-            if (x < 0 || a > width || y < 0 || b > height) continue;
-            ctx.globalAlpha = options.mode === 'contour' ? .5 : .96;
-            ctx.drawImage(grid.relief, a, b, x - a, y - b);
-          }
+        // 三大战区统一先铺全球 AWS Mapzen 卫星高程 DEM，再叠加东亚/中国/朝鲜 0.1° 超高清真实 SRTM 高程
+        for (const grid of worldGrids) {
+          const [a, b] = project(grid.west, grid.north);
+          const [x, y] = project(grid.east, grid.south);
+          if (x < 0 || a > width || y < 0 || b > height) continue;
+          ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
+          ctx.drawImage(grid.relief, a, b, x - a, y - b);
+        }
+        for (const grid of grids) {
+          const [a, b] = project(grid.west, grid.north);
+          const [x, y] = project(grid.east, grid.south);
+          if (x < 0 || a > width || y < 0 || b > height) continue;
+          ctx.globalAlpha = options.mode === 'contour' ? .52 : .96;
+          ctx.drawImage(grid.relief, a, b, x - a, y - b);
+        }
+        // 叠加真实世界主要河流线
+        const worldRivers = globalThis.CivilWarWorld?.rivers || [];
+        if (worldRivers.length) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(72, 118, 140, 0.55)';
+          ctx.lineWidth = Math.max(0.8, Math.min(2.0, camera.zoom * 0.04));
+          ctx.beginPath();
+          for (const rv of worldRivers) trace(ctx, rv.pts, false);
+          ctx.stroke();
+          ctx.restore();
         }
         ctx.restore();
       }
@@ -330,7 +402,7 @@
       ctx.stroke();
       if (options.mode === 'contour') showContours(ctx);
 
-      if ((data.theaterMode === 'ww2' || data.theaterMode === 'korea') && options.province && worldGeo?.borders?.length) {
+      if (options.province && worldGeo?.borders?.length) {
         ctx.save();
         shape(ctx, land);
         ctx.clip();
@@ -370,7 +442,8 @@
         ctx.fillStyle = '#4858468a';
         ctx.fillText('中  国', x, y);
       }
-      if (data.theaterMode === 'ww2') {
+      // 全球 31 国名称标注（三大战区统一显示；内战模式下跳过“中 国”以避免与省界大字重复）
+      {
         const countries = [
           ['苏  联', 62, 61, 22], ['德  国', 10.4, 51.2, 15], ['法  国', 2.4, 46.8, 15], ['英  国', -2.2, 54.0, 13],
           ['意 大 利', 12.6, 43.1, 12], ['波  兰', 19.3, 52.1, 13], ['西 班 牙', -3.7, 40.3, 13], ['瑞  典', 15.5, 62.5, 12],
@@ -386,6 +459,7 @@
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#2d3b3288';
         for (const [cname, lon, lat, basePx] of countries) {
+          if (!data.theaterMode && cname === '中  国') continue;
           const [cx, cy] = project(lon, lat);
           if (cx < -60 || cx > width + 60 || cy < -30 || cy > height + 30) continue;
           const sz = Math.round(clamp(basePx * (camera.zoom / 18), 10, 28));
@@ -406,10 +480,8 @@
       ctx.font = 'italic 11px "Microsoft YaHei UI", sans-serif';
       ctx.fillStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#c9e2ed8c' : '#476f6994';
       ctx.textAlign = 'center';
-      const seas = data.theaterMode === 'ww2'
-        ? [['黄  海', 124, 34.7], ['东  海', 125, 28.9], ['南  海', 114, 15.0], ['太平洋', 155, 20],
-           ['大西洋', -32, 34], ['地中海', 18, 35.2], ['北  海', 3.5, 56.2], ['波罗的海', 19.5, 57.8], ['印度洋', 76, 4]]
-        : [['黄  海', 124, 34.7], ['东  海', 125, 28.9], ['渤  海', 119.8, 38.45]];
+      const seas = [['黄  海', 124, 34.7], ['东  海', 125, 28.9], ['渤  海', 119.8, 38.45], ['南  海', 114, 15.0],
+        ['太平洋', 155, 20], ['大西洋', -32, 34], ['地中海', 18, 35.2], ['北  海', 3.5, 56.2], ['波罗的海', 19.5, 57.8], ['印度洋', 76, 4]];
       for (const [name, lon, lat] of seas) {
         const [sx, sy] = project(lon, lat);
         if (sx >= -40 && sx <= width + 40 && sy >= -20 && sy <= height + 20) ctx.fillText(name, sx, sy);
@@ -2161,6 +2233,138 @@
       }
     }
 
+    function drawGlobalBackdrop() {
+      globalHitItems = [];
+      if (data.theaterMode === 'ww2' || options.globalLayer === false) return;
+      if (!globalBackdropCities.length && !globalDeployments.length) return;
+
+      // 1. 全球战略海运航线与洲际铁路干线（淡雅背景参考）
+      brush.save();
+      brush.lineWidth = 1.1;
+      brush.setLineDash([5, 5]);
+      brush.strokeStyle = 'rgba(130, 204, 232, 0.36)';
+      for (const seg of GLOBAL_SEA_CORRIDORS) {
+        brush.beginPath();
+        let started = false;
+        let prevLon = null;
+        for (const [lon, lat] of seg) {
+          const [px, py] = project(lon, lat);
+          if (!started || (prevLon !== null && Math.abs(lon - prevLon) > 160)) {
+            brush.moveTo(px, py);
+            started = true;
+          } else {
+            brush.lineTo(px, py);
+          }
+          prevLon = lon;
+        }
+        brush.stroke();
+      }
+      brush.setLineDash([3, 3]);
+      brush.strokeStyle = 'rgba(92, 78, 56, 0.42)';
+      for (const seg of GLOBAL_RAIL_TRUNKS) {
+        brush.beginPath();
+        seg.forEach(([lon, lat], i) => {
+          const [px, py] = project(lon, lat);
+          if (i === 0) brush.moveTo(px, py);
+          else brush.lineTo(px, py);
+        });
+        brush.stroke();
+      }
+      brush.setLineDash([]);
+      brush.restore();
+
+      // 2. 全球重大城市与重要军港/商港（按缩放自适应分层显示，零重叠）
+      const labelBoxes = [];
+      const minVp = camera.zoom < 7 ? 10 : camera.zoom < 14 ? 8 : camera.zoom < 28 ? 6 : 0;
+      const minPortVp = camera.zoom < 7 ? 8 : camera.zoom < 14 ? 6 : 0;
+      const sortedCities = globalBackdropCities.slice().sort((a, b) => (Number(b.port) - Number(a.port)) || ((b.vp || 0) - (a.vp || 0)));
+      for (const city of sortedCities) {
+        const vp = city.vp || 5;
+        if (city.port ? vp < minPortVp : vp < minVp) continue;
+        const [x, y] = project(city.lon, city.lat);
+        if (x < -10 || x > width + 10 || y < -10 || y > height + 10) continue;
+        const isCapital = vp >= 14;
+        const r = city.port ? 3.8 : isCapital ? 4.2 : 2.8;
+        brush.save();
+        brush.beginPath();
+        brush.arc(x, y, r, 0, Math.PI * 2);
+        brush.fillStyle = city.port ? '#2b86a8' : isCapital ? '#c28b32' : '#6b624c';
+        brush.fill();
+        brush.lineWidth = 1.1;
+        brush.strokeStyle = '#f2ead2';
+        brush.stroke();
+        if (city.port) {
+          brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
+          brush.fillStyle = '#8be4ff';
+          brush.strokeStyle = '#10222ce6';
+          brush.lineWidth = 2.2;
+          brush.strokeText('⚓', x - 11, y - 4);
+          brush.fillText('⚓', x - 11, y - 4);
+        }
+        const shortName = (city.name || '').split('(')[0].split('（')[0];
+        brush.font = (city.port || isCapital ? '600 10.5px' : '500 9.5px') + ' "Microsoft YaHei UI", sans-serif';
+        brush.textBaseline = 'middle';
+        const tw = brush.measureText(shortName).width;
+        const lx = x + 6;
+        const ly = y;
+        const overlap = labelBoxes.some((b) => lx + tw + 3 > b[0] && lx - 3 < b[1] && Math.abs(ly - b[2]) < 12);
+        if (!overlap && lx + tw < width - 4 && lx > 4 && ly > 10 && ly < height - 10) {
+          labelBoxes.push([lx, lx + tw, ly]);
+          brush.strokeStyle = '#eee4c6d8';
+          brush.lineWidth = 2.4;
+          brush.strokeText(shortName, lx, ly);
+          brush.fillStyle = city.port ? '#17485c' : '#2d352e';
+          brush.fillText(shortName, lx, ly);
+        }
+        brush.restore();
+        globalHitItems.push({ kind: 'city', item: city, left: x - 8, top: y - 8, width: 16 + tw, height: 16 });
+      }
+
+      // 3. 全球战略布兵图（时代精准军团/舰队/空军标牌）
+      const cardBoxes = [];
+      for (const dep of globalDeployments) {
+        const [x, y] = project(dep.lon, dep.lat);
+        if (x < -40 || x > width + 40 || y < -20 || y > height + 20) continue;
+        const strengthLabel = dep.strength >= 10000 ? Math.round(dep.strength / 10000) + '万' : round.format(dep.strength);
+        const text = dep.icon + ' ' + dep.short + ' ' + strengthLabel;
+        brush.save();
+        brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
+        const tw = brush.measureText(text).width;
+        const cw = Math.ceil(tw + 14);
+        const ch = 18;
+        const candidates = [
+          [x - cw / 2, y - ch - 7],
+          [x - cw / 2, y + 8],
+          [x + 8, y - ch / 2],
+          [x - cw - 8, y - ch / 2],
+        ];
+        const pos = candidates.find(([cx, cy]) => cx > 4 && cx + cw < width - 4 && cy > 4 && cy + ch < height - 4
+          && !cardBoxes.some((b) => cx < b[0] + b[2] + 3 && cx + cw + 3 > b[0] && cy < b[1] + b[3] + 3 && cy + ch + 3 > b[1]));
+        if (!pos) { brush.restore(); continue; }
+        const [cx, cy] = pos;
+        cardBoxes.push([cx, cy, cw, ch]);
+        const bg = dep.bloc === 'red' ? 'rgba(138, 36, 32, 0.92)' : dep.bloc === 'blue' ? 'rgba(34, 78, 122, 0.92)' : 'rgba(122, 92, 36, 0.92)';
+        const border = dep.bloc === 'red' ? '#f3b19c' : dep.bloc === 'blue' ? '#a6d6f7' : '#f2d99b';
+        // 连接线与锚点
+        brush.strokeStyle = border;
+        brush.lineWidth = 1.2;
+        brush.beginPath();
+        brush.moveTo(x, y);
+        brush.lineTo(cx + cw / 2, cy + ch / 2);
+        brush.stroke();
+        brush.fillStyle = bg;
+        brush.beginPath();
+        brush.roundRect(cx, cy, cw, ch, 4);
+        brush.fill();
+        brush.stroke();
+        brush.fillStyle = '#fff8e8';
+        brush.textBaseline = 'middle';
+        brush.fillText(text, cx + 7, cy + ch / 2 + 0.5);
+        brush.restore();
+        globalHitItems.push({ kind: 'deployment', item: dep, left: cx, top: cy, width: cw, height: ch });
+      }
+    }
+
     function drawPreviewTip() {
       if (!highlightedCity || !hoverPoint) return;
       const text = handlers.previewCity?.(highlightedCity, hoverPoint, pointer?.unit?.id);
@@ -2201,6 +2405,7 @@
         }
         brush.restore();
       }
+      drawGlobalBackdrop();
       drawRoutes();
       drawBattleFronts(performance.now());
       drawCampaigns(layers);
@@ -2329,6 +2534,15 @@
       camera.lon = city.lon;
       camera.lat = city.lat;
       camera.zoom = Math.max(camera.zoom, 480);
+      draw();
+    }
+
+    function worldView() {
+      camera = {
+        lon: 95,
+        lat: 28,
+        zoom: clamp(Math.min((width - 20) / 245, (height - 40) / 118), 3.5, 6.2),
+      };
       draw();
     }
 
@@ -2465,6 +2679,10 @@
         else {
           const city = nearest(...xy) || places.get(old.picked?.city);
           if (city) handlers.selectCity(city.id);
+          else {
+            const gHit = globalHitItems.find((g) => xy[0] >= g.left && xy[0] <= g.left + g.width && xy[1] >= g.top && xy[1] <= g.top + g.height);
+            if (gHit) handlers.selectGlobalInfo?.(gHit);
+          }
         }
       }
     });
@@ -2539,7 +2757,8 @@
         }
         draw();
       },
-      focus, jump, detail, zoom, resize,
+      focus, jump, detail, worldView, zoom, resize,
+      globalSummary: () => ({ cities: globalBackdropCities.length, ports: globalBackdropCities.filter((c) => c.port).length, deployments: globalDeployments.length }),
       setDrawFront(on) { drawFrontMode = Boolean(on); canvas.style.cursor = drawFrontMode ? 'crosshair' : ''; if (!drawFrontMode && pointer?.drawFront) pointer = undefined; draw(); },
       markers: () => hitCards.map(({ unit, spriteHit, left, top, width, height }) => ({
         unitId: unit.id, city: unit.city, side: unit.side, figure: Boolean(spriteHit), left, top, width, height,

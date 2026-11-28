@@ -125,6 +125,23 @@
   const dialog = $('dialog');
   const map = CivilWarMap.mount($('map'), Data, {
     selectCity: (city) => selectCity(city, true),
+    selectGlobalInfo: (hit) => {
+      if (!hit?.item) return;
+      if (hit.kind === 'deployment') {
+        const d = hit.item;
+        showDialog('全球战略布兵情报 · ' + d.name,
+          '<div class="hoi-cipher-box" style="display:grid;gap:6px;font-size:12.5px;">'
+          + '<p style="margin:0;"><b>部队番号：</b>' + escape(d.name) + '</p>'
+          + '<p style="margin:0;"><b>驻地港口/城市：</b>' + escape(d.city) + ' · <b>兵种构成：</b>' + escape(d.kind) + '</p>'
+          + '<p style="margin:0;"><b>主官：</b>' + escape(d.commander) + ' · <b>总兵力：</b>' + format(d.strength) + ' 人</p>'
+          + '<p class="subtext" style="margin:4px 0 0;line-height:1.55;">' + escape(d.note) + '</p>'
+          + '</div><div class="dialog-actions"><button type="button" onclick="document.getElementById(\'dialog\').close()">关闭</button></div>');
+      } else if (hit.kind === 'city') {
+        const c = hit.item;
+        const kindText = c.port ? '重要战略军港/海港' : (c.vp >= 14 ? '大国首都/战略中枢' : '全球重要城市/交通枢纽');
+        notify('🌍 ' + c.name + '（' + kindText + ' · 战略价值 ' + (c.vp || 5) + '）');
+      }
+    },
     selectUnit: (unit) => selectUnit(unit, false),
     toggleUnit,
     quickOrder,
@@ -3865,6 +3882,13 @@
     const inspector = $('inspector-body').closest('aside');
     setInspectorOpen(inspector.classList.contains('is-hidden') || !inspector.classList.contains('is-open'));
   };
+  if ($('global-view')) {
+    $('global-view').onclick = () => {
+      map.worldView();
+      const s = map.globalSummary?.() || {};
+      notify('已切至全球战略视角：展示全球 ' + (s.cities || '500+') + ' 座重大城市与 ' + (s.ports || '100+') + ' 座重要港口，以及 ' + (s.deployments || 20) + ' 支全球战略集群布兵态势（点「全国」可一键返回主战场）。');
+    };
+  }
   $('national-view').onclick = () => changeScope('national');
   $('theater-view').onclick = () => changeScope('theater', citiesById.get(selectedCity)?.region);
   if ($('night-toggle')) {

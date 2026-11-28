@@ -111,14 +111,14 @@
         </div>
         <section id="battle-hud" class="battle-hud" aria-label="战场指挥" hidden></section>
         <div class="map-top-controls" aria-label="地图视角">
-          <button type="button" id="national-view">全国</button><button type="button" id="theater-view">战区</button><button type="button" id="detail-view" title="放大查看选中部队或城镇周边">局部</button>
+          <button type="button" id="global-view" title="一键缩放到全球战略视野，查看全球布兵与重大城市港口">全球</button><button type="button" id="national-view">全国</button><button type="button" id="theater-view">战区</button><button type="button" id="detail-view" title="放大查看选中部队或城镇周边">局部</button>
           <button type="button" id="night-toggle" aria-pressed="false" title="切换昼间姿态与夜间宿营睡觉姿态">🌙 夜间宿营</button>
           <button type="button" id="map-expand" aria-pressed="false" title="隐藏左侧栏，全屏沙盘视角">展开地图</button>
           <button type="button" id="find-city">查找城镇</button>
         </div>
         <div class="map-layers" aria-label="地图图层">
           <div class="map-layer-modes"><button type="button" data-layer="situation" aria-pressed="true" title="根据游戏城镇控制权推算的势力范围，非历史边界">势力范围(F1)</button><button type="button" data-layer="terrain" aria-pressed="false" title="F2 地形图">地形(F2)</button><button type="button" data-layer="faction" aria-pressed="false" title="根据驻军派系推算，非确切行政疆界">派系</button><button type="button" data-layer="contour" aria-pressed="false">等高线</button></div>
-          <div class="map-layer-toggles"><button type="button" data-overlay="terrainBack" aria-pressed="true" title="在势力范围下显示地形，可独立关闭">地形底图</button><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役线</button><button type="button" data-overlay="supply" aria-pressed="false" title="F3 蓝区补给充足、黄区偏紧、红区断粮">补给(F3)</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button><button type="button" data-overlay="models3d" aria-pressed="true" title="显示或隐藏地图上的三维兵模">3D兵模</button></div>
+          <div class="map-layer-toggles"><button type="button" data-overlay="terrainBack" aria-pressed="true" title="在势力范围下显示地形，可独立关闭">地形底图</button><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役线</button><button type="button" data-overlay="supply" aria-pressed="false" title="F3 蓝区补给充足、黄区偏紧、红区断粮">补给(F3)</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button><button type="button" data-overlay="models3d" aria-pressed="true" title="显示或隐藏地图上的三维兵模">3D兵模</button><button type="button" data-overlay="globalLayer" aria-pressed="true" title="显示或隐藏全球重大城市港口与全球布兵图">全球布兵</button></div>
         </div>
         <div id="hoi-theaters" class="hoi-theaters" aria-label="战区速览"></div>
         <div id="hoi-battle-plans" class="hoi-battle-plans" aria-label="HOI4 地图战术指令条"></div>
