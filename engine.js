@@ -358,6 +358,26 @@
     if (date === chosenScenario?.date) {
       for (const seed of chosenScenario.provisionalForces ?? []) createArmy(state, map, seed);
     }
+    // 超早期开局（如 1936 全球大沙盒）早于所有部队种子，会得到一张空图。
+    // 按各方实际控制城镇自动编成基础驻军，保证任何日期都能直接开打。
+    // 只在整张图一支兵都没有、且城镇规模足够时触发，避免影响最小数据集与既有剧本。
+    if (!state.units.some(unit => unit.strength > 0) && data.cities.length >= 20) {
+      for (const side of sides) {
+        const held = data.cities.filter(city => state.owners[city.id] === side)
+          .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+        if (!held.length) continue;
+        const detachments = Math.max(3, Math.min(8, Math.round(held.length / 3)));
+        for (let i = 0; i < detachments; i += 1) {
+          const city = held[Math.min(held.length - 1, Math.floor((i + 0.5) * held.length / detachments))];
+          const size = Math.round(16000 + (Number(city.value) || 1) * 3000);
+          createArmy(state, map, {
+            id: 'seed-' + side + '-' + city.id,
+            name: city.name + '守备' + (i === 0 ? '主力' : '纵队'),
+            side, city: city.id, strength: size, maxStrength: Math.round(size * 1.3),
+          });
+        }
+      }
+    }
     for (const side of sides) state.economy[side] = startingEconomy(map, data, state, side);
     for (const side of sides) {
       const preferred = data.capitals?.[side];

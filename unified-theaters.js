@@ -293,6 +293,7 @@
         area: 'china',
         ww2Theater: 'china',
         summary: '1936 年战前大沙盒开局！可自由选择任意大国从零种田、扩军工、点国策、造航母坦克，想何时向谁宣战完全由你掌控。',
+        // 沿用最早剧本的战前归属作为 1936 基线（ww2 城市本身不带 owner 字段）
         overrides: base.scenarios[0]?.overrides || allCcp,
       },
       {

@@ -386,16 +386,22 @@
   }
 
   function openSandboxWarDialog() {
+    // 二战/大沙盒里玩家属于同盟或轴心，不能对本阵营盟友宣战。
+    const allies = currentTheaterMode === 'civil' ? []
+      : (state.player === 'ccp' ? ['usa', 'ussr', 'uk'] : ['germany']);
+    const targets = [
+      ['japan', '🇯🇵 对日本宣战（东征冲绳/东京）'],
+      ['ussr', '☭ 对苏联宣战（冷战不可思议行动）'],
+      ['usa', '🇺🇸 对美国宣战（进军珍珠港/太平洋）'],
+      ['germany', '🇩🇪 对德国宣战（决战柏林/欧洲）'],
+      ['uk', '🇬🇧 对英国宣战（进攻伦敦/新加坡）'],
+    ].filter(([tag]) => !allies.includes(tag));
     const body = showDialog('🌍 HOI4 自由外交宣战与全球跨国征服',
       '<div class="hoi-cipher-box">'
       + '<header><strong style="color:#f5e1b0;">🔥 制造战争借口并自由宣战（每次 20 政点 · 自动开启无尽沙盒）</strong></header>'
       + '<p class="subtext" style="margin:4px 0;">无论你刚统一中国想东征日本，还是打完二战想开启美苏冷战热战，都可以直接对任意目标宣战或一键升格至无缝全球大沙盘！</p>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
-      + '<button type="button" class="gold" data-sw-target="japan">🇯🇵 对日本宣战（东征冲绳/东京）</button>'
-      + '<button type="button" class="gold" data-sw-target="ussr">☭ 对苏联宣战（冷战不可思议行动）</button>'
-      + '<button type="button" class="gold" data-sw-target="usa">🇺🇸 对美国宣战（进军珍珠港/太平洋）</button>'
-      + '<button type="button" class="gold" data-sw-target="germany">🇩🇪 对德国宣战（决战柏林/欧洲）</button>'
-      + '<button type="button" data-sw-target="uk">🇬🇧 对英国宣战（进攻伦敦/新加坡）</button>'
+      + targets.map(([tag, label]) => '<button type="button" class="gold" data-sw-target="' + tag + '">' + label + '</button>').join('')
       + '<button type="button" class="gold" id="sw-goto-grand">🌍 立即切入《1949 林彪东征日本》全球大图</button>'
       + '</div></div>');
     body.querySelectorAll('[data-sw-target]').forEach((b) => b.onclick = () => {
