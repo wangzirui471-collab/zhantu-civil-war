@@ -1413,7 +1413,8 @@
             }
           }
 
-          const label = shortUnitName(unit);
+          const stanceIcon = { ambush: '🥷', feint: '🎭', forced_march: '⚡', night_infiltrate: '🌙' }[unit.tacticalStance] || '';
+          const label = stanceIcon + shortUnitName(unit);
           brush.font = (national ? '700 9.5px ' : '700 11px ') + '"Microsoft YaHei UI", sans-serif';
           const status = unit.order
             ? (unit.order.type === 'defend' && unit.city === unit.order.target ? '守阵地'

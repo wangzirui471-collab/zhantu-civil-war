@@ -5308,6 +5308,7 @@
     const elapsed = Number.isFinite(Number(days)) ? Math.max(0, Math.floor(Number(days))) : 0;
     for (let day = 0; day < elapsed && !state.winner && !state.ceasefire; day += 1) {
       state.date = shiftDays(state.date, 1);
+      updateBattlefieldWeather(data, state);
       if ((state.prepDaysLeft || 0) > 0) {
         state.prepDaysLeft -= 1;
         if (state.prepDaysLeft === 0) {
@@ -5805,6 +5806,185 @@
     return { ok: true, distKm, maxRange, totalCasualties };
   }
 
+  // ── 真实战场天气系统（晴朗 / 阴雨 / 泥泞翻浆 / 严寒暴雪 / 浓雾 / 暴风雨）──
+  function updateBattlefieldWeather(data, state) {
+    const month = Number(String(state.date || '1946-06-01').slice(5, 7)) || 6;
+    const dayNum = Math.floor(Date.parse(state.date || '1946-06-01') / dayMillis) || 0;
+    const regions = Object.keys(data?.regions || { northeast: 1, north: 1, east: 1, central: 1, south: 1, northwest: 1 });
+    state.weather = state.weather || {};
+    const catalog = {
+      clear: { id: 'clear', name: '☀️ 晴朗', speed: 1.0, air: 1.0, atk: 1.0, def: 1.0, desc: '视野开阔，空军与装甲集群正常发挥' },
+      rain: { id: 'rain', name: '🌧️ 阴雨', speed: 0.88, air: 0.72, atk: 0.95, def: 1.05, desc: '道路湿滑，空袭效率下降 28%' },
+      mud: { id: 'mud', name: '🟤 泥泞翻浆', speed: 0.65, air: 0.80, atk: 0.85, def: 1.12, desc: '装甲机动受阻 -35%，进攻艰难利于防守' },
+      snow: { id: 'snow', name: '❄️ 严寒暴雪', speed: 0.72, air: 0.55, atk: 0.88, def: 1.18, desc: '极寒酷冬，空军受限 -45%，守军阵地加成 +18%' },
+      fog: { id: 'fog', name: '🌫️ 大雾弥漫', speed: 0.92, air: 0.45, atk: 1.08, def: 0.96, desc: '空军几乎停飞，极利于步兵近战穿插奇袭' },
+      storm: { id: 'storm', name: '⛈️ 暴风雨', speed: 0.70, air: 0.35, atk: 0.82, def: 1.15, desc: '恶劣风暴，跨海登陆与航空轰炸严重受阻' },
+    };
+    for (const reg of regions) {
+      const h = (hash(reg + '|' + Math.floor(dayNum / 4)) % 100);
+      const isColdReg = /northeast|north|east|northwest|europe/.test(reg);
+      let pick = 'clear';
+      if (month === 12 || month <= 2) {
+        pick = isColdReg ? (h < 48 ? 'snow' : h < 70 ? 'fog' : 'clear') : (h < 30 ? 'rain' : h < 45 ? 'fog' : 'clear');
+      } else if (month === 3 || month === 4 || month === 10 || month === 11) {
+        pick = h < 28 ? 'mud' : h < 50 ? 'rain' : h < 64 ? 'fog' : 'clear';
+      } else {
+        pick = h < 18 ? 'rain' : h < 28 ? 'storm' : h < 38 ? 'fog' : 'clear';
+      }
+      state.weather[reg] = catalog[pick];
+    }
+    const focusReg = regions[0] || 'east';
+    state.weatherSummary = state.weather[state.area] || state.weather[focusReg] || catalog.clear;
+  }
+
+  // ── 真实野战战术姿态自由切换（常规 / 隐蔽埋伏 / 佯攻诱敌 / 强行军急袭 / 夜战渗透）──
+  function setTacticalStance(data, state, unitId, stance = 'normal') {
+    const unit = state.units.find((u) => u.id === unitId && u.strength > 0 && !u.inactive);
+    if (!unit || unit.side !== state.player) return { ok: false, error: '请选择一支己方在编部队。' };
+    const stances = {
+      normal: { label: '常规作战', desc: '均衡攻防与补给消耗' },
+      ambush: { label: '🥷 隐蔽埋伏', desc: '隐蔽伏击圈：敌军来犯触发 +35% 伏击反杀并打乱其组织度' },
+      feint: { label: '🎭 佯攻诱敌', desc: '制造进攻假象牵制当面敌军，配合主力侧翼穿插' },
+      forced_march: { label: '⚡ 强行军急袭', desc: '行军速度 +55%，抢占要隘与断敌退路' },
+      night_infiltrate: { label: '🌙 夜战渗透', desc: '近战穿插 +25%，规避敌方制空与重炮轰炸（被空袭减伤 40%）' },
+    };
+    const def = stances[stance] || stances.normal;
+    unit.tacticalStance = stance;
+    if (stance === 'ambush') unit.entrench = Math.min(100, (unit.entrench || 0) + 18);
+    if (stance === 'night_infiltrate') unit.morale = Math.min(100, (unit.morale || 70) + 5);
+    addLog(state, `🎖️ 【战术姿态切换】${unit.name} 已转为「${def.label}」：${def.desc}。`, 'order', { unitId, stance });
+    return { ok: true, stance, label: def.label };
+  }
+
+  // ── 真实敌后游击、铁路破袭与秘密侦察（可在敌后任意城镇自由发动）──
+  function guerrillaOperation(data, state, kind = 'raid_supply', targetCityId = null) {
+    const side = state.player;
+    const cmd = state.command?.[side];
+    const cost = kind === 'uprising' ? 25 : kind === 'recon' ? 8 : 15;
+    if (cmd && cmd.points < cost) return { ok: false, error: `该敌后行动需要 ${cost} 指挥点。` };
+    const city = data.cities.find((c) => c.id === targetCityId && state.owners[c.id] !== side)
+      || data.cities.find((c) => state.owners[c.id] !== side);
+    if (!city) return { ok: false, error: '未找到有效的敌占目标城镇。' };
+    if (cmd) cmd.points -= cost;
+    if (kind === 'recon') {
+      const enemies = state.units.filter((u) => u.city === city.id && u.side !== side && u.strength > 0 && !u.inactive);
+      const totalStr = enemies.reduce((s, u) => s + u.strength, 0);
+      const avgOrg = enemies.length ? Math.round(enemies.reduce((s, u) => s + (u.org ?? 70), 0) / enemies.length) : 0;
+      const fortLv = state.forts?.[city.id] || 0;
+      addLog(state, `🔭 【敌后秘密侦察】情报员摸清 ${city.name} 敌情：守军 ${enemies.length} 支共 ${totalStr} 人，平均组织度 ${avgOrg}%，工事等级 ${fortLv} 级！`, 'intel', { city: city.id, totalStr, avgOrg, fortLv });
+      return { ok: true, intel: { cityName: city.name, count: enemies.length, totalStr, avgOrg, fortLv } };
+    }
+    if (kind === 'uprising') {
+      const uid = 'guer-' + state.units.length + '-' + Date.now().toString(36).slice(-3);
+      const gName = data.theaterMode === 'ww2' ? `${city.name}反法西斯抵抗游击队` : data.theaterMode === 'korea' ? `${city.name}敌后穿插支队` : `${city.name}敌后武工游击支队`;
+      const enemies = state.units.filter((u) => u.city === city.id && u.side !== side && u.strength > 0 && !u.inactive);
+      if (!enemies.length) state.owners[city.id] = side;
+      state.units.push({
+        id: uid, side, name: gName, city: city.id, area: city.region || state.area || 'east',
+        strength: 6500, maxStrength: 8000, org: 85, morale: 90, supply: 1, entrench: 15,
+        tacticalStance: 'ambush',
+        support: { infantry: 2, artillery: 0, armor: 0, engineer: 1, recon: 2 },
+        order: { type: 'defend', target: city.id },
+      });
+      addLog(state, `🔥 【敌后武装起义】${gName} 在敌后 ${city.name} 揭竿而起（6,500 人隐蔽伏击姿态），牵制敌军后方！`, 'event', { city: city.id, unitId: uid });
+      return { ok: true, city: city.id, name: gName };
+    }
+    // raid_supply: 破袭铁路油库
+    state.scorched = state.scorched || {};
+    state.scorched[city.id] = Math.max(state.scorched[city.id] || 0, 12);
+    for (const eu of state.units.filter((u) => u.city === city.id && u.side !== side && u.strength > 0)) {
+      eu.org = Math.max(10, (eu.org ?? 70) - 12);
+    }
+    addLog(state, `💣 【敌后破袭断补】游击队炸毁 ${city.name} 铁路桥与油弹库，敌军该区补给瘫痪 12 天且守军组织度 -12！`, 'sabotage', { city: city.id });
+    return { ok: true, city: city.id };
+  }
+
+  // ── 真实战地后勤：紧急空投补给 / 同城残部合编 / 抽调快速穿插支队 ──
+  function fieldLogisticsAction(data, state, kind = 'airdrop', unitId = null) {
+    const side = state.player;
+    const unit = state.units.find((u) => u.id === unitId && u.side === side && u.strength > 0 && !u.inactive)
+      || state.units.find((u) => u.side === side && u.strength > 0 && !u.inactive && !u.parent);
+    if (!unit) return { ok: false, error: '未找到可用的己方部队。' };
+    const city = data.cities.find((c) => c.id === unit.city);
+    if (kind === 'airdrop') {
+      const planes = Number(state.airWar?.[side]?.planes || 0) + (typeof state.air?.[side] === 'number' ? state.air[side] : Number(state.air?.[side]?.planes || 0));
+      if (planes < 3) return { ok: false, error: '实施紧急空投补给需要至少 3 架可用飞机。' };
+      const cmd = state.command?.[side];
+      if (cmd && cmd.points < 8) return { ok: false, error: '紧急空投补给需要 8 指挥点。' };
+      if (cmd) cmd.points -= 8;
+      unit.food = Math.min(100, (unit.food ?? 60) + 40);
+      unit.org = Math.min(100, (unit.org ?? 50) + 25);
+      unit.supply = 1;
+      addLog(state, `🪂 【战地紧急空投】运输机突破防空网向 ${city?.name || unit.city} 的 ${unit.name} 空投粮弹，组织度 +25、给养 +40！`, 'supply', { unitId: unit.id, city: unit.city });
+      return { ok: true };
+    }
+    if (kind === 'merge') {
+      const sameCity = state.units.filter((u) => !u.parent && u.side === side && u.city === unit.city && u.strength > 0 && !u.inactive && u.id !== unit.id);
+      if (!sameCity.length) return { ok: false, error: '本城没有其他可合并的己方同级部队。' };
+      const donor = sameCity.sort((a, b) => a.strength - b.strength)[0];
+      unit.strength += donor.strength;
+      unit.maxStrength = Math.max(unit.maxStrength || unit.strength, unit.strength);
+      unit.org = Math.round(((unit.org ?? 70) + (donor.org ?? 70)) / 2);
+      donor.strength = 0;
+      addLog(state, `🔧 【战地合编整训】${donor.name} 已就地并入 ${unit.name}（合编后总兵力 ${unit.strength} 人），恢复满编战力！`, 'order', { unitId: unit.id });
+      return { ok: true, strength: unit.strength };
+    }
+    if (kind === 'detach') {
+      if (unit.strength < 8000) return { ok: false, error: '部队兵力不足 8,000 人，无法抽调独立快速穿插支队。' };
+      const splitStr = Math.round(unit.strength * 0.25);
+      unit.strength -= splitStr;
+      const did = 'detach-' + state.units.length + '-' + Date.now().toString(36).slice(-3);
+      const dName = `${unit.name}·快速穿插支队`;
+      state.units.push({
+        id: did, side, name: dName, city: unit.city, area: unit.area,
+        strength: splitStr, maxStrength: splitStr, org: unit.org ?? 80, morale: unit.morale ?? 80,
+        supply: 1, entrench: 0, tacticalStance: 'forced_march',
+        support: { infantry: 1, artillery: 0, armor: unit.support?.armor ? 1 : 0, engineer: 1, recon: 2 },
+        order: { type: 'hold' },
+      });
+      addLog(state, `⚡ 【抽调穿插支队】从 ${unit.name} 抽调 ${splitStr} 人组成「${dName}」（强行军姿态），可高速抢占空城或断敌退路！`, 'order', { unitId: did });
+      return { ok: true, unitId: did };
+    }
+    return { ok: false, error: '未知后勤操作。' };
+  }
+
+  // ── 真实战场外交与攻心战：阵前劝降起义 / 秘密局部休战 30 天 ──
+  function warDiplomacyAction(data, state, kind = 'persuade', targetCityId = null) {
+    const side = state.player;
+    const pol = state.political?.[side];
+    if (kind === 'truce') {
+      if (!pol || pol.points < 25) return { ok: false, error: '秘密谈判换取 30 天局部停火整军需要 25 政治点。' };
+      pol.points -= 25;
+      state.prepDaysLeft = Math.max(state.prepDaysLeft || 0, 30);
+      addLog(state, `🕊️ 【秘密谈判局部停火】双方达成 30 天临时停火协议，全线暂停进攻，可趁机整补扩军、抢修工事！`, 'event');
+      return { ok: true, truceDays: state.prepDaysLeft };
+    }
+    // 阵前劝降：目标城敌军被围或平均组织度 < 45 时高概率率部起义和平解放
+    if (!pol || pol.points < 15) return { ok: false, error: '发动阵前政治攻势/广播劝降需要 15 政治点。' };
+    const city = data.cities.find((c) => c.id === targetCityId && state.owners[c.id] !== side);
+    if (!city) return { ok: false, error: '请选择一座敌方城镇实施阵前劝降。' };
+    const defenders = state.units.filter((u) => u.city === city.id && u.side !== side && u.strength > 0 && !u.inactive);
+    const neighbors = index(data).neighbors.get(city.id) || [];
+    const encircled = neighbors.length > 0 && neighbors.every((n) => state.owners[n] === side);
+    const avgOrg = defenders.length ? defenders.reduce((s, u) => s + (u.org ?? 70), 0) / defenders.length : 0;
+    if (!encircled && avgOrg >= 50) {
+      return { ok: false, error: `${city.name} 敌军尚有外援且组织度较高（${Math.round(avgOrg)}%），请先合围或炮火压制其组织度至 50% 以下再行劝降！` };
+    }
+    pol.points -= 15;
+    state.owners[city.id] = side;
+    let joined = 0;
+    for (const def of defenders) {
+      const keep = Math.round(def.strength * 0.65);
+      def.side = side;
+      def.strength = keep;
+      def.org = 65;
+      def.order = { type: 'defend', target: city.id };
+      joined += keep;
+    }
+    addLog(state, `📢 【阵前起义和平解放】经政治攻势与阵前劝降，${city.name} 守军放下武器率部起义（${joined} 人归编我方），城镇免遭战火和平解放！`, 'defect', { city: city.id, joined });
+    return { ok: true, city: city.id, joined };
+  }
+
   const api = {
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
@@ -5814,6 +5994,7 @@
     setAirRegion, setDoctrine, setMotorization, airborneInfiltrate, callSovietSupport,
     ensureCivilHoi, upgradeCivilMIO, designCivilEquipment, buildCivilRadar, relocateCivilIndustry, suppressCivilResistance, civilNavalThreeLineBattle, deployDirectForceCivil,
     continueSandboxMode, endPrepEarly, declareSandboxWar, setFieldCamp, artilleryFire, unitArtilleryRangeKm, haversineKm,
+    setTacticalStance, guerrillaOperation, fieldLogisticsAction, warDiplomacyAction, updateBattlefieldWeather,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,

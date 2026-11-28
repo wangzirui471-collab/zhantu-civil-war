@@ -11,11 +11,13 @@
     'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide',
     'createDesign', 'updateDesign', 'assignDesign', 'researchTech', 'setAirMission', 'startFocus',
     'setProduction', 'commandAbility', 'setBattlePosture', 'intelOperation', 'setLaw', 'diplomacyAction', 'foreignAction', 'setNavalMission',
-    'deployDirectForceCivil', 'setFieldCamp', 'artilleryFire']);
+    'deployDirectForceCivil', 'setFieldCamp', 'artilleryFire',
+    'setTacticalStance', 'guerrillaOperation', 'fieldLogisticsAction', 'warDiplomacyAction']);
   const usesData = new Set(['order', 'setLeader', 'setEquipment', 'createPlan', 'updatePlan', 'executePlan', 'setBattlePosture',
     'pausePlan', 'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide', 'commandAbility',
     'portGarrisonOrder', 'fallbackLineOrder', 'scorchedEarth', 'sabotageRail', 'airborneInfiltrate', 'callSovietSupport',
-    'deployDirectForceCivil', 'setFieldCamp', 'artilleryFire']);
+    'deployDirectForceCivil', 'setFieldCamp', 'artilleryFire',
+    'setTacticalStance', 'guerrillaOperation', 'fieldLogisticsAction', 'warDiplomacyAction']);
   const day = 86400000;
   const toTime = (value) => Date.parse(value + 'T00:00:00Z');
   const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)

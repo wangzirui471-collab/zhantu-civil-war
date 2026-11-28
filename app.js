@@ -1269,6 +1269,7 @@
       + '<button type="button" class="hoi-bp-btn" data-map-tool="barrage" aria-pressed="' + (pendingMapTool === 'barrage') + '" title="地图直接炮火准备/喀秋莎齐射（30 指挥点）：重创目标守军">🎯 炮火/导弹</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="camp" title="军队高自由度部署：指定距离（15/30/50/80km）与方向在城外构筑野战营地">⛺ 城外扎营</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="artfire" title="炮兵按真实公里射程跨距开炮：查看射程内敌城公里数并实施压制/反炮兵轰击">🎯 按距开炮</button>'
+      + '<button type="button" class="hoi-bp-btn" data-bp-quick="realwar" title="真实战争自由玩法：战场天气预报、伏击/夜战/强行军姿态、敌后游击起义、紧急空投合编与阵前劝降起义">🎖️ 实战指挥</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="blitz" title="同步二战模式：装甲闪电总攻，选定/前线主力全线高速突击">⚡ 闪电战</button>'
       + '<button type="button" class="hoi-bp-btn" data-bp-quick="naval3" title="同步二战模式：发动 HOI4 三排海战阵型决战">🚢 三排海战</button>'
       + '<span class="hoi-bp-sep"></span>'
@@ -5181,6 +5182,58 @@
           WarAudio.artillery(); saveAuto(true); render(); dialog.close();
           notify('🎯 炮火齐射已命中 ' + cityName(b.dataset.artTgt) + '！敌军组织度与工事遭受重创！');
         }
+      });
+    } else if (d.bpQuick === 'realwar') {
+      if (Engine.updateBattlefieldWeather && !state.weatherSummary) Engine.updateBattlefieldWeather(Data, state);
+      const u = inspectUnit() || Engine.activeUnits(state).find((x) => !x.parent && x.side === state.player && permitted(x));
+      const enemyCity = (selectedCity && state.owners[selectedCity] !== state.player)
+        ? citiesById.get(selectedCity)
+        : Data.cities.find((c) => state.owners[c.id] !== state.player && (cityConnected.get(c.id) || []).some((n) => state.owners[n] === state.player))
+          || Data.cities.find((c) => state.owners[c.id] !== state.player);
+      const wx = state.weatherSummary || { name: '☀️ 晴朗', desc: '视野开阔，空军与装甲集群正常发挥' };
+      const wxRows = Object.entries(state.weather || {}).slice(0, 6).map(([rk, w]) =>
+        '<span style="padding:2px 6px;border-radius:4px;background:#222c26;border:1px solid #4c5d50;font-size:11px;">' + escape(regions[rk] || rk) + '：' + escape(w.name) + '</span>').join('');
+      const body = showDialog('🎖️ 真实战争自由指挥所（天时 · 战术 · 敌后 · 后勤 · 攻心）',
+        '<div style="display:grid;gap:10px;">'
+        + '<section class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">🌦️ 当前主战区气象：' + escape(wx.name) + '</strong></header>'
+        + '<p class="subtext" style="margin:4px 0;">' + escape(wx.desc) + '</p>'
+        + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">' + wxRows + '</div></section>'
+        + '<section class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">🥷 1. 野战战术姿态自由切换' + (u ? '（当前：' + escape(u.name) + '）' : '') + '</strong></header>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'
+        + [['normal', '常规作战'], ['ambush', '🥷 隐蔽埋伏(+35%反杀)'], ['feint', '🎭 佯攻诱敌'], ['forced_march', '⚡ 强行军(+55%速)'], ['night_infiltrate', '🌙 夜战渗透(避空袭)']].map(([st, lbl]) =>
+          '<button type="button" data-rw-stance="' + st + '" aria-pressed="' + ((u?.tacticalStance || 'normal') === st) + '">' + lbl + '</button>').join('')
+        + '</div></section>'
+        + '<section class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">🔥 2. 敌后游击破袭与秘密侦察' + (enemyCity ? '（目标：' + escape(enemyCity.name) + '）' : '') + '</strong></header>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'
+        + '<button type="button" data-rw-guer="recon">🔭 敌后秘密侦察 (8指)</button>'
+        + '<button type="button" data-rw-guer="raid_supply">💣 炸毁敌后铁路油库 (15指)</button>'
+        + '<button type="button" class="gold" data-rw-guer="uprising">🔥 发动敌后武装起义 (25指)</button>'
+        + '</div></section>'
+        + '<section class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">📦 3. 战地紧急后勤与灵活拆合编</strong></header>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'
+        + '<button type="button" data-rw-logi="airdrop">🪂 孤军紧急空投粮弹 (8指)</button>'
+        + '<button type="button" data-rw-logi="merge">🔧 同城残部战地合编</button>'
+        + '<button type="button" data-rw-logi="detach">⚡ 抽调 25% 兵力组穿插支队</button>'
+        + '</div></section>'
+        + '<section class="hoi-cipher-box"><header><strong style="color:#f5e1b0;">🕊️ 4. 攻心劝降与局部停火谈判</strong></header>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">'
+        + '<button type="button" class="gold" data-rw-dip="persuade">📢 阵前劝降起义 (15政 · 需合围或敌组织度<50%)</button>'
+        + '<button type="button" data-rw-dip="truce">🤝 秘密谈判局部休战 30 天 (25政)</button>'
+        + '</div></section>'
+        + '</div>');
+      body.querySelectorAll('[data-rw-stance]').forEach((b) => b.onclick = () => {
+        if (!u) { notify('请先选中一支己方部队。'); return; }
+        if (action('setTacticalStance', [u.id, b.dataset.rwStance])) { WarAudio.click(); saveAuto(true); render(); dialog.close(); notify('🎖️ ' + u.name + ' 已切换战术姿态！'); }
+      });
+      body.querySelectorAll('[data-rw-guer]').forEach((b) => b.onclick = () => {
+        if (!enemyCity) { notify('请先点击一座敌方城镇作为敌后目标。'); return; }
+        if (action('guerrillaOperation', [b.dataset.rwGuer, enemyCity.id])) { WarAudio.bugle(); saveAuto(true); render(); dialog.close(); }
+      });
+      body.querySelectorAll('[data-rw-logi]').forEach((b) => b.onclick = () => {
+        if (action('fieldLogisticsAction', [b.dataset.rwLogi, u?.id || null])) { WarAudio.click(); saveAuto(true); render(); dialog.close(); }
+      });
+      body.querySelectorAll('[data-rw-dip]').forEach((b) => b.onclick = () => {
+        if (action('warDiplomacyAction', [b.dataset.rwDip, enemyCity?.id || null])) { WarAudio.click(); saveAuto(true); render(); dialog.close(); }
       });
     } else if (d.bpQuick === 'blitz') {
       const targetEnemy = (selectedCity && state.owners[selectedCity] !== state.player) ? selectedCity
