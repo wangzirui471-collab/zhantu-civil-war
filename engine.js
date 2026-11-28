@@ -9,9 +9,9 @@
     artillery: { name: '炮兵装备', days: 1, attack: 1.08, defense: 0.96, siege: 1.35, screen: 0.86, upkeep: 1.18, cost: 0.06 },
     mobile: { name: '机动装备', days: -2, attack: 1.03, defense: 0.96, siege: 0.82, screen: 1.3, upkeep: 1.13, cost: 0.045 },
   };
-  const hostileOrders = new Set(['advance', 'siege', 'intercept']);
+  const hostileOrders = new Set(['advance', 'siege', 'intercept', 'support']);
   const stationaryFriendlyOrders = new Set(['defend', 'entrench', 'rest']);
-  const targetOrders = ['advance', 'move', 'defend', 'entrench', 'rest', 'siege', 'intercept', 'bombard'];
+  const targetOrders = ['advance', 'move', 'defend', 'entrench', 'rest', 'siege', 'intercept', 'support', 'bombard'];
   const supportKinds = { infantry: '步兵', armor: '装甲', artillery: '炮兵', engineer: '工兵', medical: '医护', transport: '运输' };
   const supportKeys = Object.keys(supportKinds);
   const supportBase = {
@@ -40,7 +40,7 @@
       stock: { infantry: 70, armor: 40 }, strength: 1600 },
   };
   const supplyGoods = { ammo: '弹药', fuel: '油料', medical: '医疗物资' };
-  const planModes = { advance: '进攻', siege: '围城', intercept: '围点打援', defend: '守阵地', entrench: '挖战壕', rest: '城内休整', move: '行军调动' };
+  const planModes = { advance: '进攻', siege: '围城', intercept: '围点打援', support: '支援牵制', defend: '守阵地', entrench: '挖战壕', rest: '城内休整', move: '行军调动' };
   const dayMillis = 86_400_000;
   const baseDate = '1945-08-15';
   const indexes = new WeakMap();
@@ -1258,8 +1258,17 @@
         if (state.owners[unit.city] !== side) coverage *= 0.5;
         const enemySide = side === 'ccp' ? 'roc' : 'ccp';
         if (state.airWar?.[enemySide]?.mission === 'interdiction') {
-          coverage *= 1 - 0.18 * (num(state.air?.[enemySide], 0) / 100);
+          const regionBoost = state.airWar[enemySide].region && state.airWar[enemySide].region === map.cities.get(unit.city)?.region ? 1.4 : 1;
+          coverage *= 1 - Math.min(0.32, 0.18 * (num(state.air?.[enemySide], 0) / 100) * regionBoost);
         }
+        if (state.airWar?.[enemySide]?.mission === 'logistic') {
+          const regionBoost = state.airWar[enemySide].region && state.airWar[enemySide].region === map.cities.get(unit.city)?.region ? 1.45 : 1;
+          coverage *= 1 - Math.min(0.42, 0.28 * Math.max(0.4, num(state.air?.[enemySide], 0) / 100) * regionBoost);
+        }
+        if ((state.scorched?.[unit.city] ?? 0) > 0) coverage *= 0.5;
+        const motor = state.motorization?.[side] || 'horse';
+        if (motor === 'truck') coverage = Math.min(1, coverage * 1.12);
+        else if (motor === 'heavy') coverage = Math.min(1, coverage * 1.24);
         coverage *= 1 - Math.min(0.35, num(state.interdiction?.[enemySide], 0));
         if (state.airWar?.[side]?.mission === 'airdrop' && pocket < 1) coverage = Math.min(1, coverage + 0.15);
         const need = unitSupplyNeed(unit, state);
@@ -1337,8 +1346,17 @@
         coverage *= pocket;
         const enemySide = side === 'ccp' ? 'roc' : 'ccp';
         if (state.airWar?.[enemySide]?.mission === 'interdiction') {
-          coverage *= 1 - 0.18 * (num(state.air?.[enemySide], 0) / 100);
+          const regionBoost = state.airWar[enemySide].region && state.airWar[enemySide].region === map.cities.get(unit.city)?.region ? 1.4 : 1;
+          coverage *= 1 - Math.min(0.32, 0.18 * (num(state.air?.[enemySide], 0) / 100) * regionBoost);
         }
+        if (state.airWar?.[enemySide]?.mission === 'logistic') {
+          const regionBoost = state.airWar[enemySide].region && state.airWar[enemySide].region === map.cities.get(unit.city)?.region ? 1.45 : 1;
+          coverage *= 1 - Math.min(0.42, 0.28 * Math.max(0.4, num(state.air?.[enemySide], 0) / 100) * regionBoost);
+        }
+        if ((state.scorched?.[unit.city] ?? 0) > 0) coverage *= 0.5;
+        const motor = state.motorization?.[side] || 'horse';
+        if (motor === 'truck') coverage = Math.min(1, coverage * 1.12);
+        else if (motor === 'heavy') coverage = Math.min(1, coverage * 1.24);
         coverage *= 1 - Math.min(0.35, num(state.interdiction?.[enemySide], 0));
         if (state.airWar?.[side]?.mission === 'airdrop' && pocket < 1) coverage = Math.min(1, coverage + 0.15);
         if (!reading.coverage[side][unit.city] || reading.coverage[side][unit.city] < coverage) {
@@ -1804,7 +1822,19 @@
     superiority: { name: '争夺制空', support: 1, attrition: 0.004, hint: '稳定争夺制空权，提供常规空中支援。' },
     cas: { name: '近距支援', support: 1.35, attrition: 0.009, hint: '直接支援地面进攻，进攻加成更高，但损失更大。' },
     interdiction: { name: '空中遮断', support: 0.75, attrition: 0.007, hint: '打击敌方运输线，降低对方补给覆盖。' },
+    logistic: { name: '后勤打击', support: 0.55, attrition: 0.008, hint: 'HOI4 专项炸铁路与补给车队：重创敌军补给覆盖并消耗敌方弹药油料。' },
     airdrop: { name: '空投补给', support: 0.4, attrition: 0.006, hint: '向被围城镇空投物资，提高守军补给。' },
+  };
+  const doctrineCatalog = {
+    mobile: { id: 'mobile', name: '运动穿插战', desc: '行军与穿插机动增强，多路包围与突破火力 +12%。', atk: 1.12, def: 1.0, fortDef: 1.0, orgLoss: 0.94 },
+    firepower: { id: 'firepower', name: '优势火力论', desc: '重炮与火力投送至上，全军进攻 +10%、防守 +6%。', atk: 1.10, def: 1.06, fortDef: 1.0, orgLoss: 0.96 },
+    grand: { id: 'grand', name: '决战计划与纵深固守', desc: '强调阵地与计划协同，防守 +12%、工事加成提升。', atk: 1.04, def: 1.12, fortDef: 1.2, orgLoss: 0.95 },
+    mass: { id: 'mass', name: '人民战争与人海突击', desc: '韧性与持续作战拉满，组织度损耗 -15%、宽容补给。', atk: 1.06, def: 1.08, fortDef: 1.05, orgLoss: 0.85 },
+  };
+  const motorizationLevels = {
+    horse: { id: 'horse', name: '🐴 马车运粮', desc: '零油料消耗，常规补给半径。', bonus: 1.0, fuelCost: 0 },
+    truck: { id: 'truck', name: '🚚 单卡车机动', desc: '补给覆盖 +12%，每日消耗少量油料。', bonus: 1.12, fuelCost: 3 },
+    heavy: { id: 'heavy', name: '🚛 双卡车重装', desc: '补给覆盖 +24%，大幅加速前线组织度恢复。', bonus: 1.24, fuelCost: 7 },
   };
   const focusTrees = {
     ccp: [
@@ -2993,13 +3023,35 @@
       const piercing = average(engaged, unit => unitDesignStats(state, unit).piercing);
       const enemyArmor = average(defenders, unit => unitDesignStats(state, unit).armor);
       const enemyPiercing = average(defenders, unit => unitDesignStats(state, unit).piercing);
-      const armored = (armor > enemyPiercing + 0.5 ? 1.08 : 1) * (enemyArmor > piercing + 0.5 ? 0.92 : 1);
+      const atkShield = armor > enemyPiercing + 0.5;
+      const defShield = enemyArmor > piercing + 0.5;
+      const armorStatus = atkShield && !defShield ? 'atk-shield'
+        : defShield && !atkShield ? 'def-shield'
+          : (armor > 0.5 || enemyArmor > 0.5) ? 'pierced' : 'none';
+      const armored = (atkShield ? 1.15 : 1) * (defShield ? 0.85 : 1);
+      const isCampaign = map.cities.size > 40;
+      const atkDoc = isCampaign ? (doctrineCatalog[state.doctrine?.[side]] || null) : null;
+      const defDoc = isCampaign ? (doctrineCatalog[state.doctrine?.[defendingSide]] || null) : null;
+      const atkCipher = (state.cipher?.[side]?.activeDays ?? 0) > 0 ? 1.15 : 1;
+      const defCipher = (state.cipher?.[defendingSide]?.activeDays ?? 0) > 0 ? 1.15 : 1;
+      const spyFortCut = Math.min(0.25, (state.cipher?.[side]?.network ?? 0) * 0.0025)
+        + ((state.cipher?.[side]?.activeDays ?? 0) > 0 ? 0.25 : 0);
+      const effectiveFort = fort * Math.max(0.25, 1 - spyFortCut) * (defDoc?.fortDef ?? 1);
+      const atkCards = ['穿插迂回', '全线强攻', '钳形突破', '炮火覆盖'];
+      const defCards = ['弹性防御', '反冲击', '伏击迟滞', '死守阵地'];
+      const atkCardIdx = hash(state.date + target + 'a') % atkCards.length;
+      const defCardIdx = hash(state.date + target + 'd') % defCards.length;
+      const tacticCounter = !isCampaign ? 'none'
+        : ((atkCardIdx + 1) % 4 === defCardIdx) ? 'def'
+          : ((defCardIdx + 1) % 4 === atkCardIdx) ? 'atk' : 'none';
+      const counterAtk = tacticCounter === 'atk' ? 1.12 : tacticCounter === 'def' ? 0.90 : 1;
+      const counterDef = tacticCounter === 'def' ? 1.12 : tacticCounter === 'atk' ? 0.90 : 1;
+      const airRegionBonus = (state.airWar?.[side]?.region && state.airWar[side].region === city?.region) ? 1.06 : 1;
       const river = city?.river && seaRatio === 0
         ? 1 - 0.12 * Math.max(0, 1 - (state.riverBonus?.[side] ?? 0)) : 1;
       const invasionPrep = clampValue(state.navy?.[side]?.invasion ?? 0, 0, 1);
       const landingFactor = 1 - 0.18 * seaRatio + 0.26 * seaRatio * invasionPrep;
       const night = battle.period === '夜战';
-      const isCampaign = map.cities.size > 40;
       const atkSpirit = isCampaign ? hoiCombatFactor(state, side, false) : 1;
       const defSpirit = isCampaign ? hoiCombatFactor(state, defendingSide, true) : 1;
       const defEncircled = isCampaign && pocketFactor(map, state, target, defendingSide) < 1;
@@ -3007,22 +3059,26 @@
       const encirclePenalty = defEncircled ? 0.67 : 1;
       const attackPower = power(engaged, false, state) * (1 - obstacle) * (1 + air) * variation
         * weather.attack * tacticAttack * cas * multidir * armored * river * (1 + prep) * landingFactor
-        * (night ? 0.92 : 1) * (attackPostureStats.power ?? 1) * atkSpirit;
+        * (night ? 0.92 : 1) * (attackPostureStats.power ?? 1) * atkSpirit * (atkDoc?.atk ?? 1) * atkCipher * counterAtk * airRegionBonus;
       const attackStrength = engaged.reduce((sum, unit) => sum + unit.strength, 0);
       const siegeStrength = engaged.reduce((sum, unit) => sum + (unit.order?.type === 'siege'
         ? unit.strength * profileFor(unit).siege * (1 + unitSupport(unit).artillery / 400) : 0), 0);
       const siegeEffect = attackStrength > 0 ? 1 - 0.3 * siegeStrength / attackStrength : 1;
       const defensePower = power(defenders, true, state) * terrainFactor * (isTaiwan(city) ? 1.55 : 1)
-        * (1 + fort) * siegeEffect * tacticDefense * (night ? 1.03 : 1) * (defensePostureStats.defense ?? 1)
-        * defSpirit * encirclePenalty;
+        * (1 + effectiveFort) * siegeEffect * tacticDefense * (night ? 1.03 : 1) * (defensePostureStats.defense ?? 1)
+        * defSpirit * encirclePenalty * (defDoc?.def ?? 1) * defCipher * counterDef;
       const ratio = attackPower / Math.max(defensePower, 1);
       battle.lastRatio = Math.round(ratio * 100) / 100;
       battle.bubbleScore = Math.round(clampValue(50 + Math.log(Math.max(0.15, ratio)) * 34, 5, 95));
       battle.encircled = defEncircled;
+      battle.armorStatus = armorStatus;
+      battle.atkTactic = atkCards[atkCardIdx];
+      battle.defTactic = defCards[defCardIdx];
+      battle.tacticCounter = tacticCounter;
       battle.modifiers = {
         terrain: Math.round((terrainFactor - 1) * 100),
         river: Math.round((river - 1) * 100),
-        fort: Math.round(fort * 100),
+        fort: Math.round(effectiveFort * 100),
         multidir: Math.round((multidir - 1) * 100),
         planning: Math.round(prep * 100),
         air: Math.round(air * 100),
@@ -3030,6 +3086,8 @@
         defSpirit: Math.round((defSpirit - 1) * 100),
         encircled: defEncircled ? -33 : 0,
         night: night ? -8 : 0,
+        armor: atkShield ? 40 : defShield ? -40 : 0,
+        cipher: atkCipher > 1 ? 15 : defCipher > 1 ? -15 : 0,
       };
       battle.weather = weather.name;
       battle.tactic = tactic?.name ?? null;
@@ -3037,10 +3095,12 @@
       state.armyXp[side] = Math.min(500, Math.round((num(state.armyXp[side], 0) + 2) * 10) / 10);
       state.armyXp[defendingSide] = Math.min(500, Math.round((num(state.armyXp[defendingSide], 0) + 2.5) * 10) / 10);
 
-      const attackOrgLoss = clampValue(3 + 8.5 / Math.max(ratio, 0.15), 2, 20) * (attackPostureStats.org ?? 1);
-      const defenseOrgLoss = clampValue(3 + 8 * ratio, 2, 22) * (defensePostureStats.defenseOrg ?? 1);
-      const attackShare = clampValue(0.0012 / Math.max(ratio, 0.2) * (attackPostureStats.losses ?? 1), 0.0003, 0.008);
-      const defenseShare = clampValue(0.0012 * ratio * (defensePostureStats.defenseLosses ?? 1), 0.0003, 0.008);
+      const attackOrgLoss = clampValue(3 + 8.5 / Math.max(ratio, 0.15), 2, 20) * (attackPostureStats.org ?? 1)
+        * (atkDoc?.orgLoss ?? 1) * (atkShield ? 0.55 : defShield ? 1.35 : 1);
+      const defenseOrgLoss = clampValue(3 + 8 * ratio, 2, 22) * (defensePostureStats.defenseOrg ?? 1)
+        * (defDoc?.orgLoss ?? 1) * (defShield ? 0.55 : atkShield ? 1.35 : 1);
+      const attackShare = clampValue(0.0012 / Math.max(ratio, 0.2) * (attackPostureStats.losses ?? 1) * (atkShield ? 0.55 : 1), 0.0003, 0.008);
+      const defenseShare = clampValue(0.0012 * ratio * (defensePostureStats.defenseLosses ?? 1) * (defShield ? 0.55 : 1), 0.0003, 0.008);
 
       const attackerBefore = attackStrength;
       const defenderBefore = defenders.reduce((sum, unit) => sum + unit.strength, 0);
@@ -3084,29 +3144,33 @@
         capture(map, state, combat, target, side, false, undefined, interceptArrival);
         state.railCooldown ??= {};
         state.railCooldown[target] = 3;
+        const wipedByCapture = Math.max(0, defenderBeforeCapture - defenders.reduce((sum, unit) => sum + unit.strength, 0));
+        let extraWiped = 0;
         if (defEncircled) {
-          let wiped = 0;
           for (const unit of defenders) {
-            if (unit.strength > 0) { wiped += unit.strength; unit.strength = 0; clearOrder(unit); }
-          }
-          if (wiped > 0) {
-            const captureRate = 0.35 + ((hash(state.date + target) % 26) / 100); // 35%–60% 战场缴获
-            const capRifles = Math.max(15, Math.round((wiped / 25) * captureRate));
-            const capArt = Math.max(4, Math.round((wiped / 140) * captureRate));
-            state.stock[side].infantry = (state.stock[side].infantry ?? 0) + capRifles;
-            state.stock[side].artillery = (state.stock[side].artillery ?? 0) + capArt;
-            state.economy[side].arms = (state.economy[side].arms ?? 0) + Math.round(wiped * 0.25 * captureRate);
-            addLog(state, '包饺子合围全歼！' + city.name + '被困守军 ' + Math.round(wiped) + ' 人缴械，缴获步枪 ' + capRifles + '、火炮 ' + capArt + '！',
-              'encirclement', { city: target, side, wiped, capturedRifles: capRifles, capturedArtillery: capArt });
+            if (unit.strength > 0) { extraWiped += unit.strength; unit.strength = 0; clearOrder(unit); }
           }
         }
-        battle.routed += Math.max(0, defenderBeforeCapture - defenders.reduce((sum, unit) => sum + unit.strength, 0));
+        const wiped = wipedByCapture + extraWiped;
+        if (wiped > 0) {
+          const captureRate = 0.35 + ((hash(state.date + target) % 26) / 100); // 35%–60% 战场缴获
+          const capRifles = Math.max(15, Math.round((wiped / 25) * captureRate));
+          const capArt = Math.max(4, Math.round((wiped / 140) * captureRate));
+          state.stock[side].infantry = (state.stock[side].infantry ?? 0) + capRifles;
+          state.stock[side].artillery = (state.stock[side].artillery ?? 0) + capArt;
+          state.economy[side].arms = (state.economy[side].arms ?? 0) + Math.round(wiped * 0.25 * captureRate);
+          addLog(state, '包饺子合围全歼！' + city.name + '被困守军 ' + Math.round(wiped) + ' 人缴械，缴获步枪 ' + capRifles + '、火炮 ' + capArt + '！',
+            'encirclement', { city: target, side, wiped, capturedRifles: capRifles, capturedArtillery: capArt });
+        }
+        battle.routed += wiped;
         if (directed) recordIntervention(state, target, side);
         for (const unit of attackersAll) {
-          if (unit.strength > 0) {
+          if (unit.strength > 0 && unit.order?.type !== 'support') {
             unit.city = target;
             unit.area = city.region ?? unit.area;
             unit.org = Math.max(0, unitOrg(unit) - 5);
+          } else if (unit.strength > 0 && unit.order?.type === 'support') {
+            unit.org = Math.max(0, unitOrg(unit) - 3);
           }
           clearOrder(unit);
         }
@@ -3616,6 +3680,13 @@
     state.activeDecisions ??= { ccp: [], roc: [] };
     state.triggeredChoiceEvents ??= [];
     state.pendingEvent ??= null;
+    state.scorched ??= {};
+    state.cipher ??= {
+      ccp: { network: 15, decrypt: 20, activeDays: 0 },
+      roc: { network: 15, decrypt: 15, activeDays: 0 },
+    };
+    state.doctrine ??= { ccp: 'mobile', roc: 'firepower' };
+    state.motorization ??= { ccp: 'horse', roc: 'horse' };
     if (!state.spirits) {
       state.spirits = {
         ccp: [
@@ -4705,12 +4776,146 @@
     return { ok: true, choice: choice.label };
   }
 
+  function scorchedEarth(data, state, cityId) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    const side = state.player;
+    if (!map_has(data, cityId)) return { ok: false, error: '请选择有效城镇。' };
+    if (state.owners[cityId] !== side) return { ok: false, error: '只能对己方控制城镇执行撤退焦土。' };
+    if (state.political[side].points < 15) return { ok: false, error: '政治点不足（需要 15 点）。' };
+    state.political[side].points -= 15;
+    state.scorched[cityId] = 15;
+    state.railCooldown[cityId] = 15;
+    if (state.forts?.[cityId]) {
+      for (const k of Object.keys(state.forts[cityId])) {
+        if (state.forts[cityId][k] > 0) state.forts[cityId][k] -= 1;
+      }
+    }
+    const name = data.cities.find(c => c.id === cityId)?.name ?? cityId;
+    addLog(state, sideNames[side] + '在' + name + '实施「💣 焦土炸桥」，铁路与后勤设施瘫痪 15 天！', 'sabotage', { city: cityId, side });
+    return { ok: true };
+  }
+
+  function sabotageRail(data, state, cityId) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    const side = state.player;
+    if (!map_has(data, cityId)) return { ok: false, error: '请选择有效城镇。' };
+    if (state.owners[cityId] === side) return { ok: false, error: '铁路破袭只能针对敌占城镇。' };
+    const cmd = state.command?.[side];
+    if ((cmd?.points ?? 0) >= 15) cmd.points -= 15;
+    else if (state.political[side].points >= 15) state.political[side].points -= 15;
+    else return { ok: false, error: '指挥点或政治点不足（需 15 点）。' };
+    state.railCooldown[cityId] = Math.max(state.railCooldown[cityId] || 0, 10);
+    state.scorched[cityId] = Math.max(state.scorched[cityId] || 0, 8);
+    const name = data.cities.find(c => c.id === cityId)?.name ?? cityId;
+    addLog(state, sideNames[side] + '游击破袭队炸毁' + name + '铁路干线，敌军补给中断 10 天！', 'sabotage', { city: cityId, side });
+    return { ok: true };
+  }
+
+  function buildSpyNetwork(state) {
+    ensureSystems(state);
+    ensurePolitics(state);
+    const side = state.player;
+    if (state.political[side].points < 20) return { ok: false, error: '政治点不足（需要 20 点）。' };
+    state.political[side].points -= 20;
+    const c = state.cipher[side];
+    c.network = Math.min(100, (c.network ?? 0) + 25);
+    c.decrypt = Math.min(100, (c.decrypt ?? 0) + 28);
+    addLog(state, sideNames[side] + '扩大隐蔽战线情报网（渗透度 ' + c.network + '% · 电台破译 ' + Math.round(c.decrypt) + '%）。', 'intel', { side });
+    return { ok: true, network: c.network, decrypt: c.decrypt };
+  }
+
+  function activateCipherBreak(state) {
+    ensureSystems(state);
+    const side = state.player;
+    const c = state.cipher[side];
+    if ((c.decrypt ?? 0) < 100) return { ok: false, error: '电台密码尚未破译完成（当前 ' + Math.round(c.decrypt ?? 0) + '%）。' };
+    c.decrypt = 0;
+    c.activeDays = 15;
+    addLog(state, sideNames[side] + '激活「📡 破译决战电文」！未来 15 天全军攻防 +15%，敌军工事效能减半！', 'intel', { side });
+    return { ok: true };
+  }
+
+  function setAirRegion(state, region) {
+    ensureSystems(state);
+    const side = state.player;
+    state.airWar[side].region = region === 'all' ? '' : String(region || '');
+    return { ok: true, region: state.airWar[side].region || 'all' };
+  }
+
+  function setDoctrine(state, doctrineId) {
+    ensureSystems(state);
+    if (!doctrineCatalog[doctrineId]) return { ok: false, error: '无法识别该陆军学说。' };
+    const side = state.player;
+    if (state.doctrine[side] === doctrineId) return { ok: true, doctrine: doctrineId };
+    if ((state.armyXp[side] ?? 0) < 25) return { ok: false, error: '切换陆军学说需要 25 点陆军经验。' };
+    state.armyXp[side] -= 25;
+    state.doctrine[side] = doctrineId;
+    addLog(state, sideNames[side] + '确立陆军学说「' + doctrineCatalog[doctrineId].name + '」。', 'doctrine', { side, doctrineId });
+    return { ok: true, doctrine: doctrineId };
+  }
+
+  function setMotorization(state, level) {
+    ensureSystems(state);
+    if (!motorizationLevels[level]) return { ok: false, error: '无法识别补给机动化等级。' };
+    state.motorization[state.player] = level;
+    return { ok: true, level };
+  }
+
+  function airborneInfiltrate(data, state, cityId) {
+    ensureSystems(state);
+    const side = state.player;
+    if (!map_has(data, cityId)) return { ok: false, error: '请选择有效的敌方目标城镇。' };
+    if (state.owners[cityId] === side) return { ok: false, error: '只能对敌占城镇发动敌后奇袭/空降。' };
+    const cmd = state.command?.[side];
+    if ((cmd?.points ?? 0) < 25) return { ok: false, error: '指挥点不足（需要 25 点）。' };
+    cmd.points -= 25;
+    const map = index(data);
+    const tree = unitTree(state);
+    const defenders = tree.combat.filter(u => u.city === cityId && u.side !== side && u.strength > 0);
+    const name = map.cities.get(cityId)?.name ?? cityId;
+    const label = side === 'ccp' ? '⚡ 敌后武工队穿插奇袭' : '🪂 空降兵敌后奇袭';
+    state.railCooldown[cityId] = Math.max(state.railCooldown[cityId] || 0, 8);
+    if (!defenders.length) {
+      capture(map, state, tree.combat, cityId, side, false);
+      addLog(state, sideNames[side] + label + '突入无守军节点' + name + '，成功抢占并切断铁路！', 'airborne', { city: cityId, side, captured: true });
+      return { ok: true, captured: true };
+    }
+    for (const u of defenders) u.org = Math.max(5, unitOrg(u) - 25);
+    state.scorched[cityId] = Math.max(state.scorched[cityId] || 0, 6);
+    addLog(state, sideNames[side] + label + '袭扰' + name + '，守军组织度重创 -25、铁路瘫痪 8 天！', 'airborne', { city: cityId, side, captured: false });
+    return { ok: true, captured: false };
+  }
+
   function systemsStep(data, state) {
     for (const [cityId, days] of Object.entries(state.railCooldown ?? {})) {
       if (days <= 1) delete state.railCooldown[cityId];
       else state.railCooldown[cityId] = days - 1;
     }
+    for (const [cityId, days] of Object.entries(state.scorched ?? {})) {
+      if (days <= 1) delete state.scorched[cityId];
+      else state.scorched[cityId] = days - 1;
+    }
     for (const side of sides) {
+      const c = state.cipher?.[side];
+      if (c) {
+        if ((c.network ?? 0) > 0 && (c.decrypt ?? 0) < 100) {
+          c.decrypt = Math.min(100, (c.decrypt ?? 0) + 1.2 + c.network * 0.025);
+        }
+        if ((c.activeDays ?? 0) > 0) c.activeDays -= 1;
+      }
+      const motorDef = motorizationLevels[state.motorization?.[side] || 'horse'];
+      if (motorDef?.fuelCost > 0 && state.logistics?.[side]) {
+        state.logistics[side].fuel = Math.max(0, state.logistics[side].fuel - motorDef.fuelCost);
+      }
+      if (state.airWar?.[side]?.mission === 'logistic' && (state.airWar[side].planes ?? 0) >= 8) {
+        const enemy = side === 'ccp' ? 'roc' : 'ccp';
+        if (state.logistics?.[enemy]) {
+          state.logistics[enemy].ammo = Math.max(0, state.logistics[enemy].ammo - 6);
+          state.logistics[enemy].fuel = Math.max(0, state.logistics[enemy].fuel - 4);
+        }
+      }
       for (const key of ['infantry', 'artillery', 'armor', 'air', 'naval']) {
         state.prodEff[side][key] = Math.min(1, (state.prodEff[side][key] ?? 0.5) + 0.012);
       }
@@ -5114,6 +5319,8 @@
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
     reformSpirit, hireAdvisor, applyDivisionPreset, portGarrisonOrder, fallbackLineOrder,
     launchTimedDecision, resolveEventChoice,
+    scorchedEarth, sabotageRail, buildSpyNetwork, activateCipherBreak,
+    setAirRegion, setDoctrine, setMotorization, airborneInfiltrate,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,
@@ -5123,7 +5330,7 @@
       fortLevel, engineerSupport, unitSupport, supportFactor, power,
       techLines, airMissions, focusTrees, commandAbilities, designBattalions, designSupports,
       designDefaults, intelOps, diplomacyOps, lawNames, lawFactors, advisorCatalog, divisionPresets,
-      timedDecisionsCatalog, interactiveEventsCatalog,
+      timedDecisionsCatalog, interactiveEventsCatalog, doctrineCatalog, motorizationLevels,
       designStats: (state, side, design) => designStats(state, side, design),
       battlePeriod,
       canBarrage: (data, state, city, side = state.player) => artilleryAvailable(data, state, side, city),

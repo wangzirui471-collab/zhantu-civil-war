@@ -22,7 +22,7 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">战</span><div><h1>战图</h1><small>战役指挥 · 不保存进度</small></div></div>
+      <div class="brand"><span id="hoi-flag-badge" class="hoi-flag-badge ccp" aria-hidden="true">★</span><div><h1>战图</h1><small>HOI4 战区指挥 · 不保存进度</small></div></div>
       <div class="top-status"><span id="player-dot" class="dot ccp"></span><span id="player-name">中国共产党</span><span class="divider"></span><span id="scope-label">东北战区</span><div id="hoi-hud-stats" class="hoi-hud-stats" aria-label="国家核心指标"></div></div>
       <div class="clock-block">
         <div><time id="date"></time><span class="clock-label" id="clock-label">已暂停</span></div>
@@ -100,6 +100,7 @@
           <div class="map-layer-modes"><button type="button" data-layer="situation" aria-pressed="true" title="根据游戏城镇控制权推算的势力范围，非历史边界">势力范围(F1)</button><button type="button" data-layer="terrain" aria-pressed="false" title="F2 地形图">地形(F2)</button><button type="button" data-layer="faction" aria-pressed="false" title="根据驻军派系推算，非确切行政疆界">派系</button><button type="button" data-layer="contour" aria-pressed="false">等高线</button></div>
           <div class="map-layer-toggles"><button type="button" data-overlay="terrainBack" aria-pressed="true" title="在势力范围下显示地形，可独立关闭">地形底图</button><button type="button" data-overlay="rail" aria-pressed="true">铁路</button><button type="button" data-overlay="province" aria-pressed="true" title="现代省界参照">省界</button><button type="button" data-overlay="battle" aria-pressed="true" title="史料中的主要地点和大致方向">战役线</button><button type="button" data-overlay="supply" aria-pressed="false" title="F3 蓝区补给充足、黄区偏紧、红区断粮">补给(F3)</button><button type="button" data-overlay="fort" aria-pressed="true" title="已修筑的工事">工事</button><button type="button" data-overlay="maritime" aria-pressed="false">海路</button><button type="button" data-overlay="models3d" aria-pressed="true" title="显示或隐藏地图上的三维兵模">3D兵模</button></div>
         </div>
+        <div id="hoi-theaters" class="hoi-theaters" aria-label="战区速览"></div>
         <div id="general-dock" class="general-dock" aria-label="集团军将领栏"></div>
         <div class="map-legend"><span><b class="dot ccp"></b>共产党</span><span><b class="dot roc"></b>国民党</span><span><i></i>铁路</span><span><i class="attack-key"></i>进攻路线</span><span><i class="shell-key"></i>炮火</span><span><i class="supply-key"></i>补给缺口</span><span><i class="sea-key"></i>海运</span></div>
         <div id="territory-note" class="territory-note">范围按城镇控制权近似推算，非实测历史边界</div>

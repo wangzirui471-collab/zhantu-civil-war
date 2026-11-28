@@ -5,13 +5,15 @@
     'setEquipment', 'setHistoryMode', 'setHistoricalEvent', 'setNightMode',
     'reformSpirit', 'hireAdvisor', 'applyDivisionPreset', 'portGarrisonOrder', 'fallbackLineOrder',
     'launchTimedDecision', 'resolveEventChoice',
+    'scorchedEarth', 'sabotageRail', 'buildSpyNetwork', 'activateCipherBreak',
+    'setAirRegion', 'setDoctrine', 'setMotorization', 'airborneInfiltrate',
     'createPlan', 'updatePlan', 'executePlan', 'pausePlan', 'delegatePlan', 'removePlan',
     'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide',
     'createDesign', 'updateDesign', 'assignDesign', 'researchTech', 'setAirMission', 'startFocus',
     'setProduction', 'commandAbility', 'setBattlePosture', 'intelOperation', 'setLaw', 'diplomacyAction', 'foreignAction', 'setNavalMission']);
   const usesData = new Set(['order', 'setLeader', 'setEquipment', 'createPlan', 'updatePlan', 'executePlan', 'setBattlePosture',
     'pausePlan', 'buildFort', 'buildBuilding', 'recruitArmy', 'setSupport', 'decide', 'commandAbility',
-    'portGarrisonOrder', 'fallbackLineOrder']);
+    'portGarrisonOrder', 'fallbackLineOrder', 'scorchedEarth', 'sabotageRail', 'airborneInfiltrate']);
   const day = 86400000;
   const toTime = (value) => Date.parse(value + 'T00:00:00Z');
   const validDate = (value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)

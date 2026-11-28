@@ -14,12 +14,13 @@
     rest: { label: '城内休整', color: '#3b734c', dash: [] },
     siege: { label: '围城', color: '#7d3a6b', dash: [5, 3] },
     intercept: { label: '围点打援', color: '#78395d', dash: [2, 3] },
+    support: { label: '支援牵制', color: '#c47b2b', dash: [4, 4] },
     bombard: { label: '轰炸', color: '#d7a347', dash: [2, 5] },
     hold: { label: '待命', color: '#595843', dash: [] },
   };
   const orderStatus = {
     advance: '进攻中', move: '行军中', defend: '守阵地', entrench: '挖战壕',
-    rest: '休整中', siege: '围城中', intercept: '打援中', hold: '待命',
+    rest: '休整中', siege: '围城中', intercept: '打援中', support: '支援牵制', hold: '待命',
   };
   const nationalZoom = 17;
   const detailZoom = 76;

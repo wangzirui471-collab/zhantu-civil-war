@@ -17,10 +17,10 @@
   const regions = { national: '全国', northeast: '东北战区', north: '华北战区', east: '华东战区',
     central: '中原战区', south: '华南战区', southwest: '西南战区', northwest: '西北战区', taiwan: '台湾' };
   const commands = {
-    advance: '进攻', siege: '围城', defend: '守阵地', entrench: '挖战壕',
+    advance: '进攻', support: '支援牵制', siege: '围城', defend: '守阵地', entrench: '挖战壕',
     intercept: '围点打援', move: '行军', rest: '城内休整', hold: '原地待命', bombard: '战略轰炸',
   };
-  const enemyCommands = new Set(['advance', 'siege', 'intercept', 'bombard']);
+  const enemyCommands = new Set(['advance', 'support', 'siege', 'intercept', 'bombard']);
   const equipmentTypes = {
     infantry: ['步兵装备', '消耗补给较少，适合驻防和日常行动。'],
     artillery: ['炮兵装备', '在围城时提供火力加成。'],
@@ -296,6 +296,11 @@
   function renderHeader() {
     $('player-name').textContent = sides[state.player];
     $('player-dot').className = 'dot ' + state.player;
+    const flagEl = $('hoi-flag-badge');
+    if (flagEl) {
+      flagEl.className = 'hoi-flag-badge ' + state.player;
+      flagEl.textContent = state.player === 'ccp' ? '★' : '☀';
+    }
     const group = groupsById.get(state.group);
     $('scope-label').textContent = group && state.scope === 'theater' ? group.name
       : state.scope === 'national' ? '全国指挥' : regions[area()] || '战区指挥';
@@ -329,11 +334,14 @@
       const rifleDelta = rifles - 200;
       const rifleClass = rifleDelta >= 0 ? 'surplus' : 'deficit';
       const supRatio = Math.round((supplyView?.ration?.[side] ?? 1) * 100);
+      const cipher = state.cipher?.[side] || { decrypt: 0, activeDays: 0 };
+      const cipherLabel = cipher.activeDays > 0 ? '📡 破译生效 ' + cipher.activeDays + '天' : '📡 破译 ' + Math.round(cipher.decrypt ?? 0) + '%';
       const nextHudHtml =
         '<button type="button" class="hoi-stat-pill" data-open-panel="economy" title="兵源人力储备">👥 人力 <b>' + mp + 'k</b></button>'
         + '<button type="button" class="hoi-stat-pill ' + rifleClass + '" data-open-panel="production" title="枪炮库存盈余/缺口">🔫 枪炮 <b>' + (rifleDelta >= 0 ? '+' : '') + format(rifles) + '</b></button>'
-        + '<button type="button" class="hoi-stat-pill' + (supRatio < 70 ? ' deficit' : '') + '" data-open-panel="supply" title="全军补给覆盖率">📦 补给 <b>' + supRatio + '%</b></button>'
-        + '<button type="button" class="hoi-stat-pill" data-open-panel="politics" title="政治点数 / 军心支持度">🏛️ 政治 <b>' + pp + '</b> · ' + ws + '%</button>';
+        + '<button type="button" class="hoi-stat-pill' + (supRatio < 70 ? ' deficit' : '') + '" data-open-panel="supply" title="全军补给覆盖率与机动化">📦 补给 <b>' + supRatio + '%</b></button>'
+        + '<button type="button" class="hoi-stat-pill" data-open-panel="politics" title="政治点数 / 军心支持度">🏛️ 政治 <b>' + pp + '</b> · ' + ws + '%</button>'
+        + '<button type="button" class="hoi-stat-pill' + (cipher.activeDays > 0 ? ' surplus' : '') + '" data-open-panel="intel" title="隐蔽战线情报网与电台密码破译">' + cipherLabel + '</button>';
       if ($('hoi-hud-stats').dataset.lastHtml !== nextHudHtml) {
         $('hoi-hud-stats').dataset.lastHtml = nextHudHtml;
         $('hoi-hud-stats').innerHTML = nextHudHtml;
@@ -581,6 +589,15 @@
         + '</div><p class="subtext">征募会消耗兵员与对应枪炮库存；训练完成后部队列入本城驻军，可直接下令。</p>' : '')
       + '</section>'
       + fortPanel(city)
+      + '<div class="card"><h3>HOI4 战区特种战术</h3>'
+      + ((state.scorched?.[city.id] ?? 0) > 0 ? '<p class="subtext" style="color:#ff8a7a;">🔥 当前处于焦土/铁路瘫痪状态（剩余 ' + state.scorched[city.id] + ' 天，补给减半）</p>' : '')
+      + '<div class="unit-actions">'
+      + (state.owners[city.id] === state.player
+        ? '<button type="button" data-scorched-city="' + escape(city.id) + '" title="撤退前花 15 政治点炸毁铁路与工事，令敌军占领后 15 天断补">💣 焦土炸桥（15点）</button>'
+        : '<button type="button" data-sabotage-city="' + escape(city.id) + '" title="花 15 指挥/政治点破袭敌占铁路，瘫痪敌军补给 10 天">🔧 铁路破袭（15点）</button>'
+          + '<button type="button" class="gold" data-airborne-city="' + escape(city.id) + '" title="花 25 指挥点突袭敌后节点：空城直接夺占，有守军则重创组织度并断路">'
+          + (state.player === 'ccp' ? '⚡ 武工队穿插奇袭' : '🪂 空降兵敌后奇袭') + '（25点）</button>')
+      + '</div></div>'
       + (progress && (progress.targets.includes(city.id) || city.id === scenarioNow()?.focus)
         ? '<div class="card"><h3>剧本目标</h3><p>' + escape(progress.title)
           + (progress.defended ? ' · 至少 7 天' : '') + '</p><button type="button" class="link-button" data-stage-report>'
@@ -766,6 +783,25 @@
     renderInspector();
     renderCommandDeck();
     renderBattleHud();
+    const outliner = $('hoi-theaters');
+    if (outliner) {
+      const theaterKeys = ['northeast', 'north', 'east', 'central', 'northwest', 'south'];
+      const activeBattles = Object.keys(state.battles || {});
+      const html = theaterKeys.map((reg) => {
+        const regUnits = Engine.activeUnits(state).filter((u) => !u.parent && u.side === state.player && citiesById.get(u.city)?.region === reg);
+        const regBattles = activeBattles.filter((cid) => citiesById.get(cid)?.region === reg).length;
+        const pressed = state.scope === 'theater' && area() === reg;
+        return '<button type="button" class="hoi-theater-card" data-hoi-theater="' + reg + '" aria-pressed="' + pressed + '">'
+          + '<div><strong>' + escape((regions[reg] || reg).replace('战区', '')) + '战区</strong><small>'
+          + regUnits.length + ' 支纵队</small></div>'
+          + '<span class="hoi-theater-badge ' + (regBattles ? 'fight' : 'calm') + '">'
+          + (regBattles ? '⚔ ' + regBattles + '战' : '平稳') + '</span></button>';
+      }).join('');
+      if (outliner.dataset.lastHtml !== html) {
+        outliner.dataset.lastHtml = html;
+        outliner.innerHTML = html;
+      }
+    }
     renderGeneralDock();
     const unit = inspectUnit();
     orderPreviews = permitted(unit) ? Engine.previewOrders(Data, state, unit.id) : {};
@@ -1002,7 +1038,7 @@
       + '" aria-pressed="' + (pendingOrder === type) + '">' + commands[type] + '</button>';
     const canHere = pendingOrder && ['defend', 'entrench', 'rest'].includes(pendingOrder)
       && unit && permitted(unit) && state.owners[unit.city] === state.player;
-    $('command-bar').innerHTML = ['advance', 'siege', 'defend', 'entrench', 'intercept', 'move', 'rest', 'hold'].map(commandButton).join('')
+    $('command-bar').innerHTML = ['advance', 'support', 'siege', 'defend', 'entrench', 'intercept', 'move', 'rest', 'hold'].map(commandButton).join('')
       + '<button type="button" data-hoi-port title="钢4钓鱼执法：派兵专守己方沿海港口并挖战壕">⚓ 守港口</button>'
       + '<button type="button" data-hoi-fallback title="钢4后撤线：主动撤往黄河/山地城镇挖壕固守">↩️ 后撤线</button>'
       + '<button type="button" data-command="bombard" data-deck-command="bombard" aria-pressed="'
@@ -1357,10 +1393,22 @@
       mods.river ? '跨河 ' + mods.river + '%' : null,
       mods.encircled ? '包饺子断补 ' + mods.encircled + '%' : null,
     ].filter(Boolean).join(' · ');
+    const armorBadge = battle.armorStatus === 'atk-shield'
+      ? '<span class="hoi-shield-badge gold" title="攻方装甲高于守方穿甲：受伤 -45%，对敌组织度伤害 +35%">🛡️ 攻方装甲金盾</span>'
+      : battle.armorStatus === 'def-shield'
+        ? '<span class="hoi-shield-badge gold" title="守方装甲高于攻方穿甲：受伤 -45%，反击组织度伤害 +35%">🛡️ 守方装甲金盾</span>'
+        : battle.armorStatus === 'pierced'
+          ? '<span class="hoi-shield-badge pierced" title="双方装甲均已被反坦克火力击穿">💥 装甲已击穿</span>' : '';
+    const tacticStrip = battle.atkTactic ? '<div class="hoi-tactic-strip">'
+      + '<span>攻方战术卡：<b>' + escape(battle.atkTactic) + '</b></span>'
+      + '<b class="' + (battle.tacticCounter === 'atk' ? 'win' : battle.tacticCounter === 'def' ? 'lose' : '') + '">'
+      + (battle.tacticCounter === 'atk' ? '⚔ 攻方克制 (+12%)' : battle.tacticCounter === 'def' ? '🛡️ 守方反制 (+12%)' : '⚖ 势均力敌') + '</b>'
+      + '<span>守方战术卡：<b>' + escape(battle.defTactic) + '</b></span></div>' : '';
     const lowOrgDef = !isAttacker && defenders.find((u) => valueOf(u, 'org', 100) < 45);
-    const html = '<div class="hoi-battle-banner"><div><h3>⚔ ' + escape(cityName(cityId)) + ' 争夺战 · 第 ' + format(battle.days) + ' 天</h3>'
+    const html = '<div class="hoi-battle-banner"><div><h3>⚔ ' + escape(cityName(cityId)) + ' 争夺战 · 第 ' + format(battle.days) + ' 天' + armorBadge + '</h3>'
       + '<small>' + escape(modLine) + '</small></div>'
       + '<span class="hoi-bubble-pill ' + (bubble >= 50 ? 'win' : 'lose') + '" style="font-size:18px;padding:4px 12px;">' + bubble + '</span></div>'
+      + tacticStrip
       + '<div class="hoi-battle-sides">'
       + renderSide('攻方 · ' + short[battle.side], atkLead, attackers, battle.side)
       + renderSide('守方 · ' + short[battle.defendingSide], defLead, defenders, battle.defendingSide)
@@ -1878,7 +1926,17 @@
           + '<span class="hoi-logi-badge ' + cls + '">' + format(item.cur) + ' (' + (diff >= 0 ? '+' : '') + format(diff) + ')</span>'
           + '<small style="color:var(--dim);">日产 +' + item.daily + '</small></div>';
       }).join('') + '</div>';
-    showDialog('后勤补给与装备库存', eqHtml
+    const motorCur = state.motorization?.[side] || 'horse';
+    const motorCatalog = meta.motorizationLevels || {
+      horse: { name: '🐴 马车运粮', desc: '零油料消耗，常规补给半径' },
+      truck: { name: '🚚 单卡车机动', desc: '补给覆盖 +12%' },
+      heavy: { name: '🚛 双卡车重装', desc: '补给覆盖 +24%' },
+    };
+    const motorHtml = '<h3 style="margin:6px 0 4px;">HOI4 补给枢纽机动化级别</h3><div class="hoi-motor-bar">'
+      + Object.entries(motorCatalog).map(([id, m]) => '<button type="button" data-motor-level="' + id
+        + '" aria-pressed="' + (motorCur === id) + '" title="' + escape(m.desc) + '">' + escape(m.name) + '</button>').join('')
+      + '</div>';
+    showDialog('后勤补给与装备库存', motorHtml + eqHtml
       + '<p>库存通过铁路干线和公路车队送到前线补给站，再分发给部队；不在铁路线上的驻军仍可沿陆路获得补给。'
       + '覆盖越低、运输越紧张，部队的弹药、油料与医疗物资补充越慢。</p>'
       + (state.supplyReport?.[side]
@@ -2089,7 +2147,13 @@
     const force = state.airWar?.[side] ?? {};
     const bases = Data.cities.filter((city) => state.owners[city.id] === side
       && (Number(city.value) || 0) >= 5).length;
-    return '<p class="subtext">选择一种任务并点击选择即可指挥全国机队；当前按全国汇总，暂不支持逐架或独立战区指挥。</p><p class="subtext">机场来自价值 5 以上的城镇，共 ' + bases + ' 处。机队每日补充，也会因敌方制空而损失。</p>'
+    const airReg = force.region || 'all';
+    const airRegions = [['all', '全国统筹'], ['northeast', '东北战区'], ['north', '华北战区'], ['east', '华东战区'],
+      ['central', '中原战区'], ['northwest', '西北战区'], ['south', '华南战区']];
+    return '<p class="subtext">可选择战区集中投放空中力量（指定战区内支援与后勤打击效果 +45%），并支持 HOI4「后勤打击」专项轰炸敌方铁路与补给车队。</p>'
+      + '<div class="hoi-motor-bar">' + airRegions.map(([rk, rl]) => '<button type="button" data-air-region="' + rk
+        + '" aria-pressed="' + (airReg === rk) + '">' + escape(rl) + '</button>').join('') + '</div>'
+      + '<p class="subtext">机场来自价值 5 以上的城镇，共 ' + bases + ' 处。机队每日补充，也会因敌方制空而损失。</p>'
       + '<div class="stat-line">' + statChips({
         '机队': Math.round(force.planes ?? 0), '机场容量': 24 + bases * 18,
         '空中支援': state.air?.[side] ?? 0, '累计损失': Math.round(force.losses ?? 0),
@@ -2100,6 +2164,23 @@
         + '，日损耗 ' + (mission.attrition * 100).toFixed(1) + '%。</p>'
         + '<div class="unit-actions"><button type="button" data-air-mission="' + id + '"'
         + (force.mission === id ? ' disabled' : '') + '>选择</button></div></article>').join('') + '</div>';
+  }
+
+  function doctrineBody() {
+    const side = state.player;
+    const current = state.doctrine?.[side] || 'mobile';
+    const xp = Math.round(state.armyXp?.[side] ?? 0);
+    const catalog = meta.doctrineCatalog || {};
+    return '<p class="subtext">HOI4 四大陆军学说路线：决定部队攻防倾向、组织度韧性与战壕强度。当前陆军经验 <b>' + xp + '</b> 点（切换学说需 25 点）。</p>'
+      + '<div class="hoi-doctrine-grid">' + Object.values(catalog).map((doc) => {
+        const active = current === doc.id;
+        return '<article class="hoi-doctrine-card' + (active ? ' active' : '') + '"><header style="display:flex;justify-content:space-between;align-items:center;"><h3 style="margin:0;font-size:13px;">'
+          + escape(doc.name) + '</h3><span class="plan-status is-' + (active ? 'active' : 'draft') + '">'
+          + (active ? '现行学说' : '25 经验') + '</span></header><p class="subtext" style="margin:0;">'
+          + escape(doc.desc) + '</p><div class="unit-actions"><button type="button" class="' + (active ? '' : 'gold')
+          + '" data-doctrine="' + escape(doc.id) + '"' + (active || xp < 25 ? ' disabled' : '') + '>'
+          + (active ? '已确立' : '确立此学说') + '</button></div></article>';
+      }).join('') + '</div>';
   }
 
   function navalMissionRows(side) {
@@ -2180,7 +2261,19 @@
             : '战败后留下的武器装备，仅限战后初期影响。')
         + '</p>' + actions + '</article>';
     }).join('');
-    return '<div class="stat-line">' + statChips({
+    const cipher = state.cipher?.[side] ?? { network: 0, decrypt: 0, activeDays: 0 };
+    const decryptPct = Math.round(cipher.decrypt ?? 0);
+    const cipherBox = '<div class="hoi-cipher-box"><header style="display:flex;justify-content:space-between;align-items:center;">'
+      + '<strong style="color:#f5e1b0;">🕵️ 隐蔽战线情报网 & 电台密码破译</strong>'
+      + '<span class="plan-status is-' + (cipher.activeDays > 0 ? 'active' : 'draft') + '">'
+      + (cipher.activeDays > 0 ? '决战破译生效中 · 剩 ' + cipher.activeDays + ' 天' : '渗透 ' + Math.round(cipher.network ?? 0) + '% · 破译 ' + decryptPct + '%')
+      + '</span></header><div class="hoi-cipher-bar"><i style="width:' + Math.min(100, decryptPct) + '%"></i></div>'
+      + '<p class="subtext" style="margin:0;">情报网渗透可直接削弱敌军工事/堑壕防御（最高 -25%）；破译达 100% 后可一键激活 15 天「破译决战电文」（全军攻防 +15%、敌方工事减半）。</p>'
+      + '<div class="unit-actions">'
+      + '<button type="button" data-spy-network' + (politicalPoints < 20 ? ' disabled' : '') + '>🕵️ 扩大情报网（20 政治点）</button>'
+      + '<button type="button" class="gold" data-cipher-break' + (decryptPct < 100 ? ' disabled' : '') + '>📡 激活破译决战电文（需 100%）</button>'
+      + '</div></div>';
+    return cipherBox + '<div class="stat-line">' + statChips({
       '情报水平': Math.round(intel.level), '情报点': Math.round(intel.points),
       '稳定度': stability, '我方沦陷城镇': occupied, '抵抗较高': resistance,
       '战争支持': Math.round(state.warSupport?.[side] ?? 0),
@@ -2209,6 +2302,7 @@
   }
 
   function defenseBody(tab, unitId) {
+    if (tab === 'doctrine') return doctrineBody();
     if (tab === 'tech') return techBody();
     if (tab === 'production') return productionBody();
     if (tab === 'design') return designBody(unitId);
@@ -2221,7 +2315,7 @@
 
   function defensePanel(tab = 'focus', options = {}) {
     const current = tab || 'focus';
-    const tabs = [['focus', '国策'], ['tech', '科研'], ['production', '生产'], ['design', '编制'],
+    const tabs = [['focus', '国策'], ['doctrine', '学说'], ['tech', '科研'], ['production', '生产'], ['design', '编制'],
       ['air', '空军'], ['navy', '海军'], ['command', '指挥'], ['intel', '情报']];
     const body = showDialog('国防与建设', '<div class="defense-tabs">' + tabs.map(([id, label]) =>
       '<button type="button" data-defense-tab="' + id + '" aria-pressed="' + (current === id) + '">' + label + '</button>').join('')
@@ -2645,6 +2739,21 @@
       }
     }
     else if (d.forts) fortsPanel(d.forts);
+    else if (d.scorchedCity) {
+      if (action('scorchedEarth', [d.scorchedCity])) {
+        saveAuto(true); render(); notify('已实施焦土炸桥：铁路与后勤瘫痪 15 天！');
+      }
+    }
+    else if (d.sabotageCity) {
+      if (action('sabotageRail', [d.sabotageCity])) {
+        saveAuto(true); render(); notify('铁路破袭成功：敌军该节点补给中断 10 天！');
+      }
+    }
+    else if (d.airborneCity) {
+      if (action('airborneInfiltrate', [d.airborneCity])) {
+        saveAuto(true); render(); notify('敌后奇袭行动完成！');
+      }
+    }
     else if (d.formation) formationPanel(d.formation);
     else if (d.defenseDesign) defensePanel('design', { unitId: d.defenseDesign });
     else if (d.defenseCommand !== undefined) defensePanel('command');
@@ -2815,6 +2924,21 @@
     }
     else if (d.airMission) {
       if (action('setAirMission', [d.airMission])) { saveAuto(true); render(); defensePanel('air'); }
+    }
+    else if (d.airRegion) {
+      if (action('setAirRegion', [d.airRegion])) { saveAuto(true); render(); notify('空军战区指派已更新。'); defensePanel('air'); }
+    }
+    else if (d.doctrine) {
+      if (action('setDoctrine', [d.doctrine])) { saveAuto(true); render(); notify('陆军学说已确立！'); defensePanel('doctrine'); }
+    }
+    else if (d.motorLevel) {
+      if (action('setMotorization', [d.motorLevel])) { saveAuto(true); render(); notify('补给枢纽机动化级别已切换。'); logisticsPanel(); }
+    }
+    else if (d.spyNetwork !== undefined) {
+      if (action('buildSpyNetwork', [])) { saveAuto(true); render(); notify('隐蔽战线情报网已扩大！'); defensePanel('intel'); }
+    }
+    else if (d.cipherBreak !== undefined) {
+      if (action('activateCipherBreak', [])) { saveAuto(true); render(); notify('📡 破译决战电文已激活（15 天全军攻防 +15%）！'); defensePanel('intel'); }
     }
     else if (d.designEdit) {
       const design = (state.designs?.[state.player] ?? []).find((item) => item.id === d.designEdit);
@@ -3050,6 +3174,12 @@
     else if (btn.dataset.openPanel === 'production') defensePanel('production');
     else if (btn.dataset.openPanel === 'economy') economy();
     else if (btn.dataset.openPanel === 'supply') logisticsPanel();
+    else if (btn.dataset.openPanel === 'intel') defensePanel('intel');
+  });
+  $('hoi-theaters')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-hoi-theater]');
+    if (!btn) return;
+    changeScope('theater', btn.dataset.hoiTheater);
   });
   document.querySelector('#sys-menu')?.addEventListener('click', (event) => {
     if (event.target.closest('button')) event.currentTarget.open = false;

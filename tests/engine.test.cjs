@@ -594,6 +594,77 @@ test('限时决议倒计时完成发放加成，互动历史抉择事件生效',
   assert.equal(dupRes.ok, false);
 });
 
+test('包饺子合围全歼守军时正确触发 35%-60% 战场缴获与 encirclement 战报', () => {
+  const api = getEngine();
+  const state = create();
+  // 把 b 城设为孤立无退路（a、c 全由 ccp 控制，b 由 roc 守卫）
+  state.owners.a = 'ccp';
+  state.owners.c = 'ccp';
+  state.owners.b = 'roc';
+  for (const u of state.units) {
+    if (u.side === 'roc') { u.city = 'b'; u.org = 8; }
+  }
+  const riflesBefore = state.stock.ccp.infantry;
+  const artBefore = state.stock.ccp.artillery;
+  assert.equal(api.order(data, state, 'first', 'advance', 'b').ok, true);
+  api.step(data, state, 10);
+  assert.equal(state.owners.b, 'ccp');
+  const encLog = state.log.find(entry => entry.type === 'encirclement' && entry.city === 'b');
+  assert.ok(encLog, '应记录 encirclement 包饺子战报');
+  assert.ok(encLog.wiped > 0 && encLog.capturedRifles > 0 && encLog.capturedArtillery > 0);
+  assert.ok(state.stock.ccp.infantry > riflesBefore);
+  assert.ok(state.stock.ccp.artillery > artBefore);
+});
+
+test('HOI4 八大新战术：支援牵制、焦土破袭、情报网破译、学说、战区空军后勤打击、机动化补给与敌后奇袭', () => {
+  const api = getEngine();
+  const state = create();
+  // 1. 支援牵制进攻：打赢后留在原城不占格
+  state.owners.a = 'ccp'; state.owners.b = 'roc'; state.owners.c = 'ccp';
+  for (const u of state.units) if (u.side === 'roc') { u.city = 'b'; u.org = 5; }
+  assert.equal(api.order(data, state, 'first', 'support', 'b').ok, true);
+  assert.equal(api.order(data, state, 'second', 'advance', 'b').ok, true);
+  api.step(data, state, 10);
+  const firstRoot = state.units.find(u => u.id === 'first');
+  assert.equal(firstRoot.city, 'a', '支援牵制部队打赢后应留在原城');
+
+  // 2. 焦土炸桥与铁路破袭
+  state.political.ccp.points = 100;
+  assert.equal(api.scorchedEarth(data, state, 'a').ok, true);
+  assert.equal(state.scorched.a, 15);
+  assert.equal(api.sabotageRail(data, state, 'd').ok, true);
+  assert.ok(state.railCooldown.d >= 10);
+
+  // 3. 隐蔽战线情报网与密码破译
+  assert.equal(api.buildSpyNetwork(state).ok, true);
+  state.cipher.ccp.decrypt = 100;
+  assert.equal(api.activateCipherBreak(state).ok, true);
+  assert.equal(state.cipher.ccp.activeDays, 15);
+
+  // 4. 战区空军 + 后勤打击
+  assert.equal(api.setAirMission(state, 'logistic').ok, true);
+  assert.equal(api.setAirRegion(state, 'northeast').ok, true);
+  assert.equal(state.airWar.ccp.region, 'northeast');
+
+  // 5. 四大陆军学说切换
+  state.armyXp.ccp = 60;
+  assert.equal(api.setDoctrine(state, 'grand').ok, true);
+  assert.equal(state.doctrine.ccp, 'grand');
+
+  // 6. 补给枢纽机动化级别
+  assert.equal(api.setMotorization(state, 'heavy').ok, true);
+  assert.equal(state.motorization.ccp, 'heavy');
+
+  // 7. 敌后奇袭空城直接夺占
+  state.command.ccp.points = 50;
+  state.owners.d = 'roc';
+  for (const u of state.units) if (u.city === 'd') u.city = 'taipei';
+  const raid = api.airborneInfiltrate(data, state, 'd');
+  assert.equal(raid.ok, true);
+  assert.equal(raid.captured, true);
+  assert.equal(state.owners.d, 'ccp');
+});
+
 test('难度按玩家对手应用战斗加成，换边后也不偏袒固定阵营', () => {
   for (const side of ['ccp', 'roc']) {
     const normal = create({ side, difficulty: 'normal' });
