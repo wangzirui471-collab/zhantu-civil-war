@@ -678,3 +678,160 @@ select:focus, input:focus { outline: none; border-color: #e6c67e !important; box
   font-weight: 700;
 }
 @media (max-width: 980px) { .hoi-battle-plans { bottom: 56px; max-width: calc(100% - 20px); } }
+
+/* ═════════ HOI4 端游级全屏二战主界面 & 树状连线国策图 ═════════ */
+dialog.hoi-ww2-full {
+  width: min(98vw, 1480px) !important;
+  max-width: 98vw !important;
+  height: 94vh;
+  max-height: 95vh !important;
+  padding: 0 !important;
+  background: linear-gradient(180deg, #1b221e 0%, #121714 100%) !important;
+  border: 2px solid #9e8451 !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 232, 168, 0.22) !important;
+}
+dialog.hoi-ww2-full .dialog-heading {
+  padding: 7px 14px;
+  background: linear-gradient(180deg, #2b332d, #191f1b);
+  border-bottom: 1px solid #8a7347;
+}
+dialog.hoi-ww2-full .dialog-body {
+  padding: 8px 12px 10px;
+  max-height: calc(94vh - 46px);
+}
+.hoi-ww2-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  border: 1px solid #7f6c47;
+  background: linear-gradient(180deg, #27302a 0%, #181e1a 100%);
+  color: #efe5ca;
+  box-shadow: inset 0 1px 0 rgba(255, 238, 190, 0.14);
+}
+.hoi-ww2-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(12, 16, 14, 0.72);
+  border: 1px solid rgba(156, 134, 89, 0.42);
+  font-size: 11.5px;
+  color: #e6dcc0;
+}
+.hoi-ww2-stat-chip b { color: #ffe399; font-variant-numeric: tabular-nums; }
+.hoi-ww2-stage {
+  position: relative;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid #9c8659;
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.65);
+}
+.hoi-ww2-gen-overlay {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 6px 8px;
+  background: linear-gradient(180deg, rgba(22, 28, 24, 0.94), rgba(14, 18, 16, 0.98));
+  border-top: 1px solid rgba(156, 134, 89, 0.5);
+}
+.hoi-ww2-gen-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid #6b5b3c !important;
+  background: linear-gradient(180deg, #2a332d, #1b221e) !important;
+  font-size: 11px !important;
+}
+.hoi-ww2-gen-card[aria-pressed="true"] {
+  border-color: #f5d478 !important;
+  background: linear-gradient(180deg, #5d4a22, #382c12) !important;
+  box-shadow: 0 0 10px rgba(245, 212, 120, 0.35);
+}
+/* HOI4 树状连线国策图 */
+.hoi-focus-tree-wrap {
+  position: relative;
+  padding: 14px 10px;
+  border-radius: 5px;
+  background: radial-gradient(circle at 50% 20%, #242d27 0%, #151b17 100%);
+  border: 1px solid #7f6c47;
+  overflow: hidden;
+}
+.hoi-focus-tree-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.hoi-focus-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  gap: 96px;
+  margin: 14px 0;
+  flex-wrap: wrap;
+}
+.hoi-focus-node {
+  width: 220px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1.5px solid #7f6c47;
+  background: linear-gradient(180deg, #2a342e, #1a211d);
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+.hoi-focus-node.is-done { border-color: #79db8f; background: linear-gradient(180deg, #25402b, #16291b); }
+.hoi-focus-node.is-active { border-color: #ffd866; box-shadow: 0 0 14px rgba(255, 216, 102, 0.38); }
+.hoi-focus-tree {
+  position: relative;
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 14px 12px;
+  border-radius: 6px;
+  background: radial-gradient(circle at 50% 18%, #242d27 0%, #141a16 100%);
+  border: 1px solid #7f6c47;
+}
+.hoi-focus-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  position: relative;
+}
+.hoi-focus-col .hoi-focus-node {
+  position: relative;
+  width: 240px;
+  text-align: left;
+}
+.hoi-focus-col .hoi-focus-node + .hoi-focus-node::before {
+  content: '▼';
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-left: 2px dashed #c8aa66;
+  padding-left: 0;
+  color: #e2c57e;
+  font-size: 10px;
+  line-height: 1;
+}
+.hoi-focus-col .hoi-focus-node.done { border-color: #79db8f; background: linear-gradient(180deg, #25402b, #16291b); }
+.hoi-focus-col .hoi-focus-node.active { border-color: #ffd866; box-shadow: 0 0 14px rgba(255, 216, 102, 0.38); }
+.hoi-focus-col .hoi-focus-node.locked { opacity: 0.72; }
+
+

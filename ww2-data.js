@@ -316,7 +316,53 @@
     },
   };
 
-  // 四大战场 8 大 HOI4 经典历史战役剧本（1938–1945，含精确历史交战外交表）
+  // 国家领导人开局可选档案（每位领导人带专属特质、执政风格、立绘配色与推荐战役）
+  const leaders = [
+    {
+      id: 'roosevelt', nation: 'usa', name: '富兰克林·罗斯福', title: '美利坚合众国总统 · 民主兵工厂总设计师',
+      monogram: 'FDR', accent: '#2d63a6', trait: '军工产能 +25% · 租借法案费用 -25%',
+      quote: '“我们必须成为民主国家的伟大兵工厂。”',
+      recommended: ['ww2-1941-pacific', 'ww2-1942-pacific', 'ww2-1944-dday', 'ww2-1944-leyte', 'ww2-1945-okinawa', 'ww2-1942-africa'],
+    },
+    {
+      id: 'stalin', nation: 'ussr', name: '约瑟夫·斯大林', title: '苏联最高统帅 · 卫国战争总指挥',
+      monogram: 'USSR', accent: '#a62621', trait: '卫国人力动员 +30% · 组织度恢复 +15%',
+      quote: '“一步也不后退！莫斯科就在我们身后！”',
+      recommended: ['ww2-1941-barbarossa', 'ww2-1942-stalingrad', 'ww2-1944-dday', 'ww2-1939-poland'],
+    },
+    {
+      id: 'churchill', nation: 'uk', name: '温斯顿·丘吉尔', title: '大英帝国首相 · 皇家海军与防空统帅',
+      monogram: 'UK', accent: '#9c4b5c', trait: '本土防御 +25% · 制海与制空加成 +15%',
+      quote: '“我们将在海滩上战斗，我们绝不投降！”',
+      recommended: ['ww2-1940-britain', 'ww2-1940', 'ww2-1941-tobruk', 'ww2-1942-africa', 'ww2-1944-dday'],
+    },
+    {
+      id: 'degaulle', nation: 'france', name: '夏尔·戴高乐', title: '法兰西装甲统帅 · 自由法国领袖',
+      monogram: 'FRA', accent: '#3c70b8', trait: '装甲突破 +20% · 马奇诺与光复士气 +20%',
+      quote: '“法国输掉了一场战役，但没有输掉整场战争！”',
+      recommended: ['ww2-1940', 'ww2-1939-poland', 'ww2-1942-africa', 'ww2-1944-dday'],
+    },
+    {
+      id: 'china_united', nation: 'china', name: '中国抗日统一战线统帅部', title: '正面战场与敌后抗日联合最高指挥（国军/八路军/新四军）',
+      monogram: '华', accent: '#d49a38', trait: '持久战本土防御 +25% · 敌后游击破袭 +20%',
+      quote: '“地无分南北，年无分老幼，皆有守土抗战之责！”',
+      recommended: ['ww2-1937-shanghai', 'ww2-1938-china', 'ww2-1940-hundred', 'ww2-1944-china'],
+    },
+    {
+      id: 'yamamoto', nation: 'japan', name: '山本五十六 · 东条英机', title: '日本联合舰队司令长官 · 帝国大本营',
+      monogram: 'JPN', accent: '#c95c3c', trait: '航母突袭与两栖登陆 +25% · 岛屿防御 +20%',
+      quote: '“开战后半年至一年内，我将纵横太平洋！”',
+      recommended: ['ww2-1941-pacific', 'ww2-1942-pacific', 'ww2-1937-shanghai', 'ww2-1944-leyte', 'ww2-1945-okinawa'],
+    },
+    {
+      id: 'hitler_rommel', nation: 'germany', name: '曼施坦因 · 隆美尔（德军最高统帅部）', title: '德意志装甲闪电战总参谋部',
+      monogram: 'GER', accent: '#5a6268', trait: '闪电战装甲突破与行军速度 +25%',
+      quote: '“闪电战的关键在于装甲集群不间断的纵深穿插。”',
+      recommended: ['ww2-1939-poland', 'ww2-1940', 'ww2-1940-britain', 'ww2-1941-tobruk', 'ww2-1941-barbarossa', 'ww2-1942-stalingrad'],
+    },
+  ];
+
+  // 四大战场 16 大 HOI4 经典历史战役剧本（1937–1945，含精确历史交战外交表）
   const base1938Owners = {
     london: 'uk', cairo: 'uk', alexandria: 'uk', el_alamein: 'uk', tobruk: 'uk', benghazi: 'germany', gibraltar: 'uk', suez: 'uk', delhi: 'uk', rangoon: 'uk', singapore: 'uk', sydney: 'uk', ottawa: 'uk',
     paris: 'france', sedan: 'france', dunkirk: 'france', cherbourg: 'france', marseille: 'france', maginot: 'france', casablanca: 'france', tunis: 'france',
@@ -328,6 +374,13 @@
   };
 
   const scenarios = [
+    // ═══ 欧洲大战（6场）═══
+    {
+      id: 'ww2-1939-poland', title: '🇪🇺 1939 · 波兰闪电战与欧战爆发', date: '1939-09-01', focus: 'europe', theaterTag: 'europe',
+      wars: [['germany', 'france'], ['germany', 'uk'], ['japan', 'china']],
+      summary: '【欧洲大战】德军“白色方案”装甲集群闪击波兰，英法对德宣战！法军可主动越过马奇诺突袭鲁尔，或稳守西线迎战。',
+      owners: { ...base1938Owners, warsaw: 'france', wuhan: 'japan', guangzhou: 'japan' },
+    },
     {
       id: 'ww2-1940', title: '🇪🇺 1940 · 法兰西战役与敦刻尔克', date: '1940-05-10', focus: 'europe', theaterTag: 'europe',
       wars: [['germany', 'france'], ['germany', 'uk'], ['japan', 'china']],
@@ -335,13 +388,33 @@
       owners: { ...base1938Owners, sedan: 'germany', wuhan: 'japan', guangzhou: 'japan' },
     },
     {
-      id: 'ww2-1941-barbarossa', title: '🇪🇺 1941 · 巴巴罗萨苏德大决战', date: '1941-06-22', focus: 'east', theaterTag: 'europe',
+      id: 'ww2-1940-britain', title: '🇪🇺 1940 · 不列颠空战与海狮计划', date: '1940-08-13', focus: 'europe', theaterTag: 'europe',
+      wars: [['germany', 'uk'], ['germany', 'france'], ['japan', 'china']],
+      summary: '【欧洲大战】欧陆沦陷后德军集结大军企图强渡英吉利海峡！英国喷火战斗机与皇家海军孤军死守不列颠群岛。',
+      owners: {
+        ...base1938Owners,
+        paris: 'germany', sedan: 'germany', dunkirk: 'germany', cherbourg: 'germany', marseille: 'germany', maginot: 'germany',
+        wuhan: 'japan', guangzhou: 'japan',
+      },
+    },
+    {
+      id: 'ww2-1941-barbarossa', title: '🇪🇺 1941 · 巴巴罗萨与莫斯科保卫战', date: '1941-06-22', focus: 'east', theaterTag: 'europe',
       wars: [['germany', 'ussr'], ['germany', 'uk'], ['germany', 'france'], ['japan', 'china']],
       summary: '【欧洲大战】德军三大集团军群 380 万大军突袭苏联！红军必须在明斯克、基辅、列宁格勒与莫斯科城下顶住钢铁洪流。',
       owners: {
         ...base1938Owners,
         paris: 'germany', sedan: 'germany', dunkirk: 'germany', cherbourg: 'germany', marseille: 'germany', maginot: 'germany', tunis: 'germany',
         wuhan: 'japan', guangzhou: 'japan',
+      },
+    },
+    {
+      id: 'ww2-1942-stalingrad', title: '🇪🇺 1942 · 斯大林格勒反攻与库尔斯克', date: '1942-11-19', focus: 'east', theaterTag: 'europe',
+      wars: [['germany', 'ussr'], ['germany', 'uk'], ['germany', 'usa'], ['germany', 'france'], ['japan', 'usa'], ['japan', 'china']],
+      summary: '【欧洲大战】苏军启动“天王星行动”钳形合围伏尔加河德军第 6 集团军，随之爆发人类史上最大规模库尔斯克坦克会战！',
+      owners: {
+        ...base1938Owners,
+        paris: 'germany', sedan: 'germany', dunkirk: 'germany', cherbourg: 'germany', marseille: 'germany', maginot: 'germany', tunis: 'germany',
+        kiev: 'germany', minsk: 'germany', kursk: 'germany', wuhan: 'japan', guangzhou: 'japan', singapore: 'japan', manila: 'japan', jakarta: 'japan',
       },
     },
     {
@@ -355,11 +428,24 @@
         singapore: 'japan', jakarta: 'japan', wuhan: 'japan', guangzhou: 'japan',
       },
     },
+    // ═══ 中国抗日战场（4场）═══
     {
-      id: 'ww2-1938-china', title: '🇨🇳 1938 · 武汉保卫战与长沙会战', date: '1938-06-11', focus: 'china', theaterTag: 'china',
+      id: 'ww2-1937-shanghai', title: '🇨🇳 1937 · 淞沪会战与平型关保卫战', date: '1937-08-13', focus: 'china', theaterTag: 'china',
+      wars: [['japan', 'china']],
+      summary: '【中国战场】全面抗战爆发！中国军民在上海、南京与华北铁路沿线浴血阻击日军，八路军在平型关首战告捷打破日军不可战胜神话。',
+      owners: { ...base1938Owners, shanghai: 'china', nanjing: 'china' },
+    },
+    {
+      id: 'ww2-1938-china', title: '🇨🇳 1938 · 武汉保卫战与台儿庄/长沙', date: '1938-06-11', focus: 'china', theaterTag: 'china',
       wars: [['japan', 'china']],
       summary: '【中国战场】百万中国军民浴血武汉与长沙！正面战场依托万家岭与天炉战法阻击日军中国派遣军，八路军在华北敌后发动破袭战。',
       owners: { ...base1938Owners },
+    },
+    {
+      id: 'ww2-1940-hundred', title: '🇨🇳 1940 · 百团大战与第三次长沙大捷', date: '1940-08-20', focus: 'china', theaterTag: 'china',
+      wars: [['japan', 'china'], ['germany', 'uk'], ['germany', 'france']],
+      summary: '【中国战场】八路军发动 105 个团大规模铁路破袭战震撼华北，第 9 战区薛岳兵团在长沙布下天炉阵三战三捷！',
+      owners: { ...base1938Owners, wuhan: 'japan', guangzhou: 'japan', paris: 'germany', sedan: 'germany', dunkirk: 'germany' },
     },
     {
       id: 'ww2-1944-china', title: '🇨🇳 1944 · 豫湘桂血战与滇缅远征反攻', date: '1944-05-11', focus: 'china', theaterTag: 'china',
@@ -371,6 +457,7 @@
         wuhan: 'japan', guangzhou: 'japan', rangoon: 'japan', singapore: 'japan', jakarta: 'japan',
       },
     },
+    // ═══ 太平洋战场（4场）═══
     {
       id: 'ww2-1941-pacific', title: '⚓ 1941 · 珍珠港与南洋大闪击', date: '1941-12-07', focus: 'pacific', theaterTag: 'pacific',
       wars: [['japan', 'usa'], ['japan', 'uk'], ['japan', 'china'], ['germany', 'ussr'], ['germany', 'uk'], ['germany', 'usa']],
@@ -383,7 +470,7 @@
       },
     },
     {
-      id: 'ww2-1942-pacific', title: '⚓ 1942 · 中途岛与瓜岛跳岛反攻', date: '1942-08-07', focus: 'pacific', theaterTag: 'pacific',
+      id: 'ww2-1942-pacific', title: '⚓ 1942 · 中途岛与瓜岛跳岛反攻', date: '1942-06-04', focus: 'pacific', theaterTag: 'pacific',
       wars: [['japan', 'usa'], ['japan', 'uk'], ['japan', 'china'], ['germany', 'ussr'], ['germany', 'uk'], ['germany', 'usa']],
       summary: '【太平洋战场】中途岛击沉日军四艘主力航母后，美海军陆战队抢滩瓜达尔卡纳尔，开启直扑硫磺岛、冲绳与东京的跳岛血战！',
       owners: {
@@ -391,6 +478,38 @@
         paris: 'germany', sedan: 'germany', dunkirk: 'germany', cherbourg: 'germany', marseille: 'germany', maginot: 'germany', tunis: 'germany',
         kiev: 'germany', minsk: 'germany', kursk: 'germany', wuhan: 'japan', guangzhou: 'japan',
         manila: 'japan', singapore: 'japan', jakarta: 'japan', rangoon: 'japan', guadalcanal: 'usa',
+      },
+    },
+    {
+      id: 'ww2-1944-leyte', title: '⚓ 1944 · 莱特湾海战与重返菲律宾', date: '1944-10-20', focus: 'pacific', theaterTag: 'pacific',
+      wars: [['japan', 'usa'], ['japan', 'uk'], ['japan', 'china'], ['germany', 'usa'], ['germany', 'uk'], ['germany', 'ussr']],
+      summary: '【太平洋战场】人类史上规模最大海战！美军埃塞克斯航母群与麦克阿瑟大军重返马尼拉，彻底切断日本南洋石油生命线。',
+      owners: {
+        ...base1938Owners,
+        paris: 'france', cherbourg: 'usa', marseille: 'france', rome: 'usa', naples: 'uk',
+        wuhan: 'japan', guangzhou: 'japan', singapore: 'japan', jakarta: 'japan', manila: 'japan', guadalcanal: 'usa',
+      },
+    },
+    {
+      id: 'ww2-1945-okinawa', title: '⚓ 1945 · 硫磺岛、冲绳与本土决战', date: '1945-02-19', focus: 'pacific', theaterTag: 'pacific',
+      wars: [['japan', 'usa'], ['japan', 'uk'], ['japan', 'china'], ['japan', 'ussr'], ['germany', 'usa'], ['germany', 'ussr']],
+      summary: '【太平洋战场】美军强攻硫磺岛与冲绳铁暴风，B-29 覆盖东京大阪，苏联远东红旗方面军即将发动八月风暴横扫关东军！',
+      owners: {
+        ...base1938Owners,
+        paris: 'france', cherbourg: 'usa', dunkirk: 'uk', marseille: 'france', rome: 'usa', naples: 'uk', warsaw: 'ussr',
+        manila: 'usa', guadalcanal: 'usa', rangoon: 'uk', wuhan: 'japan', guangzhou: 'japan', iwo_jima: 'japan', okinawa: 'japan',
+      },
+    },
+    // ═══ 非洲与地中海战场（2场）═══
+    {
+      id: 'ww2-1941-tobruk', title: '🏜️ 1941 · 沙漠之狐与托布鲁克围城战', date: '1941-03-24', focus: 'africa', theaterTag: 'africa',
+      wars: [['germany', 'uk'], ['germany', 'france'], ['japan', 'china']],
+      summary: '【非洲战场】隆美尔非洲装甲军团登陆的黎波里发动沙漠闪电战！英澳守军在托布鲁克要塞孤城死守，力阻德军直插苏伊士运河。',
+      owners: {
+        ...base1938Owners,
+        paris: 'germany', sedan: 'germany', dunkirk: 'germany', marseille: 'germany', maginot: 'germany',
+        tunis: 'germany', tripoli: 'germany', benghazi: 'germany', tobruk: 'uk', el_alamein: 'uk',
+        wuhan: 'japan', guangzhou: 'japan',
       },
     },
     {
@@ -480,45 +599,45 @@
     { id: 'sydney', name: '悉尼', lon: 151.21, lat: -33.87, theater: 'pacific', terrain: 'port', port: true, vp: 14, ic: 10 },
   ];
 
-  // 全球陆路 + 跨海战略航线连接（[from, to, kind]）
+  // 全球干线铁路(rail) + 公路通道(land) + 跨海战略航线(sea) —— 与国内战场同款三级交通补给网
   const routes = [
-    // 西欧陆路与英吉利海峡
+    // 西欧干线铁路与英吉利海峡
     ['london', 'dunkirk', 'sea'], ['london', 'cherbourg', 'sea'], ['london', 'gibraltar', 'sea'], ['london', 'new_york', 'sea'], ['london', 'ottawa', 'sea'],
-    ['dunkirk', 'paris', 'land'], ['dunkirk', 'sedan', 'land'], ['cherbourg', 'paris', 'land'], ['paris', 'sedan', 'land'],
-    ['paris', 'maginot', 'land'], ['paris', 'marseille', 'land'], ['sedan', 'ruhr', 'land'], ['sedan', 'maginot', 'land'],
-    ['maginot', 'munich', 'land'], ['marseille', 'rome', 'land'], ['marseille', 'tunis', 'sea'], ['marseille', 'gibraltar', 'sea'],
-    ['ruhr', 'hamburg', 'land'], ['ruhr', 'berlin', 'land'], ['ruhr', 'munich', 'land'], ['hamburg', 'berlin', 'land'],
-    ['berlin', 'munich', 'land'], ['berlin', 'warsaw', 'land'], ['munich', 'rome', 'land'], ['rome', 'naples', 'land'],
+    ['dunkirk', 'paris', 'rail'], ['dunkirk', 'sedan', 'rail'], ['cherbourg', 'paris', 'rail'], ['paris', 'sedan', 'rail'],
+    ['paris', 'maginot', 'rail'], ['paris', 'marseille', 'rail'], ['sedan', 'ruhr', 'land'], ['sedan', 'maginot', 'rail'],
+    ['maginot', 'munich', 'rail'], ['marseille', 'rome', 'rail'], ['marseille', 'tunis', 'sea'], ['marseille', 'gibraltar', 'sea'],
+    ['ruhr', 'hamburg', 'rail'], ['ruhr', 'berlin', 'rail'], ['ruhr', 'munich', 'rail'], ['hamburg', 'berlin', 'rail'],
+    ['berlin', 'munich', 'rail'], ['berlin', 'warsaw', 'rail'], ['munich', 'rome', 'rail'], ['rome', 'naples', 'rail'],
     ['naples', 'tunis', 'sea'], ['naples', 'tripoli', 'sea'],
-    // 东线铁路与战略纵深
-    ['warsaw', 'minsk', 'land'], ['warsaw', 'kiev', 'land'], ['hamburg', 'leningrad', 'sea'],
-    ['minsk', 'leningrad', 'land'], ['minsk', 'moscow', 'land'], ['minsk', 'kiev', 'land'],
-    ['leningrad', 'moscow', 'land'], ['kiev', 'kursk', 'land'], ['kiev', 'stalingrad', 'land'],
-    ['moscow', 'kursk', 'land'], ['moscow', 'stalingrad', 'land'], ['moscow', 'sverdlovsk', 'land'],
-    ['kursk', 'stalingrad', 'land'], ['stalingrad', 'baku', 'land'], ['stalingrad', 'sverdlovsk', 'land'],
-    ['sverdlovsk', 'vladivostok', 'land'], ['baku', 'cairo', 'land'],
-    // 北非完整沙漠走廊
-    ['gibraltar', 'casablanca', 'sea'], ['casablanca', 'tunis', 'land'], ['tunis', 'tripoli', 'land'],
-    ['tripoli', 'benghazi', 'land'], ['benghazi', 'tobruk', 'land'], ['tobruk', 'el_alamein', 'land'],
-    ['el_alamein', 'alexandria', 'land'], ['alexandria', 'cairo', 'land'], ['cairo', 'suez', 'land'], ['suez', 'delhi', 'sea'],
-    // 中国抗日主战场铁路与滇缅公路
-    ['vladivostok', 'shenyang', 'land'], ['vladivostok', 'seoul', 'land'], ['shenyang', 'seoul', 'land'],
-    ['shenyang', 'beiping', 'land'], ['beiping', 'yanan', 'land'], ['beiping', 'nanjing', 'land'], ['beiping', 'wuhan', 'land'],
+    // 东线欧亚大铁路与西伯利亚大铁路
+    ['warsaw', 'minsk', 'rail'], ['warsaw', 'kiev', 'rail'], ['hamburg', 'leningrad', 'sea'],
+    ['minsk', 'leningrad', 'rail'], ['minsk', 'moscow', 'rail'], ['minsk', 'kiev', 'rail'],
+    ['leningrad', 'moscow', 'rail'], ['kiev', 'kursk', 'rail'], ['kiev', 'stalingrad', 'rail'],
+    ['moscow', 'kursk', 'rail'], ['moscow', 'stalingrad', 'rail'], ['moscow', 'sverdlovsk', 'rail'],
+    ['kursk', 'stalingrad', 'rail'], ['stalingrad', 'baku', 'rail'], ['stalingrad', 'sverdlovsk', 'rail'],
+    ['sverdlovsk', 'vladivostok', 'rail'], ['baku', 'cairo', 'land'],
+    // 北非沿海铁路与沙漠公路走廊
+    ['gibraltar', 'casablanca', 'sea'], ['casablanca', 'tunis', 'rail'], ['tunis', 'tripoli', 'land'],
+    ['tripoli', 'benghazi', 'land'], ['benghazi', 'tobruk', 'land'], ['tobruk', 'el_alamein', 'rail'],
+    ['el_alamein', 'alexandria', 'rail'], ['alexandria', 'cairo', 'rail'], ['cairo', 'suez', 'rail'], ['suez', 'delhi', 'sea'],
+    // 中国抗日主战场：中东/平汉/津浦/粤汉/沪宁铁路 + 滇缅公路
+    ['vladivostok', 'shenyang', 'rail'], ['vladivostok', 'seoul', 'rail'], ['shenyang', 'seoul', 'rail'],
+    ['shenyang', 'beiping', 'rail'], ['beiping', 'yanan', 'land'], ['beiping', 'nanjing', 'rail'], ['beiping', 'wuhan', 'rail'],
     ['yanan', 'wuhan', 'land'], ['yanan', 'chongqing', 'land'],
-    ['shanghai', 'nanjing', 'land'], ['shanghai', 'okinawa', 'sea'], ['nanjing', 'wuhan', 'land'],
-    ['wuhan', 'changsha', 'land'], ['wuhan', 'chongqing', 'land'], ['changsha', 'guangzhou', 'land'],
+    ['shanghai', 'nanjing', 'rail'], ['shanghai', 'okinawa', 'sea'], ['nanjing', 'wuhan', 'rail'],
+    ['wuhan', 'changsha', 'rail'], ['wuhan', 'chongqing', 'land'], ['changsha', 'guangzhou', 'rail'],
     ['changsha', 'chongqing', 'land'], ['changsha', 'kunming', 'land'], ['chongqing', 'kunming', 'land'],
     ['guangzhou', 'manila', 'sea'], ['kunming', 'rangoon', 'land'],
-    // 北美与跨太平洋跳岛
-    ['new_york', 'washington', 'land'], ['new_york', 'ottawa', 'land'], ['new_york', 'detroit', 'land'],
-    ['washington', 'detroit', 'land'], ['detroit', 'san_francisco', 'land'],
+    // 北美横贯大铁路与跨太平洋跳岛航线
+    ['new_york', 'washington', 'rail'], ['new_york', 'ottawa', 'rail'], ['new_york', 'detroit', 'rail'],
+    ['washington', 'detroit', 'rail'], ['detroit', 'san_francisco', 'rail'],
     ['san_francisco', 'pearl_harbor', 'sea'], ['pearl_harbor', 'midway', 'sea'], ['pearl_harbor', 'guadalcanal', 'sea'],
     ['midway', 'iwo_jima', 'sea'], ['midway', 'tokyo', 'sea'], ['guadalcanal', 'sydney', 'sea'], ['guadalcanal', 'manila', 'sea'],
-    // 太平洋岛链与东南亚
-    ['tokyo', 'osaka', 'land'], ['tokyo', 'iwo_jima', 'sea'], ['osaka', 'hiroshima', 'land'],
+    // 日本东海道干线铁路与太平洋岛链
+    ['tokyo', 'osaka', 'rail'], ['tokyo', 'iwo_jima', 'sea'], ['osaka', 'hiroshima', 'rail'],
     ['hiroshima', 'okinawa', 'sea'], ['hiroshima', 'seoul', 'sea'], ['iwo_jima', 'okinawa', 'sea'],
     ['okinawa', 'manila', 'sea'], ['manila', 'singapore', 'sea'], ['manila', 'jakarta', 'sea'],
-    ['singapore', 'jakarta', 'sea'], ['singapore', 'rangoon', 'land'], ['jakarta', 'sydney', 'sea'], ['rangoon', 'delhi', 'land'],
+    ['singapore', 'jakarta', 'sea'], ['singapore', 'rangoon', 'rail'], ['jakarta', 'sydney', 'sea'], ['rangoon', 'delhi', 'land'],
   ];
 
   // HOI4 7 大战区相机预设（含独立中国抗日战场视角）
@@ -532,7 +651,7 @@
     america: { id: 'america', name: '★ 北美与大西洋', lonMin: -136, lonMax: -46, latMin: 16, latMax: 58 },
   };
 
-  const api = { factions, scenarios, cities, routes, theaters };
+  const api = { factions, leaders, scenarios, cities, routes, theaters };
   globalThis.WW2Data = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

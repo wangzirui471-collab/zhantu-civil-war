@@ -210,7 +210,51 @@
     { id: 'pusan', name: '釜山港', lon: 129.07, lat: 35.18, side: 'un', terrain: 'port', value: 8 },
   ];
 
-  const api = { factions, scenarios, cities };
+  // 朝鲜半岛铁路、山地公路与两栖海运航线网
+  const routes = [
+    ['dandong', 'sinyiju', 'rail'],
+    ['sinyiju', 'chongchon', 'rail'],
+    ['sinyiju', 'unsan', 'road'],
+    ['unsan', 'chongchon', 'road'],
+    ['unsan', 'chosin', 'road'],
+    ['chongchon', 'pyongyang', 'rail'],
+    ['chosin', 'hungnam', 'road'],
+    ['hungnam', 'wonsan', 'rail'],
+    ['pyongyang', 'wonsan', 'rail'],
+    ['pyongyang', 'kaesong', 'rail'],
+    ['wonsan', 'shangganling', 'road'],
+    ['shangganling', 'cheorwon', 'road'],
+    ['cheorwon', 'kaesong', 'road'],
+    ['cheorwon', 'chuncheon', 'road'],
+    ['kaesong', 'seoul', 'rail'],
+    ['seoul', 'incheon', 'rail'],
+    ['seoul', 'suwon', 'rail'],
+    ['seoul', 'chuncheon', 'road'],
+    ['suwon', 'taejon', 'rail'],
+    ['chuncheon', 'taegu', 'road'],
+    ['taejon', 'taegu', 'rail'],
+    ['taegu', 'pusan', 'rail'],
+    ['incheon', 'pusan', 'sea'],
+    ['hungnam', 'pusan', 'sea'],
+    ['wonsan', 'pusan', 'sea'],
+    ['incheon', 'wonsan', 'sea'],
+  ];
+
+  // 朝鲜战争 HOI4 分支国策树
+  const focusTrees = {
+    dprk_coalition: [
+      { id: 'kw_cross_yalu', name: '跨过鸭绿江·穿插分割', days: 12, desc: '全军夜战穿插攻防 +18%，主力军补员 +45,000' },
+      { id: 'kw_mig_alley', name: '苏援第64航空军·米格走廊', days: 16, desc: '米格-15 战机 +120，制空战力 +28，喀秋莎火箭炮 +80' },
+      { id: 'kw_tunnel_net', name: '上甘岭反斜面坑道网', days: 16, desc: '三八线前沿要塞 +2，守备防御 +25%，政治点 +30' },
+    ],
+    un_coalition: [
+      { id: 'kw_chromite', name: '铬铁行动·两栖特混登陆', days: 12, desc: '航母舰队制海 +25，两栖突击加成 +22%，登陆补员 +35,000' },
+      { id: 'kw_vanfleet', name: '范佛里特重炮弹药量', days: 16, desc: '155/203mm 重炮 +140，M26潘兴坦克 +70，攻城火力 +22%' },
+      { id: 'kw_sabre_sky', name: 'F-86 佩刀制空绞杀战', days: 16, desc: '喷气战机 +120，制空战力 +28，海空补给效率 +20%' },
+    ],
+  };
+
+  const api = { factions, scenarios, cities, routes, focusTrees };
   globalThis.KoreanWarData = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })();

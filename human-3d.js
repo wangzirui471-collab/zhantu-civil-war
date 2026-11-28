@@ -38,6 +38,22 @@
     rocBlue:     [0.10, 0.28, 0.70, 0.16, 0.46], // 青天白日蓝底
     rocSunWhite: [0.96, 0.97, 0.99, 0.12, 0.36], // 青天白日白芒
 
+    // 二战 & 朝鲜战争各国专属单兵军服与钢盔 PBR 材质
+    usaOlive:    [0.36, 0.40, 0.26, 0.06, 0.84], // 美军橄榄褐野战服
+    usaPants:    [0.48, 0.44, 0.30, 0.05, 0.86], // 美军浅卡其裤与绑腿
+    ussrKhaki:   [0.49, 0.46, 0.31, 0.06, 0.86], // 苏联红军卡其套头衫
+    ussrHelm:    [0.24, 0.32, 0.21, 0.34, 0.48], // 苏军 SSh-40 军绿钢盔
+    ukBrown:     [0.44, 0.35, 0.23, 0.06, 0.88], // 英军棕褐毛呢野战服
+    ukBrodie:    [0.32, 0.31, 0.21, 0.34, 0.48], // 英军飞碟型布罗迪钢盔
+    fraKhaki:    [0.38, 0.41, 0.27, 0.06, 0.86], // 法军卡其绿军大衣
+    fraAdrian:   [0.30, 0.34, 0.24, 0.40, 0.44], // 法军 M26 亚德里安带脊钢盔
+    jpnKhaki:    [0.54, 0.46, 0.27, 0.06, 0.86], // 日军昭五/九八式土黄军服
+    jpnHelm:     [0.42, 0.37, 0.22, 0.30, 0.52], // 日军九〇式钢盔
+    gerFeldgrau: [0.33, 0.38, 0.35, 0.07, 0.84], // 德军原野灰野战服
+    gerHelm:     [0.21, 0.25, 0.24, 0.42, 0.42], // 德军 M35 护颈钢盔
+    pvaCotton:   [0.52, 0.45, 0.28, 0.04, 0.90], // 志愿军土黄棉军服
+    kpaKhaki:    [0.46, 0.42, 0.27, 0.06, 0.86], // 朝鲜人民军土黄军服
+
     skin:        [0.80, 0.61, 0.47, 0.04, 0.68],
     skinShade:   [0.69, 0.49, 0.36, 0.04, 0.72],
     lip:         [0.66, 0.40, 0.34, 0.06, 0.62],
@@ -537,6 +553,17 @@
     if (v === 'jinsui' || v === 'suiyuan') {
       return { tunic: MAT.rocJinWool, pants: MAT.rocJinWool, hat: 'roc_m35', gun: 'gun_type38', redTab: true };
     }
+    // 二战 & 朝鲜战争各国专属单兵涂装与装备（每个国家独一无二！）
+    if (variant === 'usa') return { tunic: MAT.usaOlive, pants: MAT.usaPants, hat: 'usa_m1', gun: 'gun_thompson', nation: 'usa' };
+    if (variant === 'ussr') return { tunic: MAT.ussrKhaki, pants: MAT.ussrKhaki, hat: 'ussr_ssh40', gun: 'gun_ppsh', nation: 'ussr', isRed: true };
+    if (variant === 'uk') return { tunic: MAT.ukBrown, pants: MAT.ukBrown, hat: 'uk_brodie', gun: 'gun_zhongzheng', nation: 'uk' };
+    if (variant === 'france') return { tunic: MAT.fraKhaki, pants: MAT.fraKhaki, hat: 'fra_adrian', gun: 'gun_zhongzheng', nation: 'france' };
+    if (variant === 'japan') return { tunic: MAT.jpnKhaki, pants: MAT.jpnKhaki, hat: 'jpn_helm', gun: 'gun_type38', nation: 'japan' };
+    if (variant === 'germany') return { tunic: MAT.gerFeldgrau, pants: MAT.gerFeldgrau, hat: 'ger_m35', gun: 'gun_zhongzheng', nation: 'germany', gasMaskCan: true };
+    if (variant === 'china_ww2') return { tunic: MAT.rocCentral, pants: MAT.rocCentral, hat: 'roc_m35', gun: 'gun_zhongzheng', nation: 'china', broadsword: true };
+    if (variant === 'pva') return { tunic: MAT.pvaCotton, pants: MAT.pvaCotton, hat: 'ccp_ushanka', gun: 'gun_ppsh', nation: 'pva', isRed: true };
+    if (variant === 'kpa') return { tunic: MAT.kpaKhaki, pants: MAT.kpaKhaki, hat: 'ussr_ssh40', gun: 'gun_mosin', nation: 'kpa', isRed: true };
+
     // 胡宗南集团及中央军嫡系
     return { tunic: MAT.rocCentral, pants: MAT.rocCentral, hat: 'roc_cap', gun: 'gun_zhongzheng', redTab: true };
   }
@@ -868,6 +895,15 @@
         b.cyl(wX + 0.21, wY - 0.02, wZ + 0.06, wX + 0.24, wY - 0.42, wZ - 0.28, 0.018, 0.014, MAT.bluedSteel, 8);
         b.cyl(wX + 0.20, wY + 0.08, wZ + 0.14, wX + 0.21, wY - 0.02, wZ + 0.06, 0.016, 0.022, MAT.brass, 8);
       }
+      if (style.gasMaskCan) {
+        // 德军标志性后腰圆柱形防毒面具铁筒
+        b.cyl(wX - 0.15, wY - 0.06, wZ - 0.22, wX + 0.15, wY - 0.06, wZ - 0.22, 0.055, 0.055, MAT.gerHelm, 12);
+      }
+      if (style.broadsword) {
+        // 中国抗日部队标志性背后斜挎大刀（红绸刀柄）
+        b.box(bpX + 0.04, bpY + 0.10, bpZ - 0.27, 0.075, 0.56, 0.018, MAT.brightStl, 0, 0, 0.45);
+        b.cyl(bpX + 0.18, bpY + 0.34, bpZ - 0.27, bpX + 0.25, bpY + 0.44, bpZ - 0.27, 0.020, 0.020, MAT.hullRed, 8);
+      }
     }
 
     // ---------- 5. 颈部、面部五官与阵营/地方军阀特色军帽 ----------
@@ -918,6 +954,39 @@
       b.ellipsoid(hdX, hdY + 0.068, hdZ, 0.128, 0.096, 0.134, MAT.rocKhaki, Math.PI * 0.58);
       b.cyl(hdX, hdY + 0.046, hdZ, hdX, hdY + 0.058, hdZ, 0.175, 0.165, MAT.rocKhaki, 16);
       b.emblemSun(hdX, hdY + 0.095, hdZ + 0.132, 0.026, 'Z');
+    } else if (hg === 'usa_m1') {
+      // 美军 M1 钢盔（橄榄绿+网罩+额前白色士官条）
+      b.ellipsoid(hdX, hdY + 0.054, hdZ - 0.008, 0.150, 0.128, 0.162, MAT.rocHelmM1, Math.PI * 0.58);
+      b.cyl(hdX, hdY + 0.036, hdZ - 0.008, hdX, hdY + 0.052, hdZ - 0.008, 0.162, 0.152, MAT.rocHelmM1, 16);
+      b.box(hdX, hdY + 0.102, hdZ + 0.148, 0.052, 0.016, 0.010, MAT.eyeWhite);
+    } else if (hg === 'ussr_ssh40') {
+      // 苏联红军/人民军 SSh-40 圆顶宽檐钢盔 + 正面红五角星
+      b.ellipsoid(hdX, hdY + 0.056, hdZ - 0.006, 0.152, 0.126, 0.162, MAT.ussrHelm, Math.PI * 0.58);
+      b.cyl(hdX, hdY + 0.034, hdZ - 0.006, hdX, hdY + 0.050, hdZ - 0.006, 0.172, 0.154, MAT.ussrHelm, 16);
+      b.emblemStar(hdX, hdY + 0.098, hdZ + 0.152, 0.034, 'Z');
+    } else if (hg === 'uk_brodie') {
+      // 英军标志性宽边飞碟型布罗迪钢盔（Brodie Mk.II 托米盔）
+      b.ellipsoid(hdX, hdY + 0.068, hdZ, 0.140, 0.088, 0.144, MAT.ukBrodie, Math.PI * 0.55);
+      b.cyl(hdX, hdY + 0.048, hdZ, hdX, hdY + 0.064, hdZ, 0.228, 0.214, MAT.ukBrodie, 18);
+    } else if (hg === 'fra_adrian') {
+      // 法军标志性 M26 亚德里安钢盔（顶部厚实纵向防弹脊 + RF 金盾徽）
+      b.ellipsoid(hdX, hdY + 0.056, hdZ - 0.006, 0.148, 0.122, 0.160, MAT.fraAdrian, Math.PI * 0.58);
+      b.cyl(hdX, hdY + 0.038, hdZ - 0.006, hdX, hdY + 0.050, hdZ - 0.006, 0.174, 0.150, MAT.fraAdrian, 16);
+      b.box(hdX, hdY + 0.164, hdZ - 0.01, 0.040, 0.046, 0.21, MAT.fraAdrian);
+      b.cyl(hdX, hdY + 0.096, hdZ + 0.148, hdX, hdY + 0.096, hdZ + 0.156, 0.026, 0.026, MAT.brass, 10);
+    } else if (hg === 'jpn_helm') {
+      // 日军九〇式钢盔 + 正面五角金星 + 标志性脑后及两侧防晒护颈垂布（“屁帘”）
+      b.ellipsoid(hdX, hdY + 0.056, hdZ - 0.006, 0.148, 0.120, 0.156, MAT.jpnHelm, Math.PI * 0.58);
+      b.cyl(hdX, hdY + 0.036, hdZ - 0.006, hdX, hdY + 0.050, hdZ - 0.006, 0.160, 0.148, MAT.jpnHelm, 16);
+      b.cyl(hdX, hdY + 0.096, hdZ + 0.146, hdX, hdY + 0.096, hdZ + 0.154, 0.024, 0.024, MAT.brass, 5);
+      for (const sx of [-0.11, 0, 0.11]) {
+        b.box(hdX + sx, hdY - 0.04, hdZ - 0.132, 0.085, 0.14, 0.016, MAT.jpnKhaki);
+      }
+    } else if (hg === 'ger_m35') {
+      // 德军标志性深护颈外扩 M35/M42 钢盔（原野深灰+护耳折边）
+      b.ellipsoid(hdX, hdY + 0.052, hdZ - 0.008, 0.150, 0.128, 0.162, MAT.gerHelm, Math.PI * 0.58);
+      b.cyl(hdX, hdY + 0.034, hdZ - 0.008, hdX, hdY + 0.052, hdZ - 0.008, 0.164, 0.152, MAT.gerHelm, 16);
+      b.box(hdX, hdY + 0.018, hdZ - 0.048, 0.320, 0.052, 0.195, MAT.gerHelm);
     } else if (hg === 'roc_cap') {
       b.cyl(hdX, hdY + 0.048, hdZ, hdX, hdY + 0.136, hdZ + 0.012, 0.122, 0.128, tunicMat, 18);
       b.cyl(hdX, hdY + 0.050, hdZ, hdX, hdY + 0.095, hdZ + 0.005, 0.130, 0.132, tunicMat, 18);
@@ -1591,6 +1660,89 @@
     }
   }
 
+  function buildExtraWW2Vehicles(b, kind, action = 'idle', phase = 0) {
+    const isFiring = action === 'attack' || action === 'fire';
+    const bounce = action === 'march' ? Math.sin(phase * 2) * 0.025 : 0;
+    if (kind === 'churchill') {
+      // 英国丘吉尔重型步兵坦克：标志性超长全包环绕履带 + 方形高大重甲炮塔 + 75mm炮
+      for (const sx of [-0.50, 0.50]) {
+        b.box(sx, 0.30 + bounce, 0, 0.24, 0.42, 1.84, MAT.rubber);
+        b.box(sx, 0.36 + bounce, 0, 0.26, 0.14, 1.80, MAT.ukBrodie); // 上部全包护泥装甲板
+      }
+      b.box(0, 0.38 + bounce, 0.0, 0.78, 0.34, 1.54, MAT.ukBrodie);
+      b.box(0, 0.70 + bounce, 0.08, 0.56, 0.30, 0.62, MAT.ukBrodie);
+      b.cyl(0, 0.70 + bounce, 0.38, 0, 0.70 + bounce, 1.38, 0.036, 0.030, MAT.bluedSteel, 8);
+      if (isFiring) b.cyl(0, 0.70 + bounce, 1.40, 0, 0.70 + bounce, 1.82, 0.12, 0.025, MAT.flameOuter, 8);
+    } else if (kind === 'chiha') {
+      // 日本九七式中战车改（Chi-Ha）：低矮铆接车体 + 标志性炮塔环绕式马蹄无线电天线 + 47mm高速炮
+      for (const sx of [-0.42, 0.42]) {
+        b.box(sx, 0.18 + bounce, 0, 0.18, 0.22, 1.44, MAT.rubber);
+        for (let w = 0; w < 6; w++) b.cyl(sx - 0.10, 0.14 + bounce, -0.52 + w * 0.21, sx + 0.10, 0.14 + bounce, -0.52 + w * 0.21, 0.10, 0.10, MAT.armorDark, 8);
+      }
+      b.box(0, 0.36 + bounce, 0, 0.76, 0.26, 1.38, MAT.jpnHelm);
+      b.box(0, 0.58 + bounce, 0.04, 0.48, 0.24, 0.56, MAT.jpnHelm);
+      // 九七式标志性环绕马蹄无线电框形天线
+      b.box(0, 0.76 + bounce, -0.02, 0.58, 0.022, 0.64, MAT.brass);
+      b.cyl(0, 0.58 + bounce, 0.30, 0, 0.58 + bounce, 1.24, 0.028, 0.022, MAT.bluedSteel, 8);
+      if (isFiring) b.cyl(0, 0.58 + bounce, 1.26, 0, 0.58 + bounce, 1.62, 0.10, 0.02, MAT.flameOuter, 8);
+    } else if (kind === 'stuka' || kind === 'il2' || kind === 'p40') {
+      const bank = Math.sin(phase) * 0.08;
+      const bodyMat = kind === 'stuka' ? MAT.gerFeldgrau : kind === 'il2' ? MAT.armorSov : MAT.usaOlive;
+      b.cyl(0, 0.86, -1.08, 0, 0.86, 0.96, 0.12, 0.17, bodyMat, 14);
+      // 螺旋桨
+      const spin = phase * 3.6;
+      for (let k = 0; k < 3; k++) {
+        const a = spin + k * (Math.PI * 2 / 3);
+        b.cyl(0, 0.86, 1.12, Math.cos(a) * 0.42, 0.86 + Math.sin(a) * 0.42, 1.13, 0.028, 0.012, MAT.gunmetal, 6);
+      }
+      if (kind === 'p40') {
+        // 中国飞虎队 P-40 标志性机头下颌散热器 + 红白鲨鱼嘴涂装！
+        b.cyl(0, 0.86, 0.96, 0, 0.86, 1.12, 0.16, 0.07, MAT.hullRed, 12);
+        b.box(0, 0.72, 0.84, 0.22, 0.10, 0.34, MAT.hullRed);
+        b.box(0, 0.72, 0.92, 0.23, 0.04, 0.20, MAT.eyeWhite); // 鲨鱼白牙
+      } else {
+        b.cyl(0, 0.86, 0.96, 0, 0.86, 1.12, 0.16, 0.06, MAT.rubber, 12);
+      }
+      b.ellipsoid(0, 1.02, 0.04, 0.12, 0.12, 0.42, MAT.glass);
+      if (kind === 'stuka') {
+        // 德军 Ju 87 斯图卡标志性倒鸥翼 + 固定流线起落架 + 机腹 500kg 航弹
+        b.box(-0.36, 0.72, 0.18, 0.62, 0.045, 0.50, bodyMat, 0, 0, -0.28);
+        b.box( 0.36, 0.72, 0.18, 0.62, 0.045, 0.50, bodyMat, 0, 0,  0.28);
+        b.box(-1.02, 0.76, 0.18, 0.86, 0.042, 0.42, bodyMat, 0, 0,  0.16);
+        b.box( 1.02, 0.76, 0.18, 0.86, 0.042, 0.42, bodyMat, 0, 0, -0.16);
+        for (const sx of [-0.56, 0.56]) {
+          b.cyl(sx, 0.66, 0.24, sx, 0.38, 0.28, 0.04, 0.05, bodyMat, 8); // 斯图卡标志性固定起落架裤腿
+        }
+        b.cyl(0, 0.60, -0.10, 0, 0.60, 0.46, 0.08, 0.03, MAT.armorDark, 8); // 机腹重磅航弹
+      } else {
+        b.box(0, 0.82, 0.16, kind === 'il2' ? 2.52 : 2.28, 0.048, 0.52, bodyMat, 0, 0, bank);
+        if (kind === 'il2') {
+          for (const sx of [-0.62, -0.44, 0.44, 0.62]) b.cyl(sx, 0.74, -0.05, sx, 0.74, 0.42, 0.025, 0.015, MAT.hullRed, 6); // 翼下RS-82火箭弹
+        }
+      }
+      b.box(0, 0.88, -0.98, 0.86, 0.035, 0.24, bodyMat, 0, 0, bank);
+      b.box(0, 1.06, -0.98, 0.04, 0.34, 0.28, bodyMat);
+      if (isFiring) {
+        for (const sx of [-0.46, 0.46]) b.cyl(sx, 0.80, 0.44, sx, 0.80, 1.42, 0.035, 0.012, MAT.flameOuter, 8);
+      }
+    } else if (kind === 'uboat') {
+      // 德国 U-VII 型狼群远洋潜艇：狭长灰黑雪茄耐压艇体 + 中部司令塔 + 88mm甲板炮 + 潜望镜
+      const hull = [
+        [-2.05, 0.10, 0.34, 0.04, 1.0],
+        [-1.30, 0.05, 0.38, 0.22, 1.05],
+        [ 0.00, 0.04, 0.40, 0.27, 1.08],
+        [ 1.30, 0.05, 0.39, 0.21, 1.12],
+        [ 2.08, 0.12, 0.42, 0.02, 1.18],
+      ];
+      b.loftHullZ(hull, MAT.armorDark, 0.0, 0.20);
+      b.loftHullZ(hull, MAT.navalGrey, 0.20, 0.75);
+      b.box(0, 0.62, 0.08, 0.24, 0.42, 0.62, MAT.navalGrey); // 指挥司令塔
+      b.cyl(0, 0.82, 0.18, 0, 1.18, 0.18, 0.022, 0.016, MAT.gunmetal, 8); // 潜望镜
+      b.cyl(0, 0.46, 0.76, 0, 0.48, 1.24, 0.026, 0.020, MAT.bluedSteel, 8); // 88mm甲板炮
+      if (isFiring) b.cyl(0, 0.22, 2.06, 0, 0.22, 2.65, 0.06, 0.02, MAT.waterFoam, 8); // 鱼雷尾迹
+    }
+  }
+
   function buildKindScene(kind, side, action = 'idle', phase = 0, variant = '') {
     const b = createBuilder();
     if (kind === 'carrier') buildCarrier(b, side, action, phase);
@@ -1601,11 +1753,13 @@
     else if (kind === 'zero' || kind === 'spitfire') buildPropFighter(b, kind, action, phase);
     else if (kind === 't34' || kind === 'm26') buildHistoricalTank(b, kind, action, phase);
     else if (kind === 'sherman' || kind === 'charb1' || kind === 'tiger') buildWW2Tank(b, kind, action, phase);
+    else if (['churchill', 'chiha', 'stuka', 'il2', 'p40', 'uboat'].includes(kind)) buildExtraWW2Vehicles(b, kind, action, phase);
     else if (kind === 'katyusha') buildKatyusha(b, action, phase);
     else if (kind === 'ship' || kind === 'warship') buildWarship(b, side, action, phase);
     else if (kind === 'tank') buildMapTank(b, side, action, phase);
     else if (kind === 'artillery') buildMapArtillery(b, side, action, phase);
     else if (kind === 'aircraft') buildMapAircraft(b, side, action, phase);
+    else if (kind.startsWith('soldier_')) addSoldier(b, { side: kind === 'soldier_ussr' || kind === 'soldier_pva' || kind === 'soldier_kpa' ? 'ccp' : 'roc', variant: kind.slice(8), action, phase });
     else addSoldier(b, { side, variant, action, phase });
     return b.finish();
   }
@@ -1861,13 +2015,13 @@
 
     function cameraFor(kind, action, side) {
       const dir = side === 'ccp' ? 1 : -1;
-      if (kind === 'carrier' || kind === 'battleship' || kind === 'yamato') {
+      if (kind === 'carrier' || kind === 'battleship' || kind === 'yamato' || kind === 'uboat') {
         return { eye: [dir * 3.9, 2.2, 4.0], center: [0, 0.58, 0.0], fov: 0.98 };
       }
-      if (kind === 'jet' || kind === 'mig15' || kind === 'f86' || kind === 'b29' || kind === 'zero' || kind === 'spitfire' || kind === 'aircraft') {
+      if (kind === 'jet' || kind === 'mig15' || kind === 'f86' || kind === 'b29' || kind === 'zero' || kind === 'spitfire' || kind === 'stuka' || kind === 'il2' || kind === 'p40' || kind === 'aircraft') {
         return { eye: [dir * 3.6, 2.3, 3.6], center: [0, 0.88, 0.02], fov: 1.0 };
       }
-      if (kind === 't34' || kind === 'm26' || kind === 'sherman' || kind === 'charb1' || kind === 'tiger' || kind === 'katyusha') {
+      if (kind === 't34' || kind === 'm26' || kind === 'sherman' || kind === 'charb1' || kind === 'tiger' || kind === 'churchill' || kind === 'chiha' || kind === 'katyusha') {
         return { eye: [dir * 3.2, 1.8, 3.2], center: [0, 0.52, 0.06], fov: 0.96 };
       }
       if (kind === 'ship' || kind === 'warship') {

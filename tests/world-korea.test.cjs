@@ -57,11 +57,13 @@ test('共方/志愿军可调用苏联米格-15 机群、喀秋莎火箭炮齐射
   assert.equal(state.stock.ccp.armor, armorBefore + 35);
 });
 
-test('二战全球战役数据完整包含美/苏/英/法/日/德/中七大阵营全兵种武器与 8 大历史剧本', () => {
+test('二战全球战役数据完整包含美/苏/英/法/日/德/中七大阵营、7位国家领导人、铁路网与 16 大历史剧本', () => {
   assert.deepEqual(Object.keys(WW2.factions).sort(), ['china', 'france', 'germany', 'japan', 'uk', 'usa', 'ussr']);
-  assert.equal(WW2.scenarios.length, 8);
-  assert.ok(WW2.cities.length >= 50);
-  assert.ok(WW2.routes.length >= 70);
+  assert.equal(WW2.leaders.length, 7);
+  assert.equal(WW2.scenarios.length, 16);
+  assert.ok(WW2.cities.length >= 60);
+  assert.ok(WW2.routes.some(r => r[2] === 'rail'), '应包含双轨战略铁路网');
+  assert.ok(WW2.routes.length >= 85);
   for (const fac of Object.values(WW2.factions)) {
     assert.ok(fac.arsenal.infantryWeapons.length >= 3, `${fac.id} 步兵武器`);
     assert.ok(fac.arsenal.artillery.length >= 2, `${fac.id} 火炮`);
@@ -73,8 +75,12 @@ test('二战全球战役数据完整包含美/苏/英/法/日/德/中七大阵�
   }
 });
 
-test('新增 6 款二战精细 3D 装备模型（大和号/零战/喷火/谢尔曼/夏尔B1/虎式）网格完整无 NaN', () => {
-  for (const kind of ['yamato', 'zero', 'spitfire', 'sherman', 'charb1', 'tiger']) {
+test('新增 6 款二战精细 3D 装备模型与全部 9 大参战国专属单兵 3D 模型网格完整无 NaN', () => {
+  for (const kind of [
+    'yamato', 'zero', 'spitfire', 'sherman', 'charb1', 'tiger',
+    'churchill', 'chiha', 'stuka', 'il2', 'p40', 'uboat',
+    'soldier_usa', 'soldier_ussr', 'soldier_uk', 'soldier_france', 'soldier_japan', 'soldier_germany', 'soldier_china_ww2', 'soldier_pva', 'soldier_kpa'
+  ]) {
     const mesh = Human3D.createMesh(kind);
     assert.ok(mesh.positions.length > 100, `${kind} 应包含足够精细顶点`);
     assert.ok(mesh.positions.every(Number.isFinite), `${kind} 顶点不应有 NaN`);
@@ -92,14 +98,110 @@ test('HOI4 二战全球沙盘引擎：选国开局、焦点国策、编组新军
   assert.equal(Sim.startWW2Focus(st, 'usa', 'us_arsenal').ok, true);
   assert.equal(Sim.recruitWW2Division(WW2, st, 'usa', 'washington', 'armor').ok, true);
   assert.equal(Sim.lendLeaseWW2(WW2, st, 'usa', 'ussr').ok, true);
+  assert.equal(Sim.fortifyWW2City(WW2, st, 'usa', 'washington').ok, true);
+  assert.equal(Sim.scorchedEarthWW2(WW2, st, 'usa', 'berlin').ok, true);
+  assert.equal(Sim.citySupplyLevel(WW2, st, 'berlin'), 30, '被焦土破袭铁路的城市应进入红区断补');
   Sim.stepWW2Day(WW2, st, 30);
   assert.equal(st.dayCount, 30);
   assert.ok(st.nations.usa.completedFocuses.includes('us_arsenal'), '25 天国策应在 30 天内自动完成');
   assert.ok(st.armies.every(a => Number.isFinite(a.strength) && Number.isFinite(a.org)));
+
+  // 校验国内内战全模式同步至二战：学说、法令、科研、情报破译、敌后空降、炮火覆盖、指挥技能、历史抉择与30日预测
+  st.nations.usa.pp = 200;
+  st.nations.usa.cp = 100;
+  assert.equal(Sim.setWW2Doctrine(st, 'usa', 'mobile').ok, true);
+  assert.equal(Sim.setWW2Law(st, 'usa', 'conscription', 'extensive').ok, true);
+  assert.equal(Sim.setWW2Law(st, 'usa', 'economy', 'total_mob').ok, true);
+  assert.equal(Sim.researchWW2Tech(st, 'usa', 'heavy_armor').ok, true);
+  assert.equal(Sim.ww2IntelAction(st, 'usa', 'network').ok, true);
+  assert.equal(Sim.ww2IntelAction(st, 'usa', 'decrypt').ok, true);
+  assert.equal(Sim.ww2IntelAction(st, 'usa', 'decrypt').ok, true);
+  assert.equal(Sim.ww2IntelAction(st, 'usa', 'burst').ok, true);
+  assert.equal(st.nations.usa.intel.burstDays, 30);
+  const hostileCity = WW2.cities.find(c => Sim.isHostile(WW2, 'usa', st.owners[c.id], st))?.id;
+  if (hostileCity) {
+    assert.equal(Sim.airborneWW2(WW2, st, 'usa', hostileCity).ok, true);
+    assert.equal(Sim.barrageWW2(WW2, st, 'usa', hostileCity).ok, true);
+  }
+  assert.equal(Sim.portGarrisonWW2(WW2, st, 'usa').ok, true);
+  assert.equal(Sim.applyWW2Event(st, 'usa', 'ev_lend_lease', 0).ok, true);
+  const fc = Sim.forecastWW2(WW2, st, 30);
+  assert.ok(fc.date && Number.isFinite(fc.ownedLater));
+
+  // 校验欧洲德军多坦克闪电战 + 太平洋海空跳岛战 + 原子弹发射轰炸
+  const gerSt = Sim.createWW2Game(WW2, 'ww2-1940', 'germany');
+  gerSt.nations.germany.cp = 60;
+  assert.equal(Sim.blitzkriegStrikeWW2(WW2, gerSt, 'germany', 'ger-west').ok, true);
+  assert.ok(gerSt.effects.some(e => e.type === 'blitz'));
+
+  const pacSt = Sim.createWW2Game(WW2, 'ww2-1945-okinawa', 'usa');
+  pacSt.nations.usa.cp = 60; pacSt.nations.usa.pp = 80;
+  assert.equal(Sim.pacificNavalAirBattle(WW2, pacSt, 'usa', 'okinawa').ok, true);
+  assert.equal(Sim.launchAtomicBombWW2(WW2, pacSt, 'usa', 'hiroshima').ok, true);
+  assert.equal(pacSt.nukedCities.hiroshima, true);
+  assert.ok(pacSt.effects.some(e => e.type === 'nuke'));
+
+  // 校验最后 8 项差异补平：后撤防线、全线总攻、外交宣战/停战、老兵与战损统计
+  assert.equal(Sim.fallbackLineWW2(WW2, gerSt, 'germany').ok, true);
+  assert.equal(Sim.declareWarWW2(WW2, gerSt, 'germany', 'ussr').ok, true);
+  gerSt.nations.germany.pp = 50;
+  assert.equal(Sim.proposePeaceWW2(WW2, gerSt, 'germany', 'ussr').ok, true);
+  assert.equal(Sim.generalOffensiveWW2(WW2, gerSt, 'germany').ok, true);
+
+  // 校验最新同步的 8 大 HOI4 系统：石油资源贸易、自由装备设计器、自由战斗宽度师编、将领特质养成、拉拢中立国、和谈会议、季节气候与运输船
+  assert.equal(Sim.tradeWW2Resource(st, 'usa', 'oil').ok, true);
+  assert.equal(Sim.designWW2Equipment(st, 'usa', { tankGun: '88mm', tankArmor: 'heavy', shipFocus: 'carrier_deck' }).ok, true);
+  assert.equal(Sim.recruitCustomTemplateWW2(WW2, st, 'usa', 'washington').ok, true);
+  assert.equal(Sim.upgradeWW2General(st, 'usa', 'usa-1a', 'panzer_leader').ok, true);
+  assert.equal(Sim.inviteMinorWW2(st, 'usa', 'brazil').ok, true);
+  st.nations.usa.warScore = 100;
+  assert.equal(Sim.peaceDemandWW2(WW2, st, 'usa', 'puppet').ok, true);
+  assert.equal(Sim.peaceDemandWW2(WW2, st, 'usa', 'seize_fleet').ok, true);
+  assert.equal(Sim.getWW2SeasonWeather(12).id, 'winter');
+  assert.equal(Sim.getWW2SeasonWeather(8).id, 'typhoon');
+
+  // 校验最新 5 大 HOI4 高阶 DLC 系统：国际军火市场、MIO 设计局升级、V-2 导弹与古斯塔夫列车炮、特工窃取蓝图、舰队屏卫率
+  pacSt.nations.usa.pp = 150; pacSt.nations.usa.cp = 100; pacSt.nations.usa.intel.network = 80;
+  assert.equal(Sim.marketWW2Trade(pacSt, 'usa', 'buy', 'tanks').ok, true);
+  assert.equal(Sim.marketWW2Trade(pacSt, 'usa', 'sell', 'infantry').ok, true);
+  assert.equal(Sim.upgradeWW2MIO(pacSt, 'usa', 'mio_tank').ok, true);
+  assert.equal(Sim.launchV2MissileWW2(WW2, pacSt, 'usa').ok, true);
+  assert.equal(Sim.fireRailwayGunWW2(WW2, pacSt, 'usa').ok, true);
+  assert.equal(Sim.spyMissionWW2(WW2, pacSt, 'usa', 'steal_tech').ok, true);
+  assert.equal(Sim.buildEscortScreenWW2(pacSt, 'usa').ok, true);
+  assert.ok(Sim.fleetScreenRatio(pacSt.nations.usa) >= 50);
 
   // 校验四大战场宣战隔离与零友军互抢
   const cn = Sim.createWW2Game(WW2, 'ww2-1938-china', 'china');
   Sim.stepWW2Day(WW2, cn, 60);
   assert.equal(cn.log.some(l => l.includes('原属 法国') || l.includes('原属 英国') || l.includes('原属 苏联')), false, '1938 中国战场剧本不应出现欧洲/苏联提前互打');
   assert.equal(cn.log.some(l => /(?:🚩|大捷！)\s*(中国|日本)[^\n]*原属 \1/.test(l)), false, '绝不允许自攻自城或友军互抢');
+});
+
+test('抗美援朝 HOI4 全屏战略沙盘：5大剧本、18城铁路海运、焦点国策、喀秋莎/米格走廊/仁川登陆与 30 天推演', () => {
+  const KSim = World.KoreanWarSim;
+  assert.ok(KSim && typeof KSim.createKoreanWarGame === 'function');
+  assert.ok(Korea.routes.length >= 20, '朝鲜半岛铁路/公路/海运网应包含 20+ 条线路');
+  assert.ok(Korea.focusTrees.dprk_coalition.length >= 3 && Korea.focusTrees.un_coalition.length >= 3);
+
+  for (const sc of Korea.scenarios) {
+    const st = KSim.createKoreanWarGame(Korea, sc.id, 'dprk_coalition');
+    assert.equal(Object.keys(st.owners).length, 18);
+    assert.ok(st.armies.length >= 10);
+  }
+
+  const st = KSim.createKoreanWarGame(Korea, 'kw-1950-10', 'dprk_coalition');
+  assert.equal(KSim.startKoreanWarFocus(Korea, st, 'dprk_coalition', 'kw_cross_yalu').ok, true);
+  assert.equal(KSim.triggerKoreanWarSpecial(Korea, st, 'dprk_coalition', 'katyusha').ok, true);
+  assert.equal(KSim.triggerKoreanWarSpecial(Korea, st, 'dprk_coalition', 'mig_corridor').ok, true);
+  assert.equal(KSim.triggerKoreanWarSpecial(Korea, st, 'dprk_coalition', 'tunnel_fort').ok, true);
+  assert.equal(KSim.triggerKoreanWarSpecial(Korea, st, 'un_coalition', 'inchon_landing').ok, true);
+  assert.equal(KSim.triggerKoreanWarSpecial(Korea, st, 'un_coalition', 'van_fleet').ok, true);
+
+  const pvaArmy = st.armies.find((a) => a.side === 'dprk_coalition');
+  assert.equal(KSim.issueKoreanWarOrder(Korea, st, pvaArmy.id, 'attack', 'seoul').ok, true);
+  KSim.stepKoreanWarDay(Korea, st, 30);
+  assert.equal(st.dayCount, 30);
+  assert.ok(st.sides.dprk_coalition.completedFocuses.includes('kw_cross_yalu'));
+  assert.ok(!Number.isNaN(st.sides.dprk_coalition.pp) && !Number.isNaN(st.sides.un_coalition.warScore));
 });

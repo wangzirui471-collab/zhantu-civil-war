@@ -1970,6 +1970,33 @@
       drawFieldActions(performance.now());
       drawBattleEffects(performance.now());
       drawCommandEffects(performance.now());
+      if (pointer?.drawFront && pointer.end) {
+        const x1 = pointer.where[0], y1 = pointer.where[1], x2 = pointer.end[0], y2 = pointer.end[1];
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 28;
+        const ang = Math.atan2(y2 - my, x2 - mx);
+        const pulse = 0.72 + 0.28 * Math.sin(performance.now() * 0.01);
+        brush.save();
+        brush.strokeStyle = 'rgba(255, 104, 72, ' + pulse.toFixed(2) + ')';
+        brush.lineWidth = 7;
+        brush.lineCap = 'round';
+        brush.beginPath(); brush.moveTo(x1, y1); brush.quadraticCurveTo(mx, my, x2, y2); brush.stroke();
+        brush.strokeStyle = '#ffe29a';
+        brush.lineWidth = 2.4;
+        brush.setLineDash([8, 6]);
+        brush.beginPath(); brush.moveTo(x1, y1); brush.quadraticCurveTo(mx, my, x2, y2); brush.stroke();
+        brush.setLineDash([]);
+        brush.fillStyle = '#ff6b4a';
+        brush.beginPath();
+        brush.moveTo(x2, y2);
+        brush.lineTo(x2 - Math.cos(ang - 0.45) * 18, y2 - Math.sin(ang - 0.45) * 18);
+        brush.lineTo(x2 - Math.cos(ang + 0.45) * 18, y2 - Math.sin(ang + 0.45) * 18);
+        brush.closePath(); brush.fill();
+        brush.font = '700 12px "Microsoft YaHei UI", sans-serif';
+        brush.fillStyle = '#fff0b8';
+        brush.textAlign = 'center';
+        brush.fillText('⚔ 手绘进攻战线（松开即刻执行）', mx, my - 8);
+        brush.restore();
+      }
       if (pointer?.marquee && pointer.moved && pointer.end) {
         const x0 = Math.min(pointer.where[0], pointer.end[0]), y0 = Math.min(pointer.where[1], pointer.end[1]);
         const bw = Math.abs(pointer.end[0] - pointer.where[0]), bh = Math.abs(pointer.end[1] - pointer.where[1]);
@@ -2090,9 +2117,15 @@
       event.preventDefault();
       zoom(Math.exp(-event.deltaY * .00145), ...coordinates(event));
     }, { passive: false });
+    let drawFrontMode = false;
     canvas.addEventListener('pointerdown', (event) => {
       if (event.button !== 0) return;
       const where = coordinates(event);
+      if (drawFrontMode) {
+        pointer = { where, end: where, drawFront: true, lon: camera.lon, lat: camera.lat, moved: false };
+        canvas.setPointerCapture(event.pointerId);
+        return;
+      }
       const marker = markerAt(...where);
       const unit = marker?.unit;
       const marquee = Boolean(event.shiftKey && !unit && !selection.command);
@@ -2107,6 +2140,13 @@
         const dx = xy[0] - pointer.where[0], dy = xy[1] - pointer.where[1];
         if (Math.hypot(dx, dy) > 5) pointer.moved = true;
         if (!pointer.moved) return;
+        if (pointer.drawFront) {
+          pointer.end = xy;
+          hoverPoint = xy;
+          highlightedCity = nearest(...xy, 36)?.id;
+          draw();
+          return;
+        }
         if (pointer.marquee) {
           pointer.end = xy;
           draw();
@@ -2139,7 +2179,13 @@
       const old = pointer;
       pointer = undefined;
       canvas.classList.remove('dragging');
-      if (old.moved && old.marquee && old.end) {
+      if (old.drawFront) {
+        drawFrontMode = false;
+        const target = nearest(...xy, 38) || places.get(cardAt(...xy)?.city);
+        if (old.moved && target) handlers.drawFrontOrder?.(target.id);
+        else handlers.drawFrontCancel?.();
+        draw();
+      } else if (old.moved && old.marquee && old.end) {
         const x0 = Math.min(old.where[0], old.end[0]), x1 = Math.max(old.where[0], old.end[0]);
         const y0 = Math.min(old.where[1], old.end[1]), y1 = Math.max(old.where[1], old.end[1]);
         const ids = [...new Set(hitCards.filter((c) => !c.figureHit && handlers.canOrder(c.unit)
@@ -2230,6 +2276,7 @@
         draw();
       },
       focus, jump, detail, zoom, resize,
+      setDrawFront(on) { drawFrontMode = Boolean(on); canvas.style.cursor = drawFrontMode ? 'crosshair' : ''; if (!drawFrontMode && pointer?.drawFront) pointer = undefined; draw(); },
       markers: () => hitCards.map(({ unit, spriteHit, left, top, width, height }) => ({
         unitId: unit.id, city: unit.city, side: unit.side, figure: Boolean(spriteHit), left, top, width, height,
       })),
