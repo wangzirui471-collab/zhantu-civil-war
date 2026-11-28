@@ -240,3 +240,17 @@ test('二战欧洲与太平洋 HOI4 深度机制：计划准备加成、维希�
   assert.equal(Sim.kamikazeStrikeWW2(WW2, pac, 'japan', 'usa').ok, true);
   assert.equal(Sim.launchAtomicBombWW2(WW2, pac, 'usa', 'tokyo').ok, true);
 });
+
+test('国共内战主战场同步 HOI4 深度玩法：燃油、四大军工设计局、装备改型、雷达网、大后方内迁、宪兵镇压与三排海战', () => {
+  const st = Engine.createGame(Data, { scenarioId: 'war1946', scope: 'national', side: 'ccp' });
+  st.political.ccp.points = 200;
+  st.command.ccp.points = 100;
+  assert.equal(Engine.upgradeCivilMIO(Data, st, 'infantry').ok, true);
+  assert.equal(Engine.designCivilEquipment(Data, st, 'rifle').ok, true);
+  assert.equal(Engine.buildCivilRadar(Data, st).ok, true);
+  assert.equal(Engine.relocateCivilIndustry(Data, st).ok, true);
+  assert.equal(Engine.suppressCivilResistance(Data, st).ok, true);
+  const nav = Engine.civilNavalThreeLineBattle(Data, st);
+  assert.equal(nav.ok, true);
+  assert.ok(st.hoiExtra.lastNavalBattle && st.hoiExtra.lastNavalBattle.atk && st.hoiExtra.lastNavalBattle.def);
+});

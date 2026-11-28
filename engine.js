@@ -5361,6 +5361,133 @@
     return { ok: true, plan };
   }
 
+  // ── 同步二战 HOI4 深度玩法至国共内战主战场（燃油、四大军工设计局 MIO、装备改型、雷达网、大后方内迁、宪兵镇压、三排海战）──
+  function ensureCivilHoi(state) {
+    if (!state.hoiExtra) {
+      state.hoiExtra = {
+        ccp: {
+          fuel: 72, relocated: false,
+          mio: { infantry: 1, artillery: 1, armor: 1, naval_air: 1 },
+          equipMod: { rifle: 0, artillery: 0, tank: 0 },
+          radars: {},
+          taskForce: { name: '华东/渤海渡海炮艇与护航分队', dd: 12, ca: 2, bb: 0, cv: 0, ss: 4 },
+        },
+        roc: {
+          fuel: 90, relocated: false,
+          mio: { infantry: 1, artillery: 1, armor: 1, naval_air: 1 },
+          equipMod: { rifle: 0, artillery: 0, tank: 0 },
+          radars: { nanjing: 1, shanghai: 1 },
+          taskForce: { name: '海军海防第一/第二特混舰队', dd: 18, ca: 5, bb: 1, cv: 0, ss: 2 },
+        },
+        lastNavalBattle: null,
+      };
+    }
+    return state.hoiExtra;
+  }
+
+  function upgradeCivilMIO(data, state, kind = 'infantry') {
+    const side = state.player;
+    const h = ensureCivilHoi(state)[side];
+    const pol = state.political?.[side];
+    if (!pol || pol.points < 15) return { ok: false, error: '升级军工设计局（MIO）需要 15 政治点。' };
+    if (!h.mio[kind]) return { ok: false, error: '未知军工设计局类型。' };
+    pol.points -= 15;
+    h.mio[kind] += 1;
+    if (state.stock?.[side]) {
+      if (kind === 'infantry') state.stock[side].infantry = (state.stock[side].infantry || 0) + 120;
+      else if (kind === 'artillery') state.stock[side].artillery = (state.stock[side].artillery || 0) + 45;
+      else if (kind === 'armor') state.stock[side].armor = (state.stock[side].armor || 0) + 25;
+      else { state.navy[side].warships = (state.navy[side].warships || 0) + 3; h.taskForce.dd += 3; }
+    }
+    const labels = { infantry: '步兵轻武器兵工局', artillery: '重炮兵工设计局', armor: '装甲车辆设计局', naval_air: '海空造船设计局' };
+    state.log.push({ date: state.date, text: `🏭 【HOI4 军工设计局】${labels[kind]} 升至 Lv.${h.mio[kind]}，装备储备与战力同步强化！` });
+    return { ok: true, level: h.mio[kind] };
+  }
+
+  function designCivilEquipment(data, state, kind = 'rifle') {
+    const side = state.player;
+    const h = ensureCivilHoi(state)[side];
+    const pol = state.political?.[side];
+    if (!pol || pol.points < 15) return { ok: false, error: '研发装备改型设计需要 15 政治点。' };
+    if (h.equipMod[kind] === undefined) return { ok: false, error: '未知装备改型类型。' };
+    pol.points -= 15;
+    h.equipMod[kind] += 1;
+    const labels = { rifle: '步枪/冲锋枪 Mk 改型（软攻 +8%）', artillery: '榴弹重炮 Mk 改型（破壕 +10%）', tank: '装甲突击车 Mk 改型（突破 +10%）' };
+    state.log.push({ date: state.date, text: `🔧 【装备设计器】完成 ${labels[kind]}（现 Lv.${h.equipMod[kind]}）！` });
+    return { ok: true, level: h.equipMod[kind] };
+  }
+
+  function buildCivilRadar(data, state, cityId) {
+    const side = state.player;
+    const h = ensureCivilHoi(state)[side];
+    const pol = state.political?.[side];
+    const tgt = (cityId && state.owners[cityId] === side) ? cityId : data.cities.find((c) => state.owners[c.id] === side)?.id;
+    if (!tgt) return { ok: false, error: '未找到本方控制城镇。' };
+    if (!pol || pol.points < 15) return { ok: false, error: '建设防空雷达站需要 15 政治点。' };
+    pol.points -= 15;
+    h.radars[tgt] = Math.min(4, (h.radars[tgt] || 0) + 1);
+    const cName = data.cities.find((c) => c.id === tgt)?.name || tgt;
+    state.log.push({ date: state.date, text: `📡 【本土防空雷达网】在 ${cName} 建成 ${h.radars[tgt]} 级防空雷达站，防空截击效率大幅提升！` });
+    return { ok: true, city: tgt, level: h.radars[tgt] };
+  }
+
+  function relocateCivilIndustry(data, state) {
+    const side = state.player;
+    const h = ensureCivilHoi(state)[side];
+    const pol = state.political?.[side];
+    if (h.relocated) return { ok: false, error: '大后方工业内迁已完成，不可重复执行。' };
+    if (!pol || pol.points < 20) return { ok: false, error: '大后方工业内迁需要 20 政治点。' };
+    pol.points -= 20;
+    h.relocated = true;
+    h.fuel = Math.min(100, h.fuel + 15);
+    if (state.stock?.[side]) state.stock[side].infantry = (state.stock[side].infantry || 0) + 180;
+    if (state.economy?.[side]) state.economy[side].industry = (state.economy[side].industry || 0) + 6;
+    state.log.push({ date: state.date, text: '🏭 【大后方工业内迁】兵工厂成功转移至后方安全区，产能 +6、枪炮 +180、燃油 +15%！' });
+    return { ok: true };
+  }
+
+  function suppressCivilResistance(data, state) {
+    const side = state.player;
+    const pol = state.political?.[side];
+    if (!pol || pol.points < 10) return { ok: false, error: '宪兵治安镇压需要 10 政治点。' };
+    pol.points -= 10;
+    if (state.resistance) {
+      for (const cid of Object.keys(state.resistance)) {
+        if (state.owners[cid] === side) state.resistance[cid] = Math.max(0, (state.resistance[cid] || 0) - 45);
+      }
+    }
+    state.log.push({ date: state.date, text: '👮 【宪兵治安镇压】占领区抵抗度大幅下降，后方铁路补给恢复畅通！' });
+    return { ok: true };
+  }
+
+  function civilNavalThreeLineBattle(data, state) {
+    const side = state.player;
+    const enemy = side === 'ccp' ? 'roc' : 'ccp';
+    const cmd = state.command?.[side];
+    if (!cmd || cmd.points < 20) return { ok: false, error: '发动三排海战阵型决战需要 20 指挥点。' };
+    cmd.points -= 20;
+    const hoi = ensureCivilHoi(state);
+    const atkTF = hoi[side].taskForce;
+    const defTF = hoi[enemy].taskForce;
+    const atkScr = Math.min(100, Math.round((atkTF.dd / Math.max(1, (atkTF.bb + atkTF.ca + atkTF.cv) * 2.5)) * 100));
+    const defScr = Math.min(100, Math.round((defTF.dd / Math.max(1, (defTF.bb + defTF.ca + defTF.cv) * 2.5)) * 100));
+    const atkPow = (atkTF.cv * 24 + atkTF.bb * 16 + atkTF.ca * 8 + atkTF.dd * 3 + 12) * (atkScr < 70 ? 0.78 : 1.05);
+    const defPow = (defTF.cv * 24 + defTF.bb * 16 + defTF.ca * 8 + defTF.dd * 3 + 12) * (defScr < 70 ? 0.78 : 1.0);
+    const ratio = atkPow / Math.max(10, defPow);
+    const defLostDD = Math.min(defTF.dd, Math.max(1, Math.round(2 * ratio)));
+    const defLostCA = Math.min(defTF.ca, ratio > 1.0 ? 1 : 0);
+    const atkLostDD = Math.min(atkTF.dd, Math.max(0, Math.round(1.5 / Math.max(0.5, ratio))));
+    defTF.dd -= defLostDD; defTF.ca -= defLostCA; atkTF.dd -= atkLostDD;
+    hoi.lastNavalBattle = {
+      date: state.date, winner: ratio >= 1 ? side : enemy,
+      shoreBombard: atkTF.bb >= 1 ? 20 : atkTF.ca >= 2 ? 12 : 6,
+      atk: { side, name: atkTF.name, screenPct: atkScr, ...atkTF, lost: { dd: atkLostDD, ca: 0, bb: 0, cv: 0 } },
+      def: { side: enemy, name: defTF.name, screenPct: defScr, ...defTF, lost: { dd: defLostDD, ca: defLostCA, bb: 0, cv: 0 } },
+    };
+    state.log.push({ date: state.date, text: `🚢 【HOI4 三排海战决战】${atkTF.name} 激战 ${defTF.name}，击沉敌驱逐 ${defLostDD}、巡洋 ${defLostCA}，提供沿岸炮火支援 -${hoi.lastNavalBattle.shoreBombard}%！` });
+    return { ok: true, battle: hoi.lastNavalBattle };
+  }
+
   const api = {
     createGame, step, order, setSide, setGroup, setScope, setPolicy, setDelegated, releaseToAI, setLeader, setEquipment,
     setHistoryMode, setHistoricalEvent, setBattlePosture, setNightMode,
@@ -5368,6 +5495,7 @@
     launchTimedDecision, resolveEventChoice,
     scorchedEarth, sabotageRail, buildSpyNetwork, activateCipherBreak,
     setAirRegion, setDoctrine, setMotorization, airborneInfiltrate, callSovietSupport,
+    ensureCivilHoi, upgradeCivilMIO, designCivilEquipment, buildCivilRadar, relocateCivilIndustry, suppressCivilResistance, civilNavalThreeLineBattle,
     createPlan, updatePlan, previewPlan, executePlan, pausePlan, delegatePlan, removePlan,
     buildFort, buildBuilding, recruitArmy, setSupport, supplyReading, prepare, decide,
     createDesign, updateDesign, assignDesign, researchTech, setAirMission, setNavalMission,

@@ -1402,6 +1402,51 @@
     }
   }
 
+  // ── 高精重工坦克/战机精细子组件库（对齐国共内战最高建模精细度）──
+  function addTankSuperDetails(b, bounce, bodyMat, { trackX = 0.46, hullLen = 1.54, turretY = 0.68, turretZ = 0.06, smoke = true } = {}) {
+    const halfL = hullLen * 0.48;
+    // 前主动轮 + 后诱导轮 + 3 对上方托带轮
+    for (const sx of [-trackX, trackX]) {
+      b.cyl(sx - 0.12, 0.24 + bounce,  halfL, sx + 0.12, 0.24 + bounce,  halfL, 0.13, 0.13, MAT.gunmetal, 10);
+      b.cyl(sx - 0.12, 0.24 + bounce, -halfL, sx + 0.12, 0.24 + bounce, -halfL, 0.125, 0.125, MAT.gunmetal, 10);
+      for (const rz of [-halfL * 0.55, 0, halfL * 0.55]) {
+        b.cyl(sx - 0.11, 0.30 + bounce, rz, sx + 0.11, 0.30 + bounce, rz, 0.048, 0.048, MAT.armorDark, 8);
+      }
+    }
+    // 车体前装甲：驾驶员观察窗 + 航向机枪球座 + 双牵引钩 + 首下备用履带
+    b.box(-0.18, 0.44 + bounce, halfL * 0.96, 0.16, 0.055, 0.04, MAT.armorDark);
+    b.ellipsoid(0.20, 0.42 + bounce, halfL * 0.96, 0.06, 0.06, 0.05, MAT.gunmetal);
+    b.cyl(0.20, 0.42 + bounce, halfL * 0.98, 0.20, 0.42 + bounce, halfL * 0.98 + 0.22, 0.014, 0.011, MAT.bluedSteel, 6);
+    for (const hx of [-0.28, 0.28]) b.box(hx, 0.32 + bounce, halfL * 1.04, 0.04, 0.05, 0.06, MAT.gunmetal);
+    b.box(0, 0.28 + bounce, halfL * 1.02, 0.44, 0.08, 0.04, MAT.rubber); // 首下备用履带板
+    // 炮塔尾储物箱 + 两侧 3 联烟雾弹发射器
+    b.box(0, turretY + 0.02 + bounce, turretZ - 0.42, 0.38, 0.16, 0.16, MAT.armorDark);
+    if (smoke) {
+      for (const sx of [-0.34, 0.34]) {
+        b.cyl(sx, turretY + 0.02 + bounce, turretZ + 0.18, sx * 1.15, turretY + 0.10 + bounce, turretZ + 0.30, 0.024, 0.022, MAT.gunmetal, 6);
+        b.cyl(sx, turretY + 0.00 + bounce, turretZ + 0.10, sx * 1.15, turretY + 0.08 + bounce, turretZ + 0.22, 0.024, 0.022, MAT.gunmetal, 6);
+      }
+    }
+  }
+
+  function addPlaneSuperDetails(b, yBase, wingSpan, wingZ, bodyMat, { pilotZ = 0.08, underBombs = true } = {}) {
+    // 透明座舱内飞行员头盔与座椅靠背 + 防眩仪表台
+    b.ellipsoid(0, yBase + 0.15, pilotZ, 0.052, 0.058, 0.052, MAT.leather);
+    b.box(0, yBase + 0.11, pilotZ - 0.07, 0.08, 0.11, 0.03, MAT.armorDark);
+    b.box(0, yBase + 0.12, pilotZ + 0.14, 0.10, 0.04, 0.06, MAT.rubber);
+    // 左右主翼后缘副翼/襟翼线 + 翼下挂弹/油箱挂架 + 空速管
+    const wHalf = wingSpan * 0.46;
+    b.box(-wHalf * 0.65, yBase - 0.01, wingZ - 0.20, wHalf * 0.52, 0.022, 0.07, MAT.armorDark);
+    b.box( wHalf * 0.65, yBase - 0.01, wingZ - 0.20, wHalf * 0.52, 0.022, 0.07, MAT.armorDark);
+    b.cyl(wHalf * 0.85, yBase - 0.02, wingZ + 0.20, wHalf * 0.85, yBase - 0.02, wingZ + 0.44, 0.007, 0.004, MAT.brightStl, 6); // 空速管
+    if (underBombs) {
+      for (const sx of [-wHalf * 0.42, wHalf * 0.42]) {
+        b.box(sx, yBase - 0.05, wingZ, 0.025, 0.07, 0.16, MAT.gunmetal);
+        b.cyl(sx, yBase - 0.10, wingZ - 0.14, sx, yBase - 0.10, wingZ + 0.18, 0.038, 0.022, MAT.armorDark, 8);
+      }
+    }
+  }
+
   function buildJetFighter(b, side, action = 'idle', phase = 0, variant = '') {
     const isMig = variant === 'mig15' || (variant !== 'f86' && side === 'ccp');
     const hover = 0.88 + Math.sin(phase * 1.6) * 0.05;
@@ -1453,27 +1498,34 @@
       b.box( t * 0.12, tailY, tailZ - t * 0.06, 0.13, 0.025, 0.16 - t * 0.02, body);
       b.box(-t * 0.12, tailY, tailZ - t * 0.06, 0.13, 0.025, 0.16 - t * 0.02, body);
     }
+    addPlaneSuperDetails(b, hover, 2.0, -0.04, body, { pilotZ: 0.22, underBombs: false });
   }
 
   function buildB29(b, action = 'idle', phase = 0) {
     const hover = 0.90 + Math.sin(phase * 1.1) * 0.03;
-    // B-29 超级空中堡垒修长圆柱机身 + 透明温室机头
-    b.cyl(0, hover, 1.05, 0, hover, -1.08, 0.145, 0.11, MAT.brightStl, 14);
-    b.cyl(0, hover, 1.24, 0, hover, 1.02, 0.075, 0.145, MAT.glass, 12);
-    // 超长高展弦比主翼 + 4 台 R-3350 发动机短舱与旋转螺旋桨
+    // B-29 超级空中堡垒修长圆柱机身 + 透明温室机头 + 金属框条 + 机腹弹舱门
+    b.cyl(0, hover, 1.05, 0, hover, -1.08, 0.145, 0.11, MAT.brightStl, 16);
+    b.cyl(0, hover, 1.24, 0, hover, 1.02, 0.075, 0.145, MAT.glass, 14);
+    b.box(0, hover + 0.06, 1.12, 0.16, 0.016, 0.22, MAT.armorDark); // 机头温室骨架
+    b.box(0, hover - 0.13, 0.10, 0.14, 0.02, 0.62, MAT.armorDark); // 弹舱门线
+    // 超长高展弦比主翼 + 4 台 R-3350 发动机短舱与旋转四叶螺旋桨 + 翼徽
     b.box(0, hover + 0.02, 0.10, 2.70, 0.045, 0.34, MAT.brightStl);
     b.box(0, hover + 0.02, 0.04, 2.40, 0.042, 0.24, MAT.navalLight);
     for (const ex of [-0.88, -0.44, 0.44, 0.88]) {
-      b.cyl(ex, hover - 0.01, 0.32, ex, hover - 0.01, -0.08, 0.065, 0.055, MAT.navalGrey, 10);
+      b.cyl(ex, hover - 0.01, 0.32, ex, hover - 0.01, -0.08, 0.065, 0.055, MAT.navalGrey, 12);
+      b.cyl(ex, hover - 0.01, 0.33, ex, hover - 0.01, 0.30, 0.058, 0.058, MAT.rubber, 10); // 发动机进气口
       const ang = action !== 'idle' ? phase * 6 : 0.4;
-      const dx = Math.cos(ang) * 0.15, dy = Math.sin(ang) * 0.15;
-      b.cyl(ex - dx, hover - dy, 0.35, ex + dx, hover + dy, 0.35, 0.010, 0.010, MAT.rubber, 6);
-      b.cyl(ex + dy, hover - dx, 0.35, ex - dy, hover + dx, 0.35, 0.010, 0.010, MAT.rubber, 6);
+      const dx = Math.cos(ang) * 0.16, dy = Math.sin(ang) * 0.16;
+      b.cyl(ex - dx, hover - dy, 0.35, ex + dx, hover + dy, 0.35, 0.011, 0.011, MAT.rubber, 6);
+      b.cyl(ex + dy, hover - dx, 0.35, ex - dy, hover + dx, 0.35, 0.011, 0.011, MAT.rubber, 6);
+      b.ellipsoid(ex, hover - 0.01, 0.36, 0.022, 0.022, 0.022, MAT.brightStl); // 桨毂
     }
-    // 机背双联遥控炮塔 + 高耸垂尾与水平尾翼
+    // 机背双联遥控炮塔（前后 2 座）+ 机尾炮手舱 + 高耸垂尾与水平尾翼
     b.cyl(0, hover + 0.15, 0.35, 0, hover + 0.21, 0.35, 0.065, 0.05, MAT.gunmetal, 8);
+    b.cyl(0, hover + 0.14, -0.35, 0, hover + 0.20, -0.35, 0.060, 0.045, MAT.gunmetal, 8);
     b.box(0, hover + 0.28, -0.94, 0.04, 0.46, 0.34, MAT.brightStl);
     b.box(0, hover + 0.04, -0.96, 0.96, 0.032, 0.20, MAT.brightStl);
+    addPlaneSuperDetails(b, hover, 2.65, 0.10, MAT.brightStl, { pilotZ: 0.96, underBombs: false });
   }
 
   function buildHistoricalTank(b, variant = 't34', action = 'idle', phase = 0) {
@@ -1512,6 +1564,7 @@
       b.cyl(0, 0.61 + bounce, 1.56, 0, 0.61 + bounce, 1.98, 0.14, 0.03, MAT.flameOuter, 10);
       b.cyl(0, 0.61 + bounce, 1.56, 0, 0.61 + bounce, 1.82, 0.08, 0.02, MAT.flameCore, 8);
     }
+    addTankSuperDetails(b, bounce, armor, { trackX: 0.46, hullLen: 1.56, turretY: 0.60, turretZ: 0.08 });
   }
 
   function buildKatyusha(b, action = 'idle', phase = 0) {
@@ -1632,6 +1685,7 @@
         b.cyl(sx, 0.80, 0.58, sx, 0.80, 1.44, 0.032, 0.012, MAT.flameOuter, 8);
       }
     }
+    addPlaneSuperDetails(b, 0.84, isZero ? 2.48 : 2.30, 0.16, bodyMat, { pilotZ: 0.05, underBombs: !isZero });
   }
 
   function buildWW2Tank(b, kind = 'sherman', action = 'idle', phase = 0) {
@@ -1684,6 +1738,7 @@
       b.cyl(0, my + bounce, mz, 0, my + bounce, mz + 0.46, 0.14, 0.03, MAT.flameOuter, 10);
       b.cyl(0, my + bounce, mz, 0, my + bounce, mz + 0.30, 0.08, 0.02, MAT.flameCore, 8);
     }
+    addTankSuperDetails(b, bounce, bodyMat, { trackX: 0.48, hullLen: isCharB1 ? 1.66 : 1.52, turretY: isTiger ? 0.68 : 0.72, turretZ: 0.08 });
   }
 
   function buildExtraWW2Vehicles(b, kind, action = 'idle', phase = 0) {
@@ -1955,9 +2010,9 @@
     ]);
   }
 
-  function createRenderer({ resolution = 224 } = {}) {
+  function createRenderer({ resolution = 256 } = {}) {
     if (typeof document === 'undefined') return null;
-    const SPRITE = Math.max(64, Math.min(640, Math.round(Number(resolution) || 224)));
+    const SPRITE = Math.max(64, Math.min(640, Math.round(Number(resolution) || 256)));
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = SPRITE;
     const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false });

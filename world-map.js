@@ -1698,17 +1698,171 @@
     return hitBoxes;
   }
 
-  function drawBaseWorld(ctx, w, h, proj, mode, zoomScale) {
-    // 深海渐变 + 海图经纬网
-    const ocean = ctx.createLinearGradient(0, 0, 0, h);
-    ocean.addColorStop(0, '#10212e');
-    ocean.addColorStop(0.5, '#193548');
-    ocean.addColorStop(1, '#0e1d29');
+  // ── 确定性海岸线自然分形平滑（消除生硬几何直线折角，对齐国共内战高精度海岸线质感）──
+  const smoothCoastCache = new WeakMap();
+  function smoothCoast(pts, iterations = 2) {
+    if (!pts || pts.length < 3) return pts;
+    const cached = smoothCoastCache.get(pts);
+    if (cached) return cached;
+    let cur = pts;
+    for (let it = 0; it < iterations; it++) {
+      const next = [];
+      for (let i = 0; i < cur.length; i++) {
+        const [x0, y0] = cur[i];
+        const [x1, y1] = cur[(i + 1) % cur.length];
+        const len = Math.hypot(x1 - x0, y1 - y0);
+        const h1 = Math.sin(x0 * 12.9898 + y0 * 78.233 + it * 3.1) * 43758.5453;
+        const n1 = (h1 - Math.floor(h1) - 0.5) * Math.min(0.45, len * 0.08);
+        const nx = -(y1 - y0) / (len || 1), ny = (x1 - x0) / (len || 1);
+        next.push([x0 * 0.75 + x1 * 0.25 + nx * n1, y0 * 0.75 + y1 * 0.25 + ny * n1]);
+        next.push([x0 * 0.25 + x1 * 0.75 - nx * n1 * 0.6, y0 * 0.25 + y1 * 0.75 - ny * n1 * 0.6]);
+      }
+      cur = next;
+    }
+    smoothCoastCache.set(pts, cur);
+    return cur;
+  }
+
+  // ── 与国共内战同级的离线程序化 DEM 高程与太阳斜照山体阴影（Hillshade）缓存 ──
+  const majorMountains = [
+    [10, 46.5, 6, 2.2, 1.0], [0, 42.7, 3.5, 1.2, 0.75], [24, 46, 5, 2.5, 0.7], // 阿尔卑斯/比利牛斯/喀尔巴阡
+    [59, 60, 4, 10, 0.85], [43, 42.5, 6, 2.2, 1.0], [34, 39, 7, 2.5, 0.75], // 乌拉尔/高加索/安纳托利亚
+    [88, 33, 14, 7, 1.35], [104, 31, 6, 5, 0.95], [112, 37, 4, 5, 0.72], // 青藏/横断/太行
+    [128.3, 37.6, 1.1, 2.4, 0.95], [127.4, 40.6, 1.6, 1.2, 1.05], [128.2, 41.8, 2.0, 1.3, 0.92], // 朝鲜太白山脉/盖马高原/长白山
+    [138.2, 36.2, 1.6, 2.2, 0.9], [-110, 44, 8, 12, 1.0], [-70, -18, 4, 18, 1.15], // 日本阿尔卑斯/落基/安第斯
+  ];
+  function sampleWorldElev(lon, lat) {
+    // 多频确定性地形起伏 + 真实山脉脊线
+    const f1 = Math.sin(lon * 0.24) * Math.cos(lat * 0.28) * 0.26;
+    const f2 = Math.sin(lon * 0.72 + lat * 0.48) * 0.16;
+    const f3 = Math.cos(lon * 1.65 - lat * 1.42) * 0.08;
+    let e = 0.28 + f1 + f2 + f3;
+    for (let i = 0; i < majorMountains.length; i++) {
+      const [mlo, mla, rx, ry, amp] = majorMountains[i];
+      const dx = (lon - mlo) / rx, dy = (lat - mla) / ry;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 3.6) e += Math.exp(-d2 * 1.4) * amp;
+    }
+    return Math.max(0, Math.min(1.6, e));
+  }
+
+  let reliefCacheKey = '';
+  let reliefCacheCanvas = null;
+  function getHillshadeCanvas(w, h, lon0, lat1, spanLon, spanLat, contourMode = false) {
+    const rw = Math.min(820, Math.max(360, Math.round(w * 0.65)));
+    const rh = Math.min(440, Math.max(190, Math.round(h * 0.65)));
+    const key = [rw, rh, lon0.toFixed(2), lat1.toFixed(2), spanLon.toFixed(2), spanLat.toFixed(2), contourMode ? 1 : 0].join('|');
+    if (key === reliefCacheKey && reliefCacheCanvas) return reliefCacheCanvas;
+    reliefCacheKey = key;
+    if (typeof document === 'undefined') return null;
+    const cvs = reliefCacheCanvas || document.createElement('canvas');
+    cvs.width = rw; cvs.height = rh;
+    const rctx = cvs.getContext('2d');
+    const img = rctx.createImageData(rw, rh);
+    const data = img.data;
+    const dLon = spanLon / rw, dLat = spanLat / rh;
+    for (let py = 0; py < rh; py++) {
+      const lat = lat1 - (py + 0.5) * dLat;
+      for (let px = 0; px < rw; px++) {
+        const lon = lon0 + (px + 0.5) * dLon;
+        const e = sampleWorldElev(lon, lat);
+        const ex = sampleWorldElev(lon + dLon * 1.2, lat) - e;
+        const ey = sampleWorldElev(lon, lat - dLat * 1.2) - e;
+        const shade = Math.max(0.60, Math.min(1.26, 0.96 - (ex * 2.8 + ey * 2.4)));
+        let r, g, b;
+        if (e < 0.35) { r = 198; g = 195; b = 152; }
+        else if (e < 0.65) { r = 212; g = 198; b = 154; }
+        else if (e < 0.98) { r = 186; g = 160; b = 122; }
+        else { r = 204; g = 188; b = 162; }
+        if (lon > -16 && lon < 60 && lat > 14 && lat < 33) {
+          r = r * 0.55 + 224 * 0.45; g = g * 0.55 + 202 * 0.45; b = b * 0.55 + 148 * 0.45;
+        }
+        // 等高线模式（对齐国共内战 F2/等高线图层精细度）
+        const cBand = Math.abs((e * 10) % 1 - 0.5);
+        const onContour = contourMode && cBand < 0.045;
+        const idx = (py * rw + px) * 4;
+        data[idx] = onContour ? 105 : Math.min(255, Math.round(r * shade));
+        data[idx + 1] = onContour ? 82 : Math.min(255, Math.round(g * shade));
+        data[idx + 2] = onContour ? 58 : Math.min(255, Math.round(b * shade));
+        data[idx + 3] = 246;
+      }
+    }
+    rctx.putImageData(img, 0, 0);
+    reliefCacheCanvas = cvs;
+    return cvs;
+  }
+
+  // ── 与国共内战同款的 Voronoi 平滑势力版图着色（在陆地裁剪区内绘制）──
+  function drawVoronoiTerritory(ctx, w, h, cities, owners, colorOf, proj, step = 10) {
+    const pts = [];
+    for (const c of cities) {
+      const col = colorOf(owners[c.id]);
+      if (!col) continue;
+      const [x, y] = proj(c.lon, c.lat);
+      if (x < -180 || x > w + 180 || y < -180 || y > h + 180) continue;
+      pts.push({ x, y, col, owner: owners[c.id] });
+    }
+    if (!pts.length) return;
+    ctx.save();
+    ctx.globalAlpha = 0.34;
+    for (let y = 0; y < h; y += step) {
+      for (let x = 0; x < w; x += step) {
+        let best = null, bestD = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const dx = x - pts[i].x, dy = y - pts[i].y;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) { bestD = d; best = pts[i]; }
+        }
+        if (best && bestD < 220 * 220) {
+          ctx.fillStyle = best.col;
+          ctx.fillRect(x, y, step, step);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // ── 统一底层 3D 步坦炮列阵渲染（严格同步国共内战 5000人/兵·5坦克/标 换算标准！）──
+  function drawUnified3DFormation(ctx, renderer3D, cx, baseY, opts) {
+    if (!renderer3D) return;
+    const H3D = globalThis.CivilWarHuman3D;
+    const rawSoldiers = H3D?.iconCount ? H3D.iconCount(opts.strength || 15000) : Math.max(1, Math.round((opts.strength || 15000) / 5000));
+    const tankIcons = opts.tanks >= 25 ? Math.min(2, H3D?.tankIcons ? Math.max(1, H3D.tankIcons(opts.tanks)) : 1) : 0;
+    const soldierIcons = Math.min(opts.maxSoldiers || 3, Math.max(1, rawSoldiers));
+    const total = soldierIcons + tankIcons;
+    const size = opts.size || 28;
+    const spacing = size * 0.56;
+    const startX = cx - ((total - 1) * spacing) / 2;
+
+    for (let i = 0; i < total; i++) {
+      const isTank = i >= soldierIcons;
+      const px = startX + i * spacing;
+      const py = baseY - (isTank ? size * 0.92 : size * 0.98) + (i % 2 === 1 ? -2 : 1);
+      // 柔和地面椭圆形接触阴影（与国共内战 map.js 统一风格）
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.30)';
+      ctx.beginPath();
+      ctx.ellipse(px, baseY - 2, size * 0.28, size * 0.09, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      const kind = isTank ? (opts.tankKind || 'sherman') : (opts.soldierKind || 'human');
+      const spr = renderer3D.frame(opts.side || 'roc', Boolean(opts.moving), opts.now || 0, kind, opts.action || 'idle', opts.variant || '', opts.orbit || 0);
+      if (spr) ctx.drawImage(spr, px - size / 2, py, size, size);
+    }
+  }
+
+  function drawBaseWorld(ctx, w, h, proj, mode, zoomScale, bounds = null) {
+    // 与国共内战 map.js 同款的复古军事海图青灰渐变 + 经纬网格
+    const ocean = ctx.createLinearGradient(0, 0, w, h);
+    ocean.addColorStop(0, '#8ea99c');
+    ocean.addColorStop(0.55, '#7c9a90');
+    ocean.addColorStop(1, '#6c8b82');
     ctx.fillStyle = ocean;
     ctx.fillRect(0, 0, w, h);
 
-    ctx.strokeStyle = 'rgba(175, 210, 232, 0.10)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(52, 82, 74, 0.16)';
+    ctx.lineWidth = 0.85;
     const step = zoomScale > 2 ? 10 : 30;
     for (let lon = -180; lon <= 180; lon += step) {
       const [x] = proj(lon, 0);
@@ -1719,55 +1873,43 @@
       if (y >= 0 && y <= h) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
     }
 
-    const drawPoly = (pts) => {
+    const traceAllContinents = () => {
       ctx.beginPath();
-      pts.forEach(([lon, lat], idx) => {
-        const [x, y] = proj(lon, lat);
-        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.closePath();
+      for (const c of continents) {
+        const pts = smoothCoast(c.points, 2);
+        pts.forEach(([lon, lat], idx) => {
+          const [x, y] = proj(lon, lat);
+          if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+      }
     };
 
-    // 浅海大陆架光晕
+    // 浅海大陆架柔光描边
     ctx.save();
-    for (const c of continents) {
-      drawPoly(c.points);
-      ctx.strokeStyle = 'rgba(92, 168, 206, 0.22)';
-      ctx.lineWidth = 5;
-      ctx.stroke();
-    }
+    traceAllContinents();
+    ctx.strokeStyle = 'rgba(202, 224, 214, 0.42)';
+    ctx.lineWidth = 6;
+    ctx.stroke();
     ctx.restore();
 
-    // 大陆高精度陆地
-    for (const c of continents) {
-      drawPoly(c.points);
-      ctx.fillStyle = mode === 'terrain' ? '#708358' : '#354137';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(220, 206, 168, 0.45)';
-      ctx.lineWidth = 1.1;
-      ctx.stroke();
-    }
-
-    // 地形山脉/沙漠/冻土/丛林晕渲
-    if (mode === 'terrain' || mode === 'hybrid' || mode === 'ww2') {
-      for (const tf of terrainFeatures) {
-        const [cx, cy] = proj(tf.lon, tf.lat);
-        const [x2] = proj(tf.lon + tf.rx, tf.lat);
-        const [, y2] = proj(tf.lon, tf.lat - tf.ry);
-        const rx = Math.max(8, Math.abs(x2 - cx)), ry = Math.max(6, Math.abs(y2 - cy));
-        const g = ctx.createRadialGradient(cx, cy, rx * 0.1, cx, cy, Math.max(rx, ry));
-        g.addColorStop(0, tf.color);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        ctx.fill();
+    // 陆地复古羊皮纸底色 + 裁剪 DEM 山体阴影浮雕（与国共内战地图同级精细度！）
+    ctx.save();
+    traceAllContinents();
+    ctx.fillStyle = '#d3c9a7';
+    ctx.fill();
+    ctx.clip();
+    if (bounds) {
+      const relief = getHillshadeCanvas(w, h, bounds.lon0, bounds.lat1, bounds.spanLon, bounds.spanLat, mode === 'contour');
+      if (relief) {
+        ctx.globalAlpha = mode === 'contour' ? 0.78 : 0.95;
+        ctx.drawImage(relief, 0, 0, w, h);
+        ctx.globalAlpha = 1;
       }
     }
-
-    // 全球主要大河
-    ctx.strokeStyle = 'rgba(116, 184, 224, 0.62)';
-    ctx.lineWidth = zoomScale > 1.8 ? 1.8 : 1.1;
+    // 全球主要大河（裁剪在陆地内）
+    ctx.strokeStyle = 'rgba(72, 128, 138, 0.72)';
+    ctx.lineWidth = zoomScale > 1.8 ? 1.7 : 1.1;
     for (const r of rivers) {
       ctx.beginPath();
       r.pts.forEach(([lon, lat], i) => {
@@ -1776,6 +1918,28 @@
       });
       ctx.stroke();
     }
+    ctx.restore();
+
+    // 清晰复古海岸线描边 + 地理山脉/海峡标注（对齐国共内战测绘精细度）
+    ctx.save();
+    traceAllContinents();
+    ctx.strokeStyle = 'rgba(66, 98, 86, 0.78)';
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.font = 'italic 11px "Microsoft YaHei UI", sans-serif';
+    ctx.textAlign = 'center';
+    const geoLabels = [
+      ['大  西  洋', -26, 42, 'sea'], ['地  中  海', 16, 35.5, 'sea'], ['英吉利海峡', -1.8, 50.1, 'sea'],
+      ['阿尔卑斯山脉', 10.2, 46.6, 'mtn'], ['乌拉尔山脉', 59.5, 58, 'mtn'], ['高加索山脉', 43.5, 42.8, 'mtn'],
+      ['太  平  洋', 158, 26, 'sea'], ['东  海', 124.5, 29.5, 'sea'], ['南  海', 114, 14, 'sea'],
+    ];
+    for (const [txt, lo, la, kind] of geoLabels) {
+      const [gx, gy] = proj(lo, la);
+      if (gx < 20 || gx > w - 20 || gy < 20 || gy > h - 20) continue;
+      ctx.fillStyle = kind === 'sea' ? 'rgba(54, 86, 80, 0.68)' : 'rgba(92, 72, 48, 0.72)';
+      ctx.fillText(txt, gx, gy);
+    }
+    ctx.restore();
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -1797,26 +1961,25 @@
     const lat1 = cLat + spanLat / 2;
     const proj = (lon, lat) => [((lon - lon0) / spanLon) * w, ((lat1 - lat) / spanLat) * h];
 
-    drawBaseWorld(ctx, w, h, proj, opts.layer === 'terrain' ? 'terrain' : 'ww2', 360 / spanLon);
+    drawBaseWorld(ctx, w, h, proj, opts.layer || 'ww2', 360 / spanLon, { lon0, lat1, spanLon, spanLat });
 
     const cityMap = new Map(WW2.cities.map((c) => [c.id, c]));
 
-    // 1. 势力范围柔和控制圈（HOI4 战区着色）
-    if (opts.layer !== 'terrain') {
-      for (const c of WW2.cities) {
-        const owner = state.owners[c.id];
-        const fac = WW2.factions[owner];
-        if (!fac) continue;
-        const [x, y] = proj(c.lon, c.lat);
-        if (x < -80 || x > w + 80 || y < -80 || y > h + 80) continue;
-        const rad = Math.max(24, Math.min(72, (16 / spanLon) * w));
-        const g = ctx.createRadialGradient(x, y, 2, x, y, rad);
-        g.addColorStop(0, fac.color + '88');
-        g.addColorStop(0.65, fac.color + '44');
-        g.addColorStop(1, fac.color + '00');
-        ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+    // 1. 与国共内战同款的 Voronoi 陆地平滑势力疆域（裁剪在陆地海岸线内）
+    if (opts.layer !== 'terrain' && opts.layer !== 'contour') {
+      ctx.save();
+      ctx.beginPath();
+      for (const c of continents) {
+        const pts = smoothCoast(c.points, 2);
+        pts.forEach(([lon, lat], idx) => {
+          const [x, y] = proj(lon, lat);
+          if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
       }
+      ctx.clip();
+      drawVoronoiTerritory(ctx, w, h, WW2.cities, state.owners, (o) => WW2.factions[o]?.color, proj, 11);
+      ctx.restore();
     }
 
     // 2. 双轨枕木铁路网 + 公路 + 跨海战略航线（与国内战场完全同款视觉）
@@ -2032,19 +2195,17 @@
           ctx.restore();
         }
 
-        // 先画正上方独立站位 3D 兵模与接触阴影（绝不遮挡兵牌文字！）
+        // 先画正上方独立站位【统一底层 3D 步坦炮多兵模列阵】（与国共内战同源比例换算！）
         if (has3D) {
-          const sKind = a.tanks >= 1000
-            ? ({ germany: 'tiger', ussr: 't34', usa: 'sherman', uk: 'churchill', france: 'charb1', japan: 'chiha', china: 'sherman' }[a.nation] || 'sherman')
-            : ({ usa: 'soldier_usa', ussr: 'soldier_ussr', uk: 'soldier_uk', france: 'soldier_france', japan: 'soldier_japan', germany: 'soldier_germany', china: 'soldier_china_ww2' }[a.nation] || 'soldier_usa');
+          const tankKind = ({ germany: 'tiger', ussr: 't34', usa: 'sherman', uk: 'churchill', france: 'charb1', japan: 'chiha', china: 'sherman' }[a.nation] || 'sherman');
+          const soldierKind = ({ usa: 'soldier_usa', ussr: 'soldier_ussr', uk: 'soldier_uk', france: 'soldier_france', japan: 'soldier_japan', germany: 'soldier_germany', china: 'soldier_china_ww2' }[a.nation] || 'soldier_usa');
           const sSide = a.nation === 'ussr' ? 'ccp' : 'roc';
           const sAct = a.order === 'attack' || a.order === 'siege' ? 'fire' : a.order === 'move' ? 'march' : state.nightMode ? 'sleep' : 'idle';
-          const spr = opts.renderer3D.frame(sSide, sAct !== 'idle', opts.nowMs || 0, sKind, sAct, '', 0);
-          ctx.save();
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
-          ctx.beginPath(); ctx.ellipse(bx + 23, by - 1, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
-          ctx.drawImage(spr, bx + 7, by - 31, 32, 32);
+          drawUnified3DFormation(ctx, opts.renderer3D, bx + 23, by + 1, {
+            strength: a.strength, tanks: a.tanks,
+            maxSoldiers: zoom >= 1.4 ? 3 : 2, size: zoom >= 1.4 ? 30 : 25,
+            soldierKind, tankKind, side: sSide, moving: sAct !== 'idle', action: sAct, now: opts.nowMs || 0,
+          });
         }
 
         const selected = opts.selectedArmy === a.id;
@@ -2660,47 +2821,103 @@
     return st;
   }
 
+  // 高精朝鲜半岛 + 辽东 + 济州岛 + 对马岛自然海岸线（与国共内战同级测绘精度）
+  const koreaLandPolys = [
+    // 朝鲜半岛主体 + 辽东半岛连接陆块（54 节点高精真实地理轮廓）
+    [
+      [122.0, 41.8], [131.5, 41.8], [130.7, 42.3], [130.65, 42.0], [130.35, 41.75],
+      [129.85, 41.78], [129.68, 41.15], [129.35, 40.72], [128.95, 40.38], [128.22, 40.02],
+      [127.65, 39.84], [127.48, 39.42], [127.46, 39.15], [127.95, 38.92], [128.42, 38.48],
+      [128.88, 37.82], [129.38, 37.12], [129.44, 36.52], [129.55, 36.02], [129.42, 35.52],
+      [129.12, 35.12], [128.62, 35.02], [128.18, 34.86], [127.68, 34.72], [127.12, 34.62],
+      [126.55, 34.42], [126.18, 34.78], [126.35, 35.28], [126.52, 35.72], [126.62, 36.18],
+      [126.18, 36.68], [126.52, 36.98], [126.64, 37.45], [126.38, 37.76], [125.72, 37.88],
+      [125.05, 37.98], [124.85, 38.28], [125.25, 38.66], [125.44, 39.04], [125.22, 39.52],
+      [124.65, 39.84], [124.32, 39.96], [123.62, 39.82], [122.95, 39.55], [122.0, 39.25],
+    ],
+    // 济州岛
+    [[126.16, 33.30], [126.52, 33.54], [126.94, 33.46], [126.82, 33.24], [126.35, 33.20]],
+    // 对马岛
+    [[129.20, 34.12], [129.42, 34.62], [129.48, 34.58], [129.30, 34.08]],
+  ];
+  const koreaRivers = [
+    [[128.05, 41.95], [126.9, 41.45], [125.6, 40.75], [124.4, 40.05]], // 鸭绿江
+    [[126.8, 39.8], [126.2, 39.35], [125.76, 39.03], [125.3, 38.7]], // 大同江
+    [[128.4, 37.65], [127.7, 37.8], [127.0, 37.56], [126.58, 37.68]], // 汉江
+    [[128.9, 36.9], [128.5, 36.2], [128.6, 35.87], [128.88, 35.12]], // 洛东江
+  ];
+
   function renderKoreanWarCanvas(canvas, Korea, st, opts = {}) {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
     const now = opts.now || Date.now();
-    const minLon = 123.5, maxLon = 130.6, minLat = 34.4, maxLat = 41.2;
+    const minLonBase = 122.8, maxLonBase = 131.2, minLatBase = 33.8, maxLatBase = 41.5;
+    const kwZoom = opts.zoom || 1;
+    const kwCLon = (minLonBase + maxLonBase) / 2 + (opts.panLon || 0);
+    const kwCLat = (minLatBase + maxLatBase) / 2 + (opts.panLat || 0);
+    const spanLon = (maxLonBase - minLonBase) / kwZoom;
+    const spanLat = (maxLatBase - minLatBase) / kwZoom;
+    const minLon = kwCLon - spanLon / 2, maxLat = kwCLat + spanLat / 2;
     const proj = (lon, lat) => [
-      ((lon - minLon) / (maxLon - minLon)) * (W * 0.78) + W * 0.11,
-      ((maxLat - lat) / (maxLat - minLat)) * (H * 0.84) + H * 0.08,
+      ((lon - minLon) / spanLon) * W,
+      ((maxLat - lat) / spanLat) * H,
     ];
 
-    // 1. 黄海 / 日本海深海背景
+    // 1. 与国共内战 map.js 同款的复古军事海图青灰海面 + 经纬网
     const seaGrad = ctx.createLinearGradient(0, 0, W, H);
-    seaGrad.addColorStop(0, '#10202e');
-    seaGrad.addColorStop(0.5, '#152b3d');
-    seaGrad.addColorStop(1, '#0d1a26');
+    seaGrad.addColorStop(0, '#8ea99c');
+    seaGrad.addColorStop(0.55, '#7c9a90');
+    seaGrad.addColorStop(1, '#6c8b82');
     ctx.fillStyle = seaGrad;
     ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = 'rgba(52, 82, 74, 0.16)';
+    ctx.lineWidth = 0.8;
+    for (let lo = 123; lo <= 131; lo++) { const [x] = proj(lo, 38); ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let la = 34; la <= 41; la++) { const [, y] = proj(127, la); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-    // 2. 朝鲜半岛 + 辽东轮廓
-    const peninsula = [
-      [123.5, 41.2], [125.6, 41.2], [128.5, 41.2], [130.2, 40.9], [129.6, 40.1],
-      [127.8, 39.8], [127.6, 39.0], [128.6, 38.2], [129.4, 36.8], [129.3, 35.1],
-      [128.2, 34.9], [126.4, 34.8], [126.3, 36.2], [126.6, 37.3], [126.2, 37.9],
-      [125.1, 38.6], [125.3, 39.5], [124.2, 40.0], [123.5, 40.2],
-    ];
+    const traceKorea = () => {
+      ctx.beginPath();
+      for (const poly of koreaLandPolys) {
+        const pts = smoothCoast(poly, 2);
+        pts.forEach(([lo, la], i) => {
+          const [px, py] = proj(lo, la);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.closePath();
+      }
+    };
+
+    // 2. 浅海大陆架柔光 + 复古羊皮纸地形山体阴影浮雕 + Voronoi 平滑势力疆域
     ctx.save();
-    ctx.beginPath();
-    peninsula.forEach(([lo, la], i) => {
-      const [px, py] = proj(lo, la);
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    });
-    ctx.closePath();
-    const landGrad = ctx.createLinearGradient(0, 0, 0, H);
-    landGrad.addColorStop(0, '#363f33');
-    landGrad.addColorStop(0.5, '#2b3429');
-    landGrad.addColorStop(1, '#313a2d');
-    ctx.fillStyle = landGrad;
+    traceKorea();
+    ctx.strokeStyle = 'rgba(202, 224, 214, 0.48)'; ctx.lineWidth = 7; ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    traceKorea();
+    ctx.fillStyle = '#d3c9a7';
     ctx.fill();
-    ctx.strokeStyle = '#8b9e84';
-    ctx.lineWidth = 1.6;
-    ctx.stroke();
+    ctx.clip();
+    const relief = getHillshadeCanvas(W, H, minLon, maxLat, spanLon, spanLat);
+    if (relief) { ctx.globalAlpha = 0.94; ctx.drawImage(relief, 0, 0, W, H); ctx.globalAlpha = 1; }
+    drawVoronoiTerritory(ctx, W, H, Korea.cities, st.owners, (o) => o === 'dprk_coalition' ? '#c73a32' : '#2b6cb0', proj, 9);
+    // 朝鲜半岛四大河流水系（鸭绿江/大同江/汉江/洛东江）
+    ctx.strokeStyle = 'rgba(62, 118, 132, 0.78)';
+    ctx.lineWidth = 1.8;
+    for (const rv of koreaRivers) {
+      ctx.beginPath();
+      rv.forEach(([lo, la], i) => { const [px, py] = proj(lo, la); if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    traceKorea();
+    ctx.strokeStyle = 'rgba(66, 98, 86, 0.85)'; ctx.lineWidth = 1.25; ctx.stroke();
+    ctx.font = 'italic 12px "Microsoft YaHei UI", sans-serif';
+    ctx.fillStyle = 'rgba(54, 86, 80, 0.72)'; ctx.textAlign = 'center';
+    ctx.fillText('黄  海', ...proj(124.2, 36.2));
+    ctx.fillText('日  本  海（东海）', ...proj(129.9, 38.6));
     ctx.restore();
 
     // 3. 三八线与鸭绿江标识
@@ -2815,15 +3032,13 @@
           ctx.restore();
         }
         if (has3D) {
-          const modelKind = a.tanks >= 35 ? (a.side === 'dprk_coalition' ? 't34' : 'm26') : 'human';
+          const tankKind = a.side === 'dprk_coalition' ? 't34' : 'm26';
+          const soldierKind = a.factionId === 'pva' ? 'soldier_china_kw' : a.factionId === 'usa' ? 'soldier_usa' : a.factionId === 'commonwealth' ? 'soldier_uk' : a.factionId === 'kpa' ? 'soldier_ussr' : 'soldier_usa';
           const renderSide = a.side === 'dprk_coalition' ? 'ccp' : 'roc';
-          const nationVar = a.factionId === 'pva' ? 'china' : a.factionId === 'usa' ? 'usa' : a.factionId === 'commonwealth' ? 'uk' : a.factionId === 'kpa' ? 'ussr' : 'usa';
-          const spr = opts.renderer3D.frame(renderSide, a.order === 'attack', now, modelKind, a.order === 'attack' ? 'attack' : 'idle', nationVar, (now * 0.0004) % (Math.PI * 2));
-          ctx.save();
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.36)';
-          ctx.beginPath(); ctx.ellipse(x, y - 9, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
-          if (spr) ctx.drawImage(spr, x - 17, y - 41, 34, 34);
+          drawUnified3DFormation(ctx, opts.renderer3D, x, y - 7, {
+            strength: a.strength, tanks: a.tanks, maxSoldiers: 2, size: 26,
+            soldierKind, tankKind, side: renderSide, moving: a.order === 'attack', action: a.order === 'attack' ? 'attack' : 'idle', now,
+          });
         }
         const sel = opts.selectedArmy === a.id;
         ctx.fillStyle = a.side === 'dprk_coalition' ? '#9c261f' : '#1f538a';
