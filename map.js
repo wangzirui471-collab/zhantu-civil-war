@@ -480,22 +480,45 @@
     let lastDrawStamp = 0;
     let cursorGeo = null;
 
-    // ── 🛰️ 全球高清卫星影像瓦片引擎（对齐八九/谷歌卫星图，Mercator 精确重投影至等经纬坐标，零偏差、360°无限循环、离线自动无缝降级）──
+    // ── 🛰️ 多源全球高清地图瓦片引擎（卫星 / 国家地理地形 / 3D立体晕渲 / OpenTopoMap等高线，三战区通用、360°无限循环、零偏差重投影、离线无缝降级）──
+    const TILE_PROVIDERS = {
+      satellite: {
+        maxZ: 14,
+        dark: true,
+        url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x,
+      },
+      terrain: {
+        maxZ: 12,
+        dark: false,
+        url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/' + z + '/' + y + '/' + x,
+      },
+      terrain3d: {
+        maxZ: 13,
+        dark: false,
+        url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/' + z + '/' + y + '/' + x,
+      },
+      contour: {
+        maxZ: 14,
+        dark: false,
+        url: (z, x, y) => 'https://tile.opentopomap.org/' + z + '/' + x + '/' + y + '.png',
+      },
+    };
     const satTileCache = new Map();
-    const SAT_TILE_MAX = 320;
+    const SAT_TILE_MAX = 420;
     const tileLat = (ty, n) => Math.atan(Math.sinh(Math.PI * (1 - (2 * ty) / n))) * 180 / Math.PI;
     const latToTileY = (lat, n) => {
       const rad = clamp(lat, -82, 82) * Math.PI / 180;
       return Math.floor((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n);
     };
-    function getSatTile(z, tx, ty) {
+    function getOnlineTile(styleId, z, tx, ty) {
+      const prov = TILE_PROVIDERS[styleId];
+      if (!prov) return null;
       const n = 1 << z;
       const wx = ((tx % n) + n) % n;
       if (ty < 0 || ty >= n) return null;
-      const key = z + '/' + wx + '/' + ty;
+      const key = styleId + ':' + z + '/' + wx + '/' + ty;
       let entry = satTileCache.get(key);
       if (entry) {
-        // LRU 刷新
         satTileCache.delete(key);
         satTileCache.set(key, entry);
         return entry;
@@ -514,13 +537,14 @@
         scheduleDraw();
       };
       img.onerror = () => { entry.failed = true; };
-      img.src = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + ty + '/' + wx;
+      img.src = prov.url(z, wx, ty);
       return entry;
     }
 
-    function drawSatelliteTiles(ctx) {
-      // 根据当前 camera.zoom 匹配最清晰的卫星瓦片层级（z = 2 .. 13，放大至街道/山脊/港口全清！）
-      const targetZ = clamp(Math.round(Math.log2(Math.max(camera.zoom * 0.76 * 360 / 256, 1))), 2, 13);
+    function drawOnlineTiles(ctx, styleId) {
+      const prov = TILE_PROVIDERS[styleId];
+      if (!prov) return false;
+      const targetZ = clamp(Math.round(Math.log2(Math.max(camera.zoom * 0.76 * 360 / 256, 1))), 2, prov.maxZ);
       const n = 1 << targetZ;
       const [vMinLon, vMaxLon, vMinLat, vMaxLat] = viewportGeoBounds();
       const tyMin = clamp(latToTileY(vMaxLat, n), 0, n - 1);
@@ -541,18 +565,17 @@
           const dw = x1 - x0;
           const dh = y1 - y0;
           if (x1 < 0 || x0 > width || y1 < 0 || y0 > height || dw <= 0 || dh <= 0) continue;
-          const tile = getSatTile(targetZ, tx, ty);
+          const tile = getOnlineTile(styleId, targetZ, tx, ty);
           if (tile?.ready) {
             ctx.drawImage(tile.img, x0 - 0.5, y0 - 0.5, dw + 1, dh + 1);
             drawnAny = true;
           } else {
-            // 瓦片加载中自动向上查找已缓存父级瓦片无缝补帧（零白闪！）
             for (let pz = targetZ - 1; pz >= 2; pz--) {
               const shift = targetZ - pz;
               const ptx = Math.floor(tx / (1 << shift));
               const pty = ty >> shift;
               const pn = 1 << pz;
-              const pKey = pz + '/' + (((ptx % pn) + pn) % pn) + '/' + pty;
+              const pKey = styleId + ':' + pz + '/' + (((ptx % pn) + pn) % pn) + '/' + pty;
               const pEntry = satTileCache.get(pKey);
               if (pEntry?.ready) {
                 const pLonW = (ptx / pn) * 360 - 180;
@@ -1235,28 +1258,37 @@
       if (key === backgroundKey) return;
       backgroundKey = key;
       const ctx = backdrop;
-      const useSatellite = options.mode === 'satellite' || (options.satellite && options.mode !== 'contour' && options.mode !== 'terrain');
+      const activeTileStyle = options.mode === 'satellite' ? 'satellite'
+        : options.mode === 'terrain' ? 'terrain'
+        : options.mode === 'terrain3d' ? 'terrain3d'
+        : options.mode === 'contour' ? 'contour'
+        : options.satellite ? 'satellite' : (options.terrainBack ? 'terrain3d' : null);
+      const useSatellite = Boolean(activeTileStyle);
+      const isDarkTiles = activeTileStyle === 'satellite';
       let satDrawn = false;
-      if (useSatellite) {
-        // 先铺深邃卫星海面与离线高清世界图集作为底层（瓦片未到或离线时无缝兜底，绝不黑屏）
-        ctx.fillStyle = '#071527';
+      if (activeTileStyle) {
+        // 先铺离线高清世界图集作为底层兜底（瓦片加载中或离线时绝不黑屏），再无缝覆盖对应高清在线瓦片
+        ctx.fillStyle = isDarkTiles ? '#071527' : '#658a99';
         ctx.fillRect(0, 0, width, height);
         if (camera.zoom < 45) {
           ensureWorldAtlas();
           blitWorldTexture(ctx, worldAtlas, worldAtlas.width, worldAtlas.height);
         }
-        satDrawn = drawSatelliteTiles(ctx);
+        const tilesOk = drawOnlineTiles(ctx, activeTileStyle);
+        satDrawn = tilesOk && isDarkTiles;
         if (options.mode === 'terrain3d') {
           drawTerrain3DRelief(ctx);
           showContours(ctx);
+        } else if (options.mode === 'contour' && !tilesOk) {
+          showContours(ctx);
         }
-        // 叠加八九/谷歌卫星图风格的清晰白色国际国界、亮青色水系与醒目金色中国国界
+        // 叠加清晰国界与水系
         if (options.province && worldGeo?.borders?.length) {
           ctx.save();
           ctx.beginPath();
           for (const seg of worldGeo.borders) trace(ctx, seg, false);
-          ctx.strokeStyle = satDrawn ? 'rgba(255, 255, 255, 0.64)' : '#5c66549c';
-          ctx.lineWidth = satDrawn ? 0.95 : 0.78;
+          ctx.strokeStyle = satDrawn ? 'rgba(255, 255, 255, 0.64)' : 'rgba(68, 76, 62, 0.56)';
+          ctx.lineWidth = satDrawn ? 0.95 : 0.85;
           ctx.stroke();
           ctx.restore();
         }
