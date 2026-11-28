@@ -128,7 +128,36 @@
     let globalBackdropCities = [];
     let globalBackdropRoutes = [];
     let globalDeployments = [];
-    let globalHitItems = [];
+    let globalCityHitItems = [];
+    let globalDeployHitItems = [];
+    const textWidthCache = new Map();
+    const polyBoundsCache = new WeakMap();
+    function getPolyBounds(pts) {
+      let b = polyBoundsCache.get(pts);
+      if (b) return b;
+      let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const lon = pts[i][0], lat = pts[i][1];
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
+      b = [minLon, maxLon, minLat, maxLat];
+      polyBoundsCache.set(pts, b);
+      return b;
+    }
+    function cachedTextWidth(ctx, font, text) {
+      const k = font + '|' + text;
+      let w = textWidthCache.get(k);
+      if (w === undefined) {
+        ctx.font = font;
+        w = ctx.measureText(text).width;
+        if (textWidthCache.size > 4000) textWidthCache.clear();
+        textWidthCache.set(k, w);
+      }
+      return w;
+    }
 
     const GLOBAL_DEPLOYMENTS_KOREA = [
       // ══ 五常：苏联（红 · 欧亚全域纵深部署）══
@@ -261,7 +290,7 @@
           }
           backdropIdSet.add(wc.id);
           return true;
-        });
+        }).sort((a, b) => (Number(b.terrain === 'fort') - Number(a.terrain === 'fort')) || (Number(b.port) - Number(a.port)) || ((b.vp || 0) - (a.vp || 0)));
         // 同步接入二战同级完整全球铁路网与海运网（日本东海道/山阳/东北/九州铁路、美国东西贯通铁路、中国新干线、西伯利亚与欧洲铁路）
         globalBackdropRoutes = [];
         for (const [aId, bId, kind] of (globalThis.WW2Data?.routes || [])) {
@@ -328,7 +357,145 @@
     const backdrop = cache.getContext('2d');
     const territoryCanvas = document.createElement('canvas');
     const territoryBrush = territoryCanvas.getContext('2d');
+    const territoryClipped = document.createElement('canvas');
+    const territoryClippedBrush = territoryClipped.getContext('2d');
+    // GPU 常驻世界纹理图集（4096×2048）与陆地硬件蒙版（2048×1024）：彻底消除每帧数万顶点 CPU 裁切，释放 4060 GPU 硬件贴图加速！
+    const worldAtlas = document.createElement('canvas');
+    const worldAtlasCtx = worldAtlas.getContext('2d');
+    const worldLandMask = document.createElement('canvas');
+    const worldLandMaskCtx = worldLandMask.getContext('2d');
+    let worldAtlasKey = '';
+    let worldMaskBuilt = false;
     let territoryKey = '';
+    let pendingDrawFrame = 0;
+    function scheduleDraw() {
+      if (pendingDrawFrame) return;
+      pendingDrawFrame = requestAnimationFrame(() => {
+        pendingDrawFrame = 0;
+        draw();
+      });
+    }
+
+    function ensureWorldLandMask() {
+      if (worldMaskBuilt) return;
+      worldMaskBuilt = true;
+      const mw = 2048, mh = 1024;
+      worldLandMask.width = mw;
+      worldLandMask.height = mh;
+      const ctx = worldLandMaskCtx;
+      ctx.clearRect(0, 0, mw, mh);
+      const px = (lon) => ((lon + 180) / 360) * mw;
+      const py = (lat) => ((90 - lat) / 180) * mh;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      const maskRings = worldGeo?.land?.length ? worldGeo.land : (geography?.land || []);
+      for (let r = 0; r < maskRings.length; r++) {
+        const ring = maskRings[r];
+        if (!ring?.length) continue;
+        ctx.moveTo(px(ring[0][0]), py(ring[0][1]));
+        for (let i = 1; i < ring.length; i++) ctx.lineTo(px(ring[i][0]), py(ring[i][1]));
+        ctx.closePath();
+      }
+      ctx.fill();
+    }
+
+    function ensureWorldAtlas() {
+      const aKey = [options.mode, options.province, options.terrainBack, data.theaterMode || 'civil'].join('|');
+      if (worldAtlasKey === aKey && worldAtlas.width === 4096) return;
+      worldAtlasKey = aKey;
+      const aw = 4096, ah = 2048;
+      if (worldAtlas.width !== aw || worldAtlas.height !== ah) {
+        worldAtlas.width = aw;
+        worldAtlas.height = ah;
+      }
+      const ctx = worldAtlasCtx;
+      const px = (lon) => ((lon + 180) / 360) * aw;
+      const py = (lat) => ((90 - lat) / 180) * ah;
+      const sea = ctx.createLinearGradient(0, 0, aw, ah);
+      if (data.theaterMode === 'ww2' || data.theaterMode === 'korea') {
+        sea.addColorStop(0, '#5d8499');
+        sea.addColorStop(1, '#44687d');
+      } else {
+        sea.addColorStop(0, '#7899a6');
+        sea.addColorStop(1, '#5e8291');
+      }
+      ctx.fillStyle = sea;
+      ctx.fillRect(0, 0, aw, ah);
+      ctx.beginPath();
+      for (let r = 0; r < land.length; r++) {
+        const ring = land[r];
+        if (!ring?.length) continue;
+        ctx.moveTo(px(ring[0][0]), py(ring[0][1]));
+        for (let i = 1; i < ring.length; i++) ctx.lineTo(px(ring[i][0]), py(ring[i][1]));
+        ctx.closePath();
+      }
+      ctx.fillStyle = options.mode === 'contour' ? '#e3d7b7' : '#d3c9a7';
+      ctx.fill();
+      if (options.mode === 'terrain' || options.mode === 'terrain3d' || options.mode === 'contour' || options.terrainBack) {
+        ctx.save();
+        ctx.clip();
+        const demAlpha = options.mode === 'contour' ? .52 : .97;
+        ctx.globalAlpha = demAlpha;
+        ctx.imageSmoothingEnabled = true;
+        for (const grid of worldGrids) {
+          const x0 = px(grid.west), y0 = py(grid.north), x1 = px(grid.east), y1 = py(grid.south);
+          ctx.drawImage(grid.relief, x0, y0, x1 - x0, y1 - y0);
+        }
+        for (const grid of grids) {
+          const x0 = px(grid.west), y0 = py(grid.north), x1 = px(grid.east), y1 = py(grid.south);
+          ctx.drawImage(grid.relief, x0, y0, x1 - x0, y1 - y0);
+        }
+        ctx.globalAlpha = 1;
+        const worldRivers = globalThis.CivilWarWorld?.rivers || [];
+        if (worldRivers.length) {
+          ctx.strokeStyle = 'rgba(72, 118, 140, 0.58)';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          for (const rv of worldRivers) {
+            if (!rv.pts?.length) continue;
+            ctx.moveTo(px(rv.pts[0][0]), py(rv.pts[0][1]));
+            for (let i = 1; i < rv.pts.length; i++) ctx.lineTo(px(rv.pts[i][0]), py(rv.pts[i][1]));
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      ctx.strokeStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#2a4654b8' : '#3a5d6699';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      if (options.province && worldGeo?.borders?.length) {
+        ctx.save();
+        ctx.strokeStyle = '#5c66549c';
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        for (const seg of worldGeo.borders) {
+          if (!seg?.length) continue;
+          ctx.moveTo(px(seg[0][0]), py(seg[0][1]));
+          for (let i = 1; i < seg.length; i++) ctx.lineTo(px(seg[i][0]), py(seg[i][1]));
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function blitWorldTexture(ctx, tex, tw, th) {
+      for (const off of visibleWorldOffsets()) {
+        const [a, b] = projectAt(-180, 90, off);
+        const [x, y] = projectAt(180, -90, off);
+        if (x < 0 || a > width || y < 0 || b > height) continue;
+        const fullW = x - a, fullH = y - b;
+        if (fullW <= 0 || fullH <= 0) continue;
+        const dx0 = Math.max(0, a), dy0 = Math.max(0, b);
+        const dx1 = Math.min(width, x), dy1 = Math.min(height, y);
+        if (dx1 <= dx0 || dy1 <= dy0) continue;
+        const sx = ((dx0 - a) / fullW) * tw;
+        const sy = ((dy0 - b) / fullH) * th;
+        const sw = ((dx1 - dx0) / fullW) * tw;
+        const sh = ((dy1 - dy0) / fullH) * th;
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(tex, sx, sy, sw, sh, dx0, dy0, dx1 - dx0, dy1 - dy0);
+      }
+    }
     let factionLegendKey = '';
     const mapLabel = canvas.getAttribute('aria-label') || '战区地图';
     const keyboardHelp = 'Page Up 和 Page Down 浏览标记，Enter 打开所选部队或同城名册';
@@ -382,16 +549,36 @@
       if (close) ctx.closePath();
     }
 
+    function viewportGeoBounds() {
+      const halfLon = (width / 2) / Math.max(camera.zoom * .76, 0.01) + 2;
+      const halfLat = (height / 2) / Math.max(camera.zoom, 0.01) + 2;
+      return [camera.lon - halfLon, camera.lon + halfLon, camera.lat - halfLat, camera.lat + halfLat];
+    }
+
     function trace(ctx, points, close = false) {
       if (!points?.length) return;
-      for (const off of visibleWorldOffsets()) traceAt(ctx, points, close, off);
+      const [vMinLon, vMaxLon, vMinLat, vMaxLat] = viewportGeoBounds();
+      const [minLon, maxLon, minLat, maxLat] = getPolyBounds(points);
+      if (maxLat < vMinLat || minLat > vMaxLat) return;
+      for (const off of visibleWorldOffsets()) {
+        if (maxLon + off < vMinLon || minLon + off > vMaxLon) continue;
+        traceAt(ctx, points, close, off);
+      }
     }
 
     function shape(ctx, rings) {
       ctx.beginPath();
+      if (!rings?.length) return;
+      const [vMinLon, vMaxLon, vMinLat, vMaxLat] = viewportGeoBounds();
       const offsets = visibleWorldOffsets();
       for (const off of offsets) {
-        for (const ring of rings || []) traceAt(ctx, ring, true, off);
+        for (let r = 0; r < rings.length; r++) {
+          const ring = rings[r];
+          if (!ring?.length) continue;
+          const [minLon, maxLon, minLat, maxLat] = getPolyBounds(ring);
+          if (maxLat < vMinLat || minLat > vMaxLat || maxLon + off < vMinLon || minLon + off > vMaxLon) continue;
+          traceAt(ctx, ring, true, off);
+        }
       }
     }
 
@@ -503,8 +690,8 @@
 
     function drawTerrain3DRelief(ctx) {
       const is3DMode = options.mode === 'terrain3d';
-      if (!is3DMode && camera.zoom < 95) return;
-      const cell = is3DMode ? 22 : 28;
+      if (!is3DMode) return;
+      const cell = 32;
       const cols = Math.ceil(width / cell) + 1;
       const rows = Math.ceil(height / cell) + 1;
       const elev = new Float32Array(cols * rows);
@@ -708,64 +895,181 @@
       ctx.restore();
     }
 
+    function drawGlobalStaticBackdrop(ctx) {
+      globalCityHitItems = [];
+      if (data.theaterMode === 'ww2' || options.globalLayer === false) return;
+      if (!globalBackdropCities.length && !globalBackdropRoutes.length) return;
+
+      // 1. 全球完整铁路网与战略海运航线（绘制在底图缓存上，动画帧 0 开销）
+      ctx.save();
+      if (options.rail !== false && globalBackdropRoutes.length) {
+        ctx.lineWidth = camera.zoom >= 14 ? 1.55 : 1.05;
+        ctx.strokeStyle = 'rgba(72, 62, 46, 0.54)';
+        ctx.beginPath();
+        for (let i = 0; i < globalBackdropRoutes.length; i++) {
+          const r = globalBackdropRoutes[i];
+          if (r.kind !== 'rail') continue;
+          const [x1, y1] = project(r.a.lon, r.a.lat);
+          const [x2, y2] = project(r.b.lon, r.b.lat);
+          if (Math.abs(x2 - x1) > width * 0.72) continue;
+          if ((x1 < -20 && x2 < -20) || (x1 > width + 20 && x2 > width + 20) || (y1 < -20 && y2 < -20) || (y1 > height + 20 && y2 > height + 20)) continue;
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.stroke();
+        if (camera.zoom >= 12) {
+          ctx.lineWidth = 0.85;
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = 'rgba(235, 224, 194, 0.52)';
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+      ctx.lineWidth = 1.05;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = 'rgba(130, 204, 232, 0.36)';
+      for (const seg of GLOBAL_SEA_CORRIDORS) {
+        ctx.beginPath();
+        let prevX = null;
+        for (let i = 0; i < seg.length; i++) {
+          const [px, py] = project(seg[i][0], seg[i][1]);
+          if (i === 0 || (prevX !== null && Math.abs(px - prevX) > width * 0.72)) {
+            ctx.moveTo(px, py);
+          } else {
+            ctx.lineTo(px, py);
+          }
+          prevX = px;
+        }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // 2. 全球重大城市、美国州府/军事基地、中国省会、日本发达城市与重要港口（预排序 + 文本宽度缓存）
+      const labelBoxes = [];
+      const minVp = camera.zoom < 6.5 ? 9 : camera.zoom < 12 ? 7 : camera.zoom < 22 ? 5 : 0;
+      const minPortVp = camera.zoom < 6.5 ? 8 : camera.zoom < 12 ? 6 : 0;
+      for (let i = 0; i < globalBackdropCities.length; i++) {
+        const city = globalBackdropCities[i];
+        const vp = city.vp || 5;
+        const isBase = city.terrain === 'fort';
+        if (!isBase && (city.port ? vp < minPortVp : vp < minVp)) continue;
+        const [x, y] = project(city.lon, city.lat);
+        if (x < -10 || x > width + 10 || y < -10 || y > height + 10) continue;
+        const isCapital = vp >= 14;
+        const r = isBase ? 4.2 : city.port ? 3.8 : isCapital ? 4.2 : 2.8;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = isBase ? '#b85330' : city.port ? '#2b86a8' : isCapital ? '#c28b32' : '#6b624c';
+        ctx.fill();
+        ctx.lineWidth = 1.1;
+        ctx.strokeStyle = '#f2ead2';
+        ctx.stroke();
+        if (city.port) {
+          ctx.font = '700 10px "Microsoft YaHei UI", sans-serif';
+          ctx.fillStyle = '#8be4ff';
+          ctx.strokeStyle = '#10222ce6';
+          ctx.lineWidth = 2.2;
+          ctx.strokeText('⚓', x - 11, y - 4);
+          ctx.fillText('⚓', x - 11, y - 4);
+        } else if (isBase) {
+          ctx.font = '700 9.5px "Microsoft YaHei UI", sans-serif';
+          ctx.fillStyle = '#ffd480';
+          ctx.strokeStyle = '#1e1610e6';
+          ctx.lineWidth = 2.2;
+          ctx.strokeText('★', x - 10, y - 4);
+          ctx.fillText('★', x - 10, y - 4);
+        }
+        const shortName = city._short || (city._short = (city.name || '').split('(')[0].split('（')[0]);
+        const fontStr = (city.port || isCapital || isBase ? '600 10.5px' : '500 9.5px') + ' "Microsoft YaHei UI", sans-serif';
+        const tw = cachedTextWidth(ctx, fontStr, shortName);
+        const lx = x + 6;
+        const ly = y;
+        const overlap = labelBoxes.some((b) => lx + tw + 3 > b[0] && lx - 3 < b[1] && Math.abs(ly - b[2]) < 12);
+        if (!overlap && lx + tw < width - 4 && lx > 4 && ly > 10 && ly < height - 10) {
+          labelBoxes.push([lx, lx + tw, ly]);
+          ctx.font = fontStr;
+          ctx.textBaseline = 'middle';
+          ctx.strokeStyle = '#eee4c6d8';
+          ctx.lineWidth = 2.4;
+          ctx.strokeText(shortName, lx, ly);
+          ctx.fillStyle = isBase ? '#6e2315' : city.port ? '#17485c' : '#2d352e';
+          ctx.fillText(shortName, lx, ly);
+        }
+        globalCityHitItems.push({ kind: 'city', item: city, left: x - 8, top: y - 8, width: 16 + tw, height: 16 });
+      }
+    }
+
     function drawBase() {
-      const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province, options.terrainBack].join('|');
+      const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, options.province, options.terrainBack, options.rail, options.globalLayer].join('|');
       if (key === backgroundKey) return;
       backgroundKey = key;
       const ctx = backdrop;
-      const sea = ctx.createLinearGradient(0, 0, width, height);
-      if (data.theaterMode === 'ww2' || data.theaterMode === 'korea') {
-        sea.addColorStop(0, '#5d8499');
-        sea.addColorStop(1, '#44687d');
+      if (camera.zoom < 45 && options.mode !== 'contour') {
+        // 宏观/全球/战区视角直接使用 GPU 常驻 4096×2048 世界纹理贴图（单帧 < 0.5ms，彻底释放 4060 GPU！）
+        ensureWorldAtlas();
+        ctx.fillStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#4b7186' : '#658a99';
+        ctx.fillRect(0, 0, width, height);
+        blitWorldTexture(ctx, worldAtlas, worldAtlas.width, worldAtlas.height);
+        if (options.mode === 'terrain3d') {
+          drawTerrain3DRelief(ctx);
+          showContours(ctx);
+        }
       } else {
-        sea.addColorStop(0, '#7899a6');
-        sea.addColorStop(1, '#5e8291');
-      }
-      ctx.fillStyle = sea;
-      ctx.fillRect(0, 0, width, height);
-      shape(ctx, land);
-      ctx.fillStyle = options.mode === 'contour' ? '#e3d7b7' : '#d3c9a7';
-      ctx.fill();
-      if (options.mode === 'terrain' || options.mode === 'terrain3d' || options.mode === 'contour' || options.terrainBack) {
-        ctx.save();
-        ctx.clip();
-        const demAlpha = options.mode === 'contour' ? .52 : .97;
-        // 视口精准裁剪绘制全球 AWS Mapzen DEM + 东亚 0.1° 超高清 SRTM DEM（支持 24000 倍超大缩放不卡顿不丢失）
-        for (const grid of worldGrids) drawCroppedGrid(ctx, grid, demAlpha);
-        for (const grid of grids) drawCroppedGrid(ctx, grid, demAlpha);
-        // 3D 立体地形光影与高地标高
-        drawTerrain3DRelief(ctx);
-        // 叠加真实世界主要河流线
-        const worldRivers = globalThis.CivilWarWorld?.rivers || [];
-        if (worldRivers.length) {
+        const sea = ctx.createLinearGradient(0, 0, width, height);
+        if (data.theaterMode === 'ww2' || data.theaterMode === 'korea') {
+          sea.addColorStop(0, '#5d8499');
+          sea.addColorStop(1, '#44687d');
+        } else {
+          sea.addColorStop(0, '#7899a6');
+          sea.addColorStop(1, '#5e8291');
+        }
+        ctx.fillStyle = sea;
+        ctx.fillRect(0, 0, width, height);
+        shape(ctx, land);
+        ctx.fillStyle = options.mode === 'contour' ? '#e3d7b7' : '#d3c9a7';
+        ctx.fill();
+        if (options.mode === 'terrain' || options.mode === 'terrain3d' || options.mode === 'contour' || options.terrainBack) {
           ctx.save();
-          ctx.strokeStyle = 'rgba(72, 118, 140, 0.58)';
-          ctx.lineWidth = Math.max(0.85, Math.min(3.2, camera.zoom * 0.04));
+          ctx.clip();
+          const demAlpha = options.mode === 'contour' ? .52 : .97;
+          // 视口精准裁剪绘制全球 AWS Mapzen DEM + 东亚 0.1° 超高清 SRTM DEM（支持 24000 倍超大缩放）
+          for (const grid of worldGrids) drawCroppedGrid(ctx, grid, demAlpha);
+          for (const grid of grids) drawCroppedGrid(ctx, grid, demAlpha);
+          // 3D 立体地形光影与高地标高
+          drawTerrain3DRelief(ctx);
+          // 叠加真实世界主要河流线
+          const worldRivers = globalThis.CivilWarWorld?.rivers || [];
+          if (worldRivers.length) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(72, 118, 140, 0.58)';
+            ctx.lineWidth = Math.max(0.85, Math.min(3.2, camera.zoom * 0.04));
+            ctx.beginPath();
+            for (const rv of worldRivers) trace(ctx, rv.pts, false);
+            ctx.stroke();
+            ctx.restore();
+          }
+          // 1937–1953 历史年代微观城镇/铁路/海港/野战机场/农田细节
+          drawHistoricalMicroDetails(ctx);
+          ctx.restore();
+        }
+        ctx.strokeStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#2a4654b8' : '#3a5d6699';
+        ctx.lineWidth = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? 1.05 : .85;
+        shape(ctx, land);
+        ctx.stroke();
+        if (options.mode === 'contour' || options.mode === 'terrain3d') showContours(ctx);
+
+        if (options.province && worldGeo?.borders?.length) {
+          ctx.save();
+          shape(ctx, land);
+          ctx.clip();
           ctx.beginPath();
-          for (const rv of worldRivers) trace(ctx, rv.pts, false);
+          for (const seg of worldGeo.borders) trace(ctx, seg, false);
+          ctx.strokeStyle = '#5c66549c';
+          ctx.lineWidth = data.theaterMode === 'korea' ? 1.0 : 0.78;
           ctx.stroke();
           ctx.restore();
         }
-        // 1937–1953 历史年代微观城镇/铁路/海港/野战机场/农田细节
-        drawHistoricalMicroDetails(ctx);
-        ctx.restore();
-      }
-      ctx.strokeStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#2a4654b8' : '#3a5d6699';
-      ctx.lineWidth = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? 1.05 : .85;
-      shape(ctx, land);
-      ctx.stroke();
-      if (options.mode === 'contour' || options.mode === 'terrain3d') showContours(ctx);
-
-      if (options.province && worldGeo?.borders?.length) {
-        ctx.save();
-        shape(ctx, land);
-        ctx.clip();
-        ctx.beginPath();
-        for (const seg of worldGeo.borders) trace(ctx, seg, false);
-        ctx.strokeStyle = '#5c66549c';
-        ctx.lineWidth = data.theaterMode === 'korea' ? 1.0 : 0.78;
-        ctx.stroke();
-        ctx.restore();
       }
 
       if (!data.theaterMode && geography?.boundary) {
@@ -841,6 +1145,7 @@
         if (sx >= -40 && sx <= width + 40 && sy >= -20 && sy <= height + 20) ctx.fillText(name, sx, sy);
       }
       ctx.textAlign = 'start';
+      drawGlobalStaticBackdrop(ctx);
     }
 
     function line(points, color, width, dash = []) {
@@ -1308,31 +1613,100 @@
         const key = [width, height, camera.lon, camera.lat, camera.zoom, options.mode, data.theaterMode || 'civil', signature].join('|');
         if (key !== territoryKey) {
           territoryKey = key;
-          const step = 6;
+          const step = 8;
           const maxRadius = data.theaterMode === 'ww2' ? 11.5 : data.theaterMode === 'korea' ? 2.6 : 3.5;
-          territoryCanvas.width = Math.ceil(width / step);
-          territoryCanvas.height = Math.ceil(height / step);
-          const pixels = territoryBrush.createImageData(territoryCanvas.width, territoryCanvas.height);
-          for (let y = 0; y < territoryCanvas.height; y++) for (let x = 0; x < territoryCanvas.width; x++) {
-            const [lon, lat] = unproject((x + .5) * step, (y + .5) * step);
-            const node = nearestTerritory(lon, lat, nodes, maxRadius);
-            if (!node) continue;
-            const color = factionMode && node.owner === 'roc' && factionZoneColors[node.group]
+          const maxSq = maxRadius * maxRadius;
+          const tw = Math.ceil(width / step);
+          const th = Math.ceil(height / step);
+          territoryCanvas.width = tw;
+          territoryCanvas.height = th;
+          const pixels = territoryBrush.createImageData(tw, th);
+          const alphaVal = camera.zoom >= 400 ? 48 : camera.zoom >= 120 ? 78 : (data.theaterMode === 'ww2' ? 105 : 130);
+
+          // 空间哈希网格索引：只查询当前像素周边 3×3 网格内城市，把单帧计算从 2000 万次降到 < 8 万次！
+          const [vMinLon, vMaxLon, vMinLat, vMaxLat] = viewportGeoBounds();
+          const cellSize = Math.max(1.2, maxRadius);
+          const gridBuckets = new Map();
+          for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            if (node.lat < vMinLat - maxRadius || node.lat > vMaxLat + maxRadius) continue;
+            const dLon = wrapDeltaLon(node.lon);
+            const approxLon = camera.lon + dLon;
+            if (approxLon < vMinLon - maxRadius - 2 || approxLon > vMaxLon + maxRadius + 2) continue;
+            const colorHex = factionMode && node.owner === 'roc' && factionZoneColors[node.group]
               ? factionZoneColors[node.group] : node.owner === 'ccp' ? '#9e3c38' : '#3c5e78';
-            const offset = (y * territoryCanvas.width + x) * 4;
-            pixels.data[offset] = parseInt(color.slice(1, 3), 16);
-            pixels.data[offset + 1] = parseInt(color.slice(3, 5), 16);
-            pixels.data[offset + 2] = parseInt(color.slice(5, 7), 16);
-            pixels.data[offset + 3] = camera.zoom >= 400 ? 48 : camera.zoom >= 120 ? 78 : (data.theaterMode === 'ww2' ? 105 : 130);
+            const rCol = parseInt(colorHex.slice(1, 3), 16);
+            const gCol = parseInt(colorHex.slice(3, 5), 16);
+            const bCol = parseInt(colorHex.slice(5, 7), 16);
+            const entry = { lon: node.lon, lat: node.lat, r: rCol, g: gCol, b: bCol };
+            const gx = Math.floor(normalizeLon(node.lon) / cellSize);
+            const gy = Math.floor(node.lat / cellSize);
+            const bk = gx * 10000 + gy;
+            let arr = gridBuckets.get(bk);
+            if (!arr) { arr = []; gridBuckets.set(bk, arr); }
+            arr.push(entry);
+          }
+
+          if (gridBuckets.size > 0) {
+            for (let y = 0; y < th; y++) {
+              const lat = camera.lat - ((y + .5) * step - height / 2) / camera.zoom;
+              const gy = Math.floor(lat / cellSize);
+              for (let x = 0; x < tw; x++) {
+                const lon = normalizeLon(camera.lon + ((x + .5) * step - width / 2) / (camera.zoom * .76));
+                const gx = Math.floor(lon / cellSize);
+                let best = maxSq;
+                let nearestNode = null;
+                for (let oy = -1; oy <= 1; oy++) {
+                  const cy = gy + oy;
+                  for (let ox = -1; ox <= 1; ox++) {
+                    const arr = gridBuckets.get((gx + ox) * 10000 + cy);
+                    if (!arr) continue;
+                    for (let k = 0; k < arr.length; k++) {
+                      const n = arr[k];
+                      let dl = Math.abs(lon - n.lon);
+                      if (dl > 180) dl = 360 - dl;
+                      const dx = dl * .76;
+                      const dy = lat - n.lat;
+                      const d2 = dx * dx + dy * dy;
+                      if (d2 < best) { best = d2; nearestNode = n; }
+                    }
+                  }
+                }
+                if (!nearestNode) continue;
+                const offset = (y * tw + x) * 4;
+                pixels.data[offset] = nearestNode.r;
+                pixels.data[offset + 1] = nearestNode.g;
+                pixels.data[offset + 2] = nearestNode.b;
+                pixels.data[offset + 3] = alphaVal;
+              }
+            }
           }
           territoryBrush.putImageData(pixels, 0, 0);
+
+          // 仅在视角或归属变化时执行一次硬件蒙版/陆地裁剪，动画帧直接 0.05ms GPU 贴图！
+          if (territoryClipped.width !== width || territoryClipped.height !== height) {
+            territoryClipped.width = width;
+            territoryClipped.height = height;
+          }
+          territoryClippedBrush.clearRect(0, 0, width, height);
+          territoryClippedBrush.save();
+          if (data.theaterMode && camera.zoom < 45) {
+            // GPU destination-in 硬件蒙版裁剪（0.2ms，替代 20,000 顶点 CPU path clip）
+            ensureWorldLandMask();
+            territoryClippedBrush.imageSmoothingEnabled = true;
+            territoryClippedBrush.drawImage(territoryCanvas, 0, 0, width, height);
+            territoryClippedBrush.globalCompositeOperation = 'destination-in';
+            blitWorldTexture(territoryClippedBrush, worldLandMask, worldLandMask.width, worldLandMask.height);
+          } else {
+            const clipRings = data.theaterMode ? land : (geography?.boundary?.length ? geography.boundary : land);
+            shape(territoryClippedBrush, clipRings);
+            territoryClippedBrush.clip();
+            territoryClippedBrush.imageSmoothingEnabled = true;
+            territoryClippedBrush.drawImage(territoryCanvas, 0, 0, width, height);
+          }
+          territoryClippedBrush.restore();
         }
-        brush.save();
-        const clipRings = data.theaterMode ? land : (geography?.boundary?.length ? geography.boundary : land);
-        shape(brush, clipRings); brush.clip();
-        brush.imageSmoothingEnabled = true;
-        brush.drawImage(territoryCanvas, 0, 0, width, height);
-        brush.restore();
+        brush.drawImage(territoryClipped, 0, 0, width, height);
       } else if (showFill) {
         brush.save();
         shape(brush, land);
@@ -2588,116 +2962,18 @@
     }
 
     function drawGlobalBackdrop() {
-      globalHitItems = [];
+      globalDeployHitItems = [];
       if (data.theaterMode === 'ww2' || options.globalLayer === false) return;
-      if (!globalBackdropCities.length && !globalDeployments.length) return;
+      if (!globalDeployments.length) return;
 
-      // 1. 全球完整铁路网（日本/美国/中国/苏联/欧洲干线）与全球战略海运航线
-      brush.save();
-      if (options.rail !== false && globalBackdropRoutes.length) {
-        brush.lineWidth = camera.zoom >= 14 ? 1.55 : 1.05;
-        brush.strokeStyle = 'rgba(72, 62, 46, 0.54)';
-        brush.beginPath();
-        for (const r of globalBackdropRoutes) {
-          if (r.kind !== 'rail') continue;
-          const [x1, y1] = project(r.a.lon, r.a.lat);
-          const [x2, y2] = project(r.b.lon, r.b.lat);
-          if ((x1 < -20 && x2 < -20) || (x1 > width + 20 && x2 > width + 20) || (y1 < -20 && y2 < -20) || (y1 > height + 20 && y2 > height + 20)) continue;
-          brush.moveTo(x1, y1);
-          brush.lineTo(x2, y2);
-        }
-        brush.stroke();
-        if (camera.zoom >= 12) {
-          brush.lineWidth = 0.85;
-          brush.setLineDash([4, 4]);
-          brush.strokeStyle = 'rgba(235, 224, 194, 0.52)';
-          brush.stroke();
-          brush.setLineDash([]);
-        }
-      }
-      brush.lineWidth = 1.05;
-      brush.setLineDash([5, 5]);
-      brush.strokeStyle = 'rgba(130, 204, 232, 0.36)';
-      for (const seg of GLOBAL_SEA_CORRIDORS) {
-        brush.beginPath();
-        let prevX = null;
-        for (let i = 0; i < seg.length; i++) {
-          const [px, py] = project(seg[i][0], seg[i][1]);
-          // 球形循环投影下跨太平洋日界线天然连续；仅在跨越当前视口背面的反经线时断开
-          if (i === 0 || (prevX !== null && Math.abs(px - prevX) > width * 0.72)) {
-            brush.moveTo(px, py);
-          } else {
-            brush.lineTo(px, py);
-          }
-          prevX = px;
-        }
-        brush.stroke();
-      }
-      brush.setLineDash([]);
-      brush.restore();
-
-      // 2. 全球重大城市、美国州府/军事基地、中国省会、日本发达城市与重要港口（按缩放自适应分层显示，零重叠）
-      const labelBoxes = [];
-      const minVp = camera.zoom < 6.5 ? 9 : camera.zoom < 12 ? 7 : camera.zoom < 22 ? 5 : 0;
-      const minPortVp = camera.zoom < 6.5 ? 8 : camera.zoom < 12 ? 6 : 0;
-      const sortedCities = globalBackdropCities.slice().sort((a, b) => (Number(b.terrain === 'fort') - Number(a.terrain === 'fort')) || (Number(b.port) - Number(a.port)) || ((b.vp || 0) - (a.vp || 0)));
-      for (const city of sortedCities) {
-        const vp = city.vp || 5;
-        const isBase = city.terrain === 'fort';
-        if (!isBase && (city.port ? vp < minPortVp : vp < minVp)) continue;
-        const [x, y] = project(city.lon, city.lat);
-        if (x < -10 || x > width + 10 || y < -10 || y > height + 10) continue;
-        const isCapital = vp >= 14;
-        const r = isBase ? 4.2 : city.port ? 3.8 : isCapital ? 4.2 : 2.8;
-        brush.save();
-        brush.beginPath();
-        brush.arc(x, y, r, 0, Math.PI * 2);
-        brush.fillStyle = isBase ? '#b85330' : city.port ? '#2b86a8' : isCapital ? '#c28b32' : '#6b624c';
-        brush.fill();
-        brush.lineWidth = 1.1;
-        brush.strokeStyle = '#f2ead2';
-        brush.stroke();
-        if (city.port) {
-          brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
-          brush.fillStyle = '#8be4ff';
-          brush.strokeStyle = '#10222ce6';
-          brush.lineWidth = 2.2;
-          brush.strokeText('⚓', x - 11, y - 4);
-          brush.fillText('⚓', x - 11, y - 4);
-        } else if (isBase) {
-          brush.font = '700 9.5px "Microsoft YaHei UI", sans-serif';
-          brush.fillStyle = '#ffd480';
-          brush.strokeStyle = '#1e1610e6';
-          brush.lineWidth = 2.2;
-          brush.strokeText('★', x - 10, y - 4);
-          brush.fillText('★', x - 10, y - 4);
-        }
-        const shortName = (city.name || '').split('(')[0].split('（')[0];
-        brush.font = (city.port || isCapital || isBase ? '600 10.5px' : '500 9.5px') + ' "Microsoft YaHei UI", sans-serif';
-        brush.textBaseline = 'middle';
-        const tw = brush.measureText(shortName).width;
-        const lx = x + 6;
-        const ly = y;
-        const overlap = labelBoxes.some((b) => lx + tw + 3 > b[0] && lx - 3 < b[1] && Math.abs(ly - b[2]) < 12);
-        if (!overlap && lx + tw < width - 4 && lx > 4 && ly > 10 && ly < height - 10) {
-          labelBoxes.push([lx, lx + tw, ly]);
-          brush.strokeStyle = '#eee4c6d8';
-          brush.lineWidth = 2.4;
-          brush.strokeText(shortName, lx, ly);
-          brush.fillStyle = isBase ? '#6e2315' : city.port ? '#17485c' : '#2d352e';
-          brush.fillText(shortName, lx, ly);
-        }
-        brush.restore();
-        globalHitItems.push({ kind: 'city', item: city, left: x - 8, top: y - 8, width: 16 + tw, height: 16 });
-      }
-
-      // 3. 全球战略布兵图（大航母在前 + 后方人字形护航战舰群 + 上空舰载机编队 / 陆空重装甲单兵，绝不穿模）
+      // 实时动态渲染全球战略布兵图（大航母在前 + 后方人字形护航战舰群 + 上空舰载机编队 / 陆空重装甲单兵）
       const cardBoxes = [];
       const showGlobal3D = Boolean(options.models3d) && Boolean(humanRenderer);
       const now = performance.now();
       const baseModelSize = clamp(camera.zoom * 3.8, 28, 46);
       const airKinds = new Set(['b29', 'mig15', 'f86', 'spitfire', 'il2', 'zero', 'p40', 'jet', 'aircraft']);
       const shipKinds = new Set(['carrier', 'battleship', 'yamato', 'ship', 'uboat']);
+      const cardFont = '700 10px "Microsoft YaHei UI", sans-serif';
 
       for (const dep of globalDeployments) {
         const [x, y] = project(dep.lon, dep.lat);
@@ -2821,8 +3097,8 @@
         const strengthLabel = dep.strength >= 10000 ? Math.round(dep.strength / 10000) + '万' : round.format(dep.strength);
         const text = dep.icon + ' ' + dep.short + ' ' + strengthLabel;
         brush.save();
-        brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
-        const tw = brush.measureText(text).width;
+        const tw = cachedTextWidth(brush, cardFont, text);
+        brush.font = cardFont;
         const cw = Math.ceil(tw + 14);
         const ch = 18;
         const candidates = [
@@ -2853,9 +3129,9 @@
         brush.textBaseline = 'middle';
         brush.fillText(text, cx + 7, cy + ch / 2 + 0.5);
         brush.restore();
-        globalHitItems.push({ kind: 'deployment', item: dep, left: cx, top: cy, width: cw, height: ch });
+        globalDeployHitItems.push({ kind: 'deployment', item: dep, left: cx, top: cy, width: cw, height: ch });
         if (modelRendered) {
-          globalHitItems.push({ kind: 'deployment', item: dep, left: x - baseModelSize * 1.2, top: modelTopY, width: baseModelSize * 2.4, height: modelBottomY - modelTopY + 8 });
+          globalDeployHitItems.push({ kind: 'deployment', item: dep, left: x - baseModelSize * 1.2, top: modelTopY, width: baseModelSize * 2.4, height: modelBottomY - modelTopY + 8 });
         }
       }
     }
@@ -3116,7 +3392,16 @@
 
     canvas.addEventListener('wheel', (event) => {
       event.preventDefault();
-      zoom(Math.exp(-event.deltaY * .0018), ...coordinates(event));
+      const [wx, wy] = coordinates(event);
+      const [lon, lat] = unproject(wx, wy);
+      camera.zoom = clamp(camera.zoom * Math.exp(-event.deltaY * .0018), 3.4, 24000);
+      const [afterLon, afterLat] = unproject(wx, wy);
+      camera.lon = normalizeLon(camera.lon + ((((lon - afterLon + 180) % 360) + 360) % 360 - 180));
+      camera.lat = clamp(camera.lat + lat - afterLat, -78, 82);
+      scheduleDraw();
+      if (!animationFrame && !state?.winner && (hasVisibleOrders() || hasMovingUnits() || hasActiveBattles())) {
+        animationFrame = requestAnimationFrame(animateBattle);
+      }
     }, { passive: false });
     let drawFrontMode = false;
     canvas.addEventListener('pointerdown', (event) => {
@@ -3163,7 +3448,7 @@
         camera.lon = normalizeLon(pointer.lon - dx / camera.zoom / .76);
         camera.lat = clamp(pointer.lat + dy / camera.zoom, -78, 82);
         canvas.classList.add('dragging');
-        draw();
+        scheduleDraw();
         return;
       }
       const bubble = battleBubbles.find((b) => Math.hypot(xy[0] - b.bx, xy[1] - b.by) <= b.br);
@@ -3213,7 +3498,8 @@
           const city = nearest(...xy) || places.get(old.picked?.city);
           if (city) handlers.selectCity(city.id);
           else {
-            const gHit = globalHitItems.find((g) => xy[0] >= g.left && xy[0] <= g.left + g.width && xy[1] >= g.top && xy[1] <= g.top + g.height);
+            const gHit = globalDeployHitItems.find((g) => xy[0] >= g.left && xy[0] <= g.left + g.width && xy[1] >= g.top && xy[1] <= g.top + g.height)
+              || globalCityHitItems.find((g) => xy[0] >= g.left && xy[0] <= g.left + g.width && xy[1] >= g.top && xy[1] <= g.top + g.height);
             if (gHit) handlers.selectGlobalInfo?.(gHit);
           }
         }
