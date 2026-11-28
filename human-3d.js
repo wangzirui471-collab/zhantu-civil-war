@@ -2030,7 +2030,7 @@
     const SPRITE = Math.max(64, Math.min(640, Math.round(Number(resolution) || 256)));
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = SPRITE;
-    const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false });
+    const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
     if (!gl) return null;
 
     const vsSrc = `

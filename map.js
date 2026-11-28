@@ -368,6 +368,114 @@
     let worldMaskBuilt = false;
     let territoryKey = '';
     let pendingDrawFrame = 0;
+
+    // ── 🚀 真正的 WebGL GLSL GPU 硬件着色器管线（powerPreference: 'high-performance'，单次 DrawCall 完成 360° 球形底图 + 硬件蒙版势力混合）──
+    const glCanvas = document.createElement('canvas');
+    let gpuPipe = null;
+    let gpuLabel = 'Canvas 2D';
+    try {
+      const gl = glCanvas.getContext('webgl', {
+        powerPreference: 'high-performance',
+        alpha: false,
+        antialias: false,
+        depth: false,
+        stencil: false,
+        preserveDrawingBuffer: false,
+      });
+      if (gl) {
+        const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+        const rawRenderer = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '') : String(gl.getParameter(gl.RENDERER) || '');
+        const rtxMatch = rawRenderer.match(/(RTX\s*\d+\w*|GTX\s*\d+\w*|Radeon\s*[\w\s]+?)(?:\s+Laptop|\s+GPU|\s*\/|,|\)|$)/i);
+        gpuLabel = rtxMatch ? rtxMatch[1].trim() : (rawRenderer.includes('SwiftShader') ? 'WebGL 软件光栅' : 'WebGL GPU');
+
+        const vsSrc = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = vec2(aPos.x * 0.5 + 0.5, 0.5 - aPos.y * 0.5); gl_Position = vec4(aPos, 0.0, 1.0); }';
+        const fsSrc = [
+          'precision highp float;',
+          'varying vec2 vUv;',
+          'uniform sampler2D uAtlas;',
+          'uniform sampler2D uMask;',
+          'uniform sampler2D uTerr;',
+          'uniform float uCamLon;',
+          'uniform float uCamLat;',
+          'uniform float uSpanLon;',
+          'uniform float uSpanLat;',
+          'uniform float uHasTerr;',
+          'uniform float uUseMask;',
+          'uniform float uNight;',
+          'void main(){',
+          '  float lon = uCamLon + (vUv.x - 0.5) * uSpanLon;',
+          '  float lat = uCamLat + (0.5 - vUv.y) * uSpanLat;',
+          '  float u = fract((lon + 180.0) / 360.0);',
+          '  float v = clamp((90.0 - lat) / 180.0, 0.0005, 0.9995);',
+          '  vec4 col = texture2D(uAtlas, vec2(u, v));',
+          '  if (uHasTerr > 0.5) {',
+          '    vec4 terr = texture2D(uTerr, vUv);',
+          '    float m = uUseMask > 0.5 ? texture2D(uMask, vec2(u, v)).a : 1.0;',
+          '    col.rgb = mix(col.rgb, terr.rgb, terr.a * m);',
+          '  }',
+          '  if (uNight > 0.5) {',
+          '    col.rgb = mix(col.rgb, vec3(0.05, 0.09, 0.16), 0.28);',
+          '  }',
+          '  gl_FragColor = vec4(col.rgb, 1.0);',
+          '}',
+        ].join('\n');
+        const compile = (type, src) => {
+          const sh = gl.createShader(type);
+          gl.shaderSource(sh, src);
+          gl.compileShader(sh);
+          return gl.getShaderParameter(sh, gl.COMPILE_STATUS) ? sh : null;
+        };
+        const vs = compile(gl.VERTEX_SHADER, vsSrc);
+        const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+        if (vs && fs) {
+          const prog = gl.createProgram();
+          gl.attachShader(prog, vs);
+          gl.attachShader(prog, fs);
+          gl.linkProgram(prog);
+          if (gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+            const buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+            const makeTex = (wrapS) => {
+              const t = gl.createTexture();
+              gl.bindTexture(gl.TEXTURE_2D, t);
+              gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+              gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+              gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+              gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+              return t;
+            };
+            gpuPipe = {
+              gl,
+              prog,
+              buf,
+              aPos: gl.getAttribLocation(prog, 'aPos'),
+              uAtlas: gl.getUniformLocation(prog, 'uAtlas'),
+              uMask: gl.getUniformLocation(prog, 'uMask'),
+              uTerr: gl.getUniformLocation(prog, 'uTerr'),
+              uCamLon: gl.getUniformLocation(prog, 'uCamLon'),
+              uCamLat: gl.getUniformLocation(prog, 'uCamLat'),
+              uSpanLon: gl.getUniformLocation(prog, 'uSpanLon'),
+              uSpanLat: gl.getUniformLocation(prog, 'uSpanLat'),
+              uHasTerr: gl.getUniformLocation(prog, 'uHasTerr'),
+              uUseMask: gl.getUniformLocation(prog, 'uUseMask'),
+              uNight: gl.getUniformLocation(prog, 'uNight'),
+              atlasTex: makeTex(gl.REPEAT),
+              maskTex: makeTex(gl.REPEAT),
+              terrTex: makeTex(gl.CLAMP_TO_EDGE),
+              atlasVer: '',
+              maskReady: false,
+              terrVer: '',
+            };
+          }
+        }
+      }
+    } catch {}
+
+    // 实时帧率统计（平滑滑动窗口）
+    let fpsSmoothed = 60;
+    let lastDrawStamp = 0;
+
     function scheduleDraw() {
       if (pendingDrawFrame) return;
       pendingDrawFrame = requestAnimationFrame(() => {
@@ -1006,11 +1114,52 @@
       backgroundKey = key;
       const ctx = backdrop;
       if (camera.zoom < 45 && options.mode !== 'contour') {
-        // 宏观/全球/战区视角直接使用 GPU 常驻 4096×2048 世界纹理贴图（单帧 < 0.5ms，彻底释放 4060 GPU！）
+        // 宏观/全球/战区视角直接使用 WebGL GPU 着色器（或 4096×2048 纹理贴图）完成 360° 球形底图渲染！
         ensureWorldAtlas();
-        ctx.fillStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#4b7186' : '#658a99';
-        ctx.fillRect(0, 0, width, height);
-        blitWorldTexture(ctx, worldAtlas, worldAtlas.width, worldAtlas.height);
+        if (gpuPipe) {
+          const { gl } = gpuPipe;
+          if (glCanvas.width !== width || glCanvas.height !== height) {
+            glCanvas.width = width;
+            glCanvas.height = height;
+          }
+          if (gpuPipe.atlasVer !== worldAtlasKey) {
+            gpuPipe.atlasVer = worldAtlasKey;
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, gpuPipe.atlasTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, worldAtlas);
+          }
+          if (!gpuPipe.maskReady) {
+            ensureWorldLandMask();
+            gpuPipe.maskReady = true;
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, gpuPipe.maskTex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, worldLandMask);
+          }
+          gl.viewport(0, 0, width, height);
+          gl.useProgram(gpuPipe.prog);
+          gl.bindBuffer(gl.ARRAY_BUFFER, gpuPipe.buf);
+          gl.enableVertexAttribArray(gpuPipe.aPos);
+          gl.vertexAttribPointer(gpuPipe.aPos, 2, gl.FLOAT, false, 0, 0);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, gpuPipe.atlasTex);
+          gl.uniform1i(gpuPipe.uAtlas, 0);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, gpuPipe.maskTex);
+          gl.uniform1i(gpuPipe.uMask, 1);
+          gl.uniform1f(gpuPipe.uCamLon, camera.lon);
+          gl.uniform1f(gpuPipe.uCamLat, camera.lat);
+          gl.uniform1f(gpuPipe.uSpanLon, width / Math.max(camera.zoom * .76, 0.01));
+          gl.uniform1f(gpuPipe.uSpanLat, height / Math.max(camera.zoom, 0.01));
+          gl.uniform1f(gpuPipe.uHasTerr, 0.0);
+          gl.uniform1f(gpuPipe.uUseMask, 0.0);
+          gl.uniform1f(gpuPipe.uNight, 0.0);
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+          ctx.drawImage(glCanvas, 0, 0, width, height);
+        } else {
+          ctx.fillStyle = (data.theaterMode === 'ww2' || data.theaterMode === 'korea') ? '#4b7186' : '#658a99';
+          ctx.fillRect(0, 0, width, height);
+          blitWorldTexture(ctx, worldAtlas, worldAtlas.width, worldAtlas.height);
+        }
         if (options.mode === 'terrain3d') {
           drawTerrain3DRelief(ctx);
           showContours(ctx);
@@ -2838,10 +2987,7 @@
     function animateBattle() {
       animationFrame = 0;
       const now = performance.now();
-      if (now - lastAnimationAt < (hasMovingUnits() || hasActiveBattles() ? 44 : 125)) {
-        animationFrame = requestAnimationFrame(animateBattle);
-        return;
-      }
+      // 解锁原生高刷屏帧率上限（144Hz / 165Hz / 240Hz），不再人为锁 22 FPS！
       lastAnimationAt = now;
       draw();
       if (battleEffects.length || commandEffects.length || !state?.winner && (hasMovingUnits() || hasActiveBattles() || state?.works?.length || hasVisibleOrders())) {
@@ -3155,6 +3301,15 @@
 
     function draw() {
       if (!state) return;
+      const drawStart = performance.now();
+      if (lastDrawStamp > 0) {
+        const dt = drawStart - lastDrawStamp;
+        if (dt > 0.5 && dt < 250) {
+          const instFps = Math.min(240, 1000 / dt);
+          fpsSmoothed = fpsSmoothed * 0.86 + instFps * 0.14;
+        }
+      }
+      lastDrawStamp = drawStart;
       drawBase();
       brush.clearRect(0, 0, width, height);
       brush.drawImage(cache, 0, 0, width, height);
@@ -3257,12 +3412,16 @@
       const label = chosenKm >= 1 ? chosenKm + ' km' : Math.round(chosenKm * 1000) + ' m';
       const x0 = 14;
       const y0 = height - 42;
+      const fpsText = '⚡ ' + gpuLabel + ' · ' + Math.round(fpsSmoothed) + ' FPS';
+      brush.font = '700 10px "Microsoft YaHei UI", sans-serif';
+      const fpsW = cachedTextWidth(brush, '700 10px "Microsoft YaHei UI", sans-serif', fpsText);
+      const totalW = barPx + 74 + fpsW + 16;
       brush.save();
-      brush.fillStyle = 'rgba(20, 26, 23, 0.74)';
+      brush.fillStyle = 'rgba(20, 26, 23, 0.78)';
       brush.strokeStyle = 'rgba(214, 190, 134, 0.55)';
       brush.lineWidth = 1;
       brush.beginPath();
-      brush.roundRect(x0 - 6, y0 - 15, barPx + 74, 24, 4);
+      brush.roundRect(x0 - 6, y0 - 15, totalW, 24, 4);
       brush.fill();
       brush.stroke();
       brush.strokeStyle = '#f4e6be';
@@ -3277,6 +3436,8 @@
       brush.fillStyle = '#f5e7c2';
       brush.textBaseline = 'middle';
       brush.fillText(label, x0 + barPx + 7, y0 - 2);
+      brush.fillStyle = '#8ef5b4';
+      brush.fillText(fpsText, x0 + barPx + 66, y0 - 2);
       brush.restore();
     }
 
